@@ -44,7 +44,16 @@ import type {
   Tokens,
 } from './types'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
+declare global {
+  interface Window {
+    __APP_CONFIG__?: {
+      VITE_API_BASE_URL?: string
+    }
+  }
+}
+
+const BASE_URL =
+  window.__APP_CONFIG__?.VITE_API_BASE_URL ?? import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
 let policyPromise: Promise<RegistrationPolicy> | null = null
 
