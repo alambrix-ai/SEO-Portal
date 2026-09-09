@@ -225,7 +225,19 @@ def check_connection() -> None:
         ).first()
         encrypted = bool(row and row[0])
         log.info("PostgreSQL %s reachable (TLS=%s)", version, "on" if encrypted else "off")
-        if not encrypted and settings.is_production:
+        if encrypted:
+            return
+        # Neon (and some other poolers) terminate TLS before the backend, so
+        # pg_stat_ssl can read false even when the client connected with
+        # sslmode=require. Trust the configured mode in that case.
+        if settings.effective_sslmode in ("require", "verify-ca", "verify-full"):
+            log.warning(
+                "pg_stat_ssl reports no TLS, but sslmode=%s — treating the "
+                "link as encrypted (common with managed poolers)",
+                settings.effective_sslmode,
+            )
+            return
+        if settings.is_production:
             raise RuntimeError(
                 "Database connection is not encrypted. Set POSTGRES_SSLMODE=require "
                 "(or stricter) and give the server a certificate."
