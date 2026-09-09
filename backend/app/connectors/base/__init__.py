@@ -1,0 +1,68 @@
+"""Shared connector framework: contracts, capability interfaces, registry."""
+from app.connectors.base.connector import (
+    BaseConnector,
+    Capability,
+    ConnectorSpec,
+    HealthReport,
+)
+from app.connectors.base.credentials import (
+    CredentialField,
+    Credentials,
+    FieldKind,
+    oauth,
+    secret,
+    split_hints,
+    text,
+    validate,
+)
+from app.connectors.base.interfaces import (
+    AdsConnector,
+    AeoMonitorConnector,
+    AnalyticsConnector,
+    ChannelPerformance,
+    CitationHit,
+    CmsConnector,
+    CrmConnector,
+    NotificationConnector,
+    RemotePage,
+    SessionMetrics,
+    TrafficSample,
+)
+from app.connectors.base.registry import (
+    all_specs,
+    categories,
+    connector_slugs,
+    get_class,
+    get_spec,
+)
+
+__all__ = [
+    "AdsConnector",
+    "AeoMonitorConnector",
+    "AnalyticsConnector",
+    "BaseConnector",
+    "Capability",
+    "ChannelPerformance",
+    "CitationHit",
+    "CmsConnector",
+    "ConnectorSpec",
+    "CredentialField",
+    "Credentials",
+    "CrmConnector",
+    "FieldKind",
+    "HealthReport",
+    "NotificationConnector",
+    "RemotePage",
+    "SessionMetrics",
+    "TrafficSample",
+    "all_specs",
+    "categories",
+    "connector_slugs",
+    "get_class",
+    "get_spec",
+    "oauth",
+    "secret",
+    "split_hints",
+    "text",
+    "validate",
+]

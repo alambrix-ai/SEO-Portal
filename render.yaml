@@ -1,0 +1,120 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Deploy: push this repo to GitHub, then in the Render dashboard choose
+# New -> Blueprint and point it at the repo. Render reads this file and
+# creates the database, the API and the console together.
+#
+# This targets the FREE tier:
+#   - automarket-db:  Render's free PostgreSQL plan. It is deleted ~30-90 days
+#     after creation (Render's current free-database policy) — a fine way to
+#     evaluate the deploy, not where to leave real customer data. Upgrading
+#     later is a plan change on the database, no redeploy needed.
+#   - automarket-api: Render's free web-service plan spins the instance down
+#     after ~15 minutes with no inbound HTTP request, and only wakes on the
+#     next request. The in-process agent scheduler (SCHEDULER_ENABLED) only
+#     runs while the instance is up, so scheduled agent runs will be skipped
+#     whenever it's asleep — the API and console still work fine for demoing,
+#     but nothing will fire on a timer unless something pings it or you move
+#     this service to a paid plan.
+#   - automarket-console: a static site. Always on, no plan tier to pick.
+#
+# Several values below are placeholders (the *.onrender.com URLs assume the
+# service names here are still available — Render appends a random suffix if
+# not, and every URL that references another service needs updating to match
+# what Render actually assigned after the first deploy).
+
+databases:
+  - name: automarket-db
+    plan: free
+    postgresMajorVersion: "17"
+    region: oregon
+
+services:
+  - type: web
+    name: automarket-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    # The Dockerfile's own CMD only runs uvicorn; migrations need to run once
+    # per deploy first, same as the `alembic upgrade head &&` step in
+    # docker-compose.yml's api service.
+    dockerCommand: >-
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: automarket-db
+          property: connectionString
+      - key: POSTGRES_SSLMODE
+        value: require
+      - key: FORCE_HTTPS
+        value: "true"
+      - key: SECURE_COOKIES
+        value: "true"
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      # Render's own domain for this service. Fix this after first deploy if
+      # Render assigned a different subdomain than "automarket-api".
+      - key: TRUSTED_HOSTS
+        value: automarket-api.onrender.com
+      # The console's URL — fix this the same way.
+      - key: PUBLIC_BASE_URL
+        value: https://automarket-console.onrender.com
+      - key: CORS_ORIGINS
+        value: https://automarket-console.onrender.com
+      - key: SECRET_KEY
+        generateValue: true
+      # These three have strict formats the dashboard can't generate safely
+      # (a base64 32-byte key, a real SMTP relay, a named model) — fill them
+      # in yourself after the blueprint creates the service. See the deploy
+      # guide for how to generate each one.
+      - key: MASTER_ENCRYPTION_KEY
+        sync: false
+      - key: BLIND_INDEX_KEY
+        sync: false
+      - key: SCHEDULER_ENABLED
+        value: "true"
+      - key: SCHEDULER_SPEED
+        value: "1.0"
+      - key: CELERY_ENABLED
+        value: "false"
+      - key: LLM_PROVIDER
+        value: anthropic
+      - key: LLM_MODEL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: AutoMarket AI
+
+  - type: web
+    name: automarket-console
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/dist
+    envVars:
+      # The API's URL — fix this if Render assigned automarket-api a
+      # different subdomain. Static-site env vars are baked in at build time,
+      # so changing this needs a rebuild, not just a restart.
+      - key: VITE_API_BASE_URL
+        value: https://automarket-api.onrender.com/api/v1
+    routes:
+      # react-router's BrowserRouter needs every path to resolve to
+      # index.html; without this, refreshing on any route but "/" 404s.
+      - type: rewrite
+        source: /*
+        destination: /index.html

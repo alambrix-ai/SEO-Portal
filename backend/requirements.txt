@@ -1,0 +1,28 @@
+# ── Core API ───────────────────────────────────────────────────────────────
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+email-validator==2.2.0
+python-multipart==0.0.20
+
+# ── Persistence (PostgreSQL only) ──────────────────────────────────────────
+SQLAlchemy==2.0.36
+alembic==1.14.0
+psycopg[binary,pool]==3.2.3
+
+# ── Auth & crypto ──────────────────────────────────────────────────────────
+PyJWT==2.10.1
+cryptography==44.0.0
+argon2-cffi==23.1.0
+
+# ── Outbound connector I/O ─────────────────────────────────────────────────
+httpx==0.28.1
+tenacity==9.0.0
+
+# ── Task broker (optional; agents fall back to the in-process scheduler) ───
+celery==5.4.0
+redis==5.2.1
+
+# ── LLM orchestration (optional; MockProvider is used when unset) ──────────
+anthropic==0.42.0

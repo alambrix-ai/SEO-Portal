@@ -1,0 +1,28 @@
+{
+  "name": "automarket-console",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "AutoMarket AI — enterprise console for autonomous SEO, AEO and programmatic ads",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.28.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.4",
+    "simple-icons": "^16.30.0",
+    "typescript": "5.7.2",
+    "vite": "6.0.3"
+  }
+}

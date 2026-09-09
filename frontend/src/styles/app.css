@@ -1,0 +1,1958 @@
+/**
+ * Console layout on top of the Industry design system.
+ *
+ * Every colour, font, space and radius here comes from an Industry token —
+ * nothing is hard-coded, so retuning `industry.css` retunes the whole console.
+ */
+
+/* The one red in the console: the required-field marker and every
+   destructive control. Industry has no danger token, and this value was
+   already sitting as a literal in two rules — a second red beside it would
+   read as a different meaning. */
+:root {
+  --color-danger: #a4433a;
+}
+
+/* ── Shell ────────────────────────────────────────────────────────────────── */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+.sidebar {
+  width: 224px;
+  flex: none;
+  border-right: 1px solid var(--color-divider);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.sidebar-brand {
+  display: block;
+  padding: 0 18px 18px;
+  text-decoration: none;
+  color: var(--color-text);
+}
+
+/* The wordmark, drawn as a mask so it takes currentColor — see
+   components/BrandLogo.tsx. The supplied asset is white on transparency and
+   would be invisible on the light theme as an ordinary image. */
+.brand-logo {
+  display: block;
+  flex: none;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  color: var(--color-text);
+  background: transparent;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: none;
+}
+.nav-item:hover {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+}
+.nav-item.active {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+.nav-item.locked {
+  color: var(--color-neutral-500);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.nav-item.locked:hover {
+  background: transparent;
+}
+.nav-badge {
+  margin-left: auto;
+  background: var(--color-accent-900);
+  color: var(--color-bg);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+.nav-item.active .nav-badge {
+  background: var(--color-bg);
+  color: var(--color-accent-900);
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 14px 18px 0;
+  border-top: 1px solid var(--color-divider);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.sidebar-footer strong {
+  color: var(--color-text);
+  display: block;
+}
+
+/* ── Main column ─────────────────────────────────────────────────────────── */
+.app-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-divider);
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  z-index: 20;
+}
+.topbar-title {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 18px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.topbar-spacer {
+  flex: 1;
+}
+.topbar .seg {
+  flex: none;
+}
+.topbar-bell {
+  position: relative;
+}
+/* Pending approvals are a standing fact, not news — so that badge is quiet
+   and the unseen-activity one is not. Two states, visibly different, rather
+   than one badge meaning two things. */
+.topbar-bell-count.is-quiet {
+  background: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+.topbar-bell.has-unseen {
+  border-color: var(--color-accent);
+}
+.topbar-bell.has-unseen .topbar-bell-count {
+  /* A new-activity badge should catch the eye once and then stop; a forever
+     animation is the reason people disable notifications. */
+  animation: bell-pop 320ms ease-out;
+}
+@keyframes bell-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .topbar-bell.has-unseen .topbar-bell-count {
+    animation: none;
+  }
+}
+.topbar-bell-count {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  background: var(--color-accent-900);
+  color: var(--color-bg);
+  font-size: 9px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page {
+  flex: 1;
+  padding: 28px 32px;
+  max-width: 1400px;
+  width: 100%;
+}
+
+/* ── Layout helpers ──────────────────────────────────────────────────────── */
+.grid-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 28px;
+}
+.grid-tiles-sm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.grid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.grid-cards-sm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+.grid-cards-xs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+.split-2-1 {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.split-11-10 {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+.split-1-1 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.stack-sm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.row-baseline {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.mt-lg {
+  margin-top: 28px;
+}
+
+@media (max-width: 1080px) {
+  .split-2-1,
+  .split-11-10,
+  .split-1-1 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 820px) {
+  .app-shell {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: static;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-divider);
+  }
+  .sidebar-nav {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .nav-item {
+    white-space: nowrap;
+  }
+  .sidebar-footer {
+    display: none;
+  }
+  .page {
+    padding: 20px 16px;
+  }
+  .table-scroll {
+    overflow-x: auto;
+  }
+}
+
+/* ── Typography bits ─────────────────────────────────────────────────────── */
+.stat-value {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  line-height: 1.1;
+}
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.section-heading-spaced {
+  margin-top: 28px;
+}
+.section-heading h3 {
+  margin: 0;
+}
+.section-description {
+  font-size: 13px;
+  opacity: 0.75;
+  max-width: 70ch;
+  margin: 4px 0 0;
+}
+.page-intro {
+  font-size: 13px;
+  opacity: 0.75;
+  max-width: 70ch;
+  margin: -8px 0 16px;
+}
+.muted {
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.small {
+  font-size: 12px;
+}
+.mono-sub {
+  font-size: 11px;
+  opacity: 0.6;
+}
+.nowrap {
+  white-space: nowrap;
+}
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+.table-scroll {
+  overflow-x: auto;
+}
+.table td .cell-title {
+  font-weight: 500;
+}
+.table-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ── Forms ───────────────────────────────────────────────────────────────── */
+.field + .field {
+  margin-top: var(--space-3);
+}
+/* The required marker. Red is the convention people read without being
+   taught it, so it is worth the one place in this interface that spends a
+   colour on a single character.
+
+   It takes the same red the destructive buttons already use — that value was
+   a literal in two rules, and a second red beside the first would read as a
+   different meaning. */
+.field-required {
+  color: var(--color-danger);
+  margin-left: 3px;
+  font-weight: 600;
+  /* The asterisk sits high in most faces; nudged so it reads as part of the
+     label rather than as superscript. */
+  line-height: 1;
+}
+
+.field-hint {
+  font-size: 11px;
+  margin-top: 4px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.field-error {
+  font-size: 12px;
+  margin-top: 4px;
+  color: var(--color-accent-900);
+}
+select.input {
+  appearance: none;
+  padding-right: 26px;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 14px) 15px, calc(100% - 9px) 15px;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--color-divider);
+  border-radius: 2px;
+  outline: none;
+  width: 100%;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  cursor: pointer;
+}
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  border: none;
+  cursor: pointer;
+}
+input[type='range']:disabled::-webkit-slider-thumb {
+  background: var(--color-neutral-500);
+  cursor: not-allowed;
+}
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.checkbox input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--color-accent);
+}
+
+/* ── Auth screens ────────────────────────────────────────────────────────── */
+.auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+.auth-card {
+  width: min(460px, 100%);
+  border: 1px solid var(--color-divider);
+  padding: 32px 28px;
+  position: relative;
+}
+.auth-card-wide {
+  width: min(560px, 100%);
+}
+.auth-mark {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 11px;
+  height: 11px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.auth-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+.auth-brand {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 26px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  /* Centres the wordmark on the sign-in card; still styles the plain-text
+     headings the invitation screens put in this slot. */
+  display: flex;
+  justify-content: center;
+}
+.auth-tagline {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--color-text) 65%, transparent);
+  margin-top: 4px;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+  font-size: 12px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-divider);
+}
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.auth-error {
+  font-size: 12px;
+  color: #a4433a;
+}
+.auth-footer {
+  margin-top: 20px;
+  font-size: 13px;
+  text-align: center;
+}
+.auth-section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  margin-bottom: 8px;
+}
+.auth-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.auth-chip.selected {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border-color: var(--color-accent);
+}
+/* One-time code entry.
+   A single wide field rather than six separate boxes: pasting a code out of a
+   mail client has to work, screen readers have to be able to announce one
+   field instead of six, and a backspace at the start of box four has to do
+   something sensible. The spacing is what makes it read as a code. */
+.code-input {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 26px;
+  letter-spacing: 0.42em;
+  text-align: center;
+  padding: 12px 8px;
+  text-indent: 0.42em; /* offsets the trailing letter-space so it looks centred */
+}
+.code-sent {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+  text-align: center;
+  margin-bottom: 6px;
+}
+.code-sent strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+.code-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--color-accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.link-button:disabled {
+  color: color-mix(in srgb, var(--color-text) 40%, transparent);
+  cursor: default;
+  text-decoration: none;
+}
+
+/* ── Card surface and lift ──────────────────────────────────────────────────
+   The design system draws a card as a flat wireframe object: transparent, with
+   a hairline border. That reads as a blueprint and it also reads as nothing —
+   a grid of them is a grid of rectangles on one flat plane.
+
+   So every card gets a surface and a shadow here, in one rule, rather than
+   each screen remembering to add `elev-sm`. Several had forgotten.
+
+   The surface matters as much as the shadow: a shadow under a *transparent*
+   card shows the page through the card while casting an edge, which looks
+   like a rendering bug rather than depth. The card is mixed slightly lighter
+   than the page ground so it reads as raised — this palette's own
+   `--color-surface` is darker than the ground, which would read as inset. */
+.card {
+  background: color-mix(in srgb, var(--color-bg) 45%, white);
+  /* The border stays: it is the system's identity. Softened, because the
+     shadow now does the work of separating the card from the page and two
+     separators at full strength is heavy. */
+  border-color: color-mix(in srgb, var(--color-text) 11%, transparent);
+}
+/* The system's --shadow-sm is 0 1px 2px at 14% — correct for a design that
+   wants flatness, and invisible against this light ground at card size. Cards
+   get their own two-layer shadow instead: a tight contact shadow that grounds
+   the edge, and a wider soft one that gives the lift. One large blur alone
+   reads as fog; the pair reads as a card on a surface.
+
+   The `:not` keeps `elev-md` and `elev-lg` working — they are the same
+   specificity as `.card` and this file loads later, so without it they would
+   be silently flattened. */
+.card:not([class*='elev-']),
+.card.elev-sm {
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--color-neutral-900) 10%, transparent),
+    0 6px 16px -4px color-mix(in srgb, var(--color-neutral-900) 22%, transparent);
+}
+
+/* The empty-state panels are cards as far as a reader is concerned, so they
+   carry the same lift rather than being the only flat things on the screen.
+   The KPI tiles need no rule: StatTile already renders `card elev-sm`. */
+.panel-empty,
+.notice {
+  background: color-mix(in srgb, var(--color-bg) 45%, white);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--color-neutral-900) 10%, transparent),
+    0 6px 16px -4px color-mix(in srgb, var(--color-neutral-900) 22%, transparent);
+}
+
+/* The blueprint corner marks are drawn outside the border box, so a card in a
+   tight grid needs room for them not to be clipped by its neighbour. */
+.blueprint.card {
+  margin: 2px;
+}
+
+/* ── Card legibility ────────────────────────────────────────────────────────
+   The system tints `.card-meta` to 50% of the text colour, which on the light
+   ground is about 3:1 — under the 4.5:1 that small text needs, and this is
+   where an agent says the most important thing it has to say ("waiting on a
+   connector that can write pages"). Raised to a ratio that passes, and given
+   a size that suits a status line rather than a footnote. */
+.card-meta {
+  color: color-mix(in srgb, var(--color-text) 72%, transparent);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.agent-card .card-meta {
+  /* Long reasons wrap rather than being squeezed onto one line by the flex
+     row the system sets. */
+  flex-wrap: wrap;
+}
+.card-body {
+  opacity: 1;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+}
+
+/* ── Dialogs ─────────────────────────────────────────────────────────────────
+   The design system makes `.card` and `.dialog` transparent — a wireframe
+   object drawn on the page ground. That is right for a card, which *is* on the
+   page ground, and wrong for a dialog, which floats over content: the page
+   underneath shows straight through the panel and its own text, which is
+   unreadable. Everything here is expressed in the system's tokens; the system
+   file itself is untouched. */
+.dialog-backdrop {
+  /* Heavier than the system default, and blurred, so the grid of cards behind
+     stops competing with the form in front. */
+  background: color-mix(in srgb, var(--color-neutral-900) 66%, transparent);
+  backdrop-filter: blur(3px);
+  /* Centred. `place-items: center` from the system does the work; the padding
+     is what keeps the panel off the window edges. */
+  padding: clamp(16px, 5vh, 56px) 16px;
+}
+.dialog {
+  /* Opaque. This is the fix for the panel you could read the page through. */
+  background: var(--color-bg);
+  border: 1px solid color-mix(in srgb, var(--color-text) 30%, transparent);
+  box-shadow: var(--shadow-lg);
+  /* The panel itself never scrolls, so it never grows a scrollbar of its own
+     and never clips the registration marks the frame draws *outside* its box.
+     An earlier attempt put `overflow: auto` here and got both a vertical and
+     a horizontal bar for exactly that reason: the marks sit at -6px, which
+     counts as overflow. The body scrolls instead — see below. */
+  max-height: calc(100vh - 2 * clamp(16px, 5vh, 56px));
+  overflow: visible;
+  /* Room for those marks. */
+  margin: 7px;
+}
+.dialog-title {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 18px;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-divider);
+}
+.dialog-body {
+  /* The system dims dialog bodies to 0.85, which also dims every field label
+     in the form. Labels and hints set their own contrast below. */
+  opacity: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* This is what scrolls when a form is taller than the window — the title
+     and the actions stay put, so Save is always reachable. `overflow-x` is
+     pinned to hidden because a stray wide child must not produce a
+     horizontal bar across the form. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  /* Only shows a scrollbar when there is something to scroll, and keeps the
+     text off it when there is. */
+  scrollbar-width: thin;
+  padding-right: 2px;
+}
+.dialog-body::-webkit-scrollbar {
+  width: 6px;
+}
+.dialog-body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-text) 25%, transparent);
+}
+.dialog-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* The panel is a column: title and actions at fixed size, body taking the
+   rest. Without this the body cannot shrink and the max-height does nothing. */
+.dialog {
+  display: flex;
+  flex-direction: column;
+}
+.dialog-title,
+.dialog-actions {
+  flex: none;
+}
+/* Full width inside the panel, so a select does not sit at some intermediate
+   width that reads as misalignment. */
+.dialog-body .input,
+.dialog-body select,
+.dialog-body .field {
+  width: 100%;
+}
+.dialog-body label,
+.dialog-body .field > label {
+  color: var(--color-text);
+}
+.dialog-actions {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-divider);
+}
+/* What a platform requires, in the dialog, before the operator tries. Framed
+   as information rather than as an error, because at this point nothing has
+   gone wrong — they are being told what to have ready. */
+.requirements {
+  border-left: 2px solid var(--color-accent);
+  padding: 8px 0 8px 12px;
+  font-size: 12px;
+}
+.requirements-title {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+  margin-bottom: 4px;
+}
+.requirements ul {
+  margin: 0;
+  padding-left: 16px;
+}
+.requirements li + li {
+  margin-top: 4px;
+}
+
+/* A destructive action lives on the left of the dialog's action row, away
+   from the button people are reaching for, and is a ghost rather than a
+   filled button — findable, not inviting. */
+.btn.danger {
+  color: var(--color-danger);
+}
+.btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+}
+.dialog-actions-spacer {
+  flex: 1;
+}
+
+/* An opaque panel needs its controls to read as inset against it, not as
+   more panel. */
+.dialog .input,
+.dialog select {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* ── Onboarding ──────────────────────────────────────────────────────────
+   The old version was four text tabs above two dropdowns and three
+   checkboxes, in a 640px column. It read as a form to be got through. This
+   reads as a setup somebody is being walked through — which is the same
+   information, arranged so the next thing to do is always obvious. */
+.onboard {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.onboard-hero {
+  text-align: center;
+  padding: 4px 0 26px;
+}
+.onboard-hero .brand-logo {
+  margin: 0 auto 18px;
+}
+.onboard-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 27px;
+  letter-spacing: -0.01em;
+}
+.onboard-sub {
+  max-width: 56ch;
+  margin: 10px auto 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--color-text) 62%, transparent);
+}
+
+/* The rail. Numbered bullets joined by a line, so the sequence is visible
+   as a sequence — four underlined words were four words. */
+.onboard-rail {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  margin-bottom: 22px;
+}
+.onboard-stepper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  text-align: center;
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+/* The connecting line, drawn between bullets rather than under labels. */
+.onboard-stepper::before {
+  content: '';
+  position: absolute;
+  top: 19px;
+  left: 0;
+  right: 50%;
+  height: 2px;
+  background: var(--color-divider);
+}
+.onboard-stepper::after {
+  content: '';
+  position: absolute;
+  top: 19px;
+  left: 50%;
+  right: 0;
+  height: 2px;
+  background: var(--color-divider);
+}
+.onboard-stepper:first-child::before,
+.onboard-stepper:last-child::after {
+  display: none;
+}
+.onboard-stepper.is-done::before,
+.onboard-stepper.is-done::after,
+.onboard-stepper.is-current::before {
+  background: var(--color-accent-700);
+}
+
+.onboard-bullet {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--color-surface, white);
+  border: 2px solid var(--color-divider);
+  color: color-mix(in srgb, var(--color-text) 50%, transparent);
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+.onboard-stepper.is-done .onboard-bullet {
+  background: var(--color-accent-700);
+  border-color: var(--color-accent-700);
+  color: white;
+}
+.onboard-stepper.is-current .onboard-bullet {
+  border-color: var(--color-accent-700);
+  color: var(--color-accent-700);
+  /* A ring rather than a fill: the current step is where you are, not
+     something you have finished. */
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent-700) 15%, transparent);
+}
+.onboard-stepper-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.onboard-stepper-label {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.onboard-stepper.is-current {
+  color: var(--color-text);
+}
+.onboard-stepper.is-done {
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}
+/* The purpose line is what turns a tab strip into a map. */
+.onboard-stepper-purpose {
+  font-size: 11px;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+
+.onboard-panel {
+  padding: 26px 28px;
+  gap: 0;
+}
+.onboard-h {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 19px;
+}
+.onboard-lede {
+  max-width: 62ch;
+  margin: 8px 0 22px;
+  font-size: 13px;
+  line-height: 1.62;
+  color: color-mix(in srgb, var(--color-text) 62%, transparent);
+}
+.onboard-domain {
+  font-size: 15px;
+  padding: 11px 13px;
+}
+
+/* Pickable cards, for questions that used to be dropdowns. Nine CMS names
+   in a <select> is a question you have to open to answer; nine marks in a
+   grid is one you answer by recognising your own. */
+.onboard-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+.onboard-choices.is-wide {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+.onboard-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid color-mix(in srgb, var(--color-text) 12%, transparent);
+  background: var(--color-surface, white);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.12s ease;
+}
+.onboard-choice:hover:not(:disabled):not(.is-static) {
+  border-color: color-mix(in srgb, var(--color-accent-700) 45%, transparent);
+  transform: translateY(-1px);
+}
+.onboard-choice.is-picked {
+  border-color: var(--color-accent-700);
+  background: color-mix(in srgb, var(--color-accent-700) 6%, transparent);
+}
+.onboard-choice.is-static {
+  cursor: default;
+}
+.onboard-choice-name {
+  flex: 1;
+  min-width: 0;
+}
+.onboard-choice-blank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 8px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.onboard-choice-state {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 42%, transparent);
+}
+.onboard-choice-state.is-on {
+  color: var(--color-accent-700);
+}
+
+/* The guardrails. Full-width cards, because each one is a sentence about
+   what will happen to somebody's website and a radio label is not the place
+   for that. */
+.onboard-rails {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.onboard-rail-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid color-mix(in srgb, var(--color-text) 12%, transparent);
+  background: var(--color-surface, white);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.onboard-rail-card:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-accent-700) 45%, transparent);
+}
+.onboard-rail-card.is-picked {
+  border-color: var(--color-accent-700);
+  background: color-mix(in srgb, var(--color-accent-700) 6%, transparent);
+}
+.onboard-rail-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.onboard-radio {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--color-text) 28%, transparent);
+}
+.onboard-rail-card.is-picked .onboard-radio {
+  border-color: var(--color-accent-700);
+  /* The filled centre, drawn with a ring rather than a child element. */
+  box-shadow: inset 0 0 0 3px var(--color-accent-700);
+}
+.onboard-rail-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+.onboard-recommend {
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--color-accent-700) 13%, transparent);
+  color: var(--color-accent-700);
+}
+.onboard-rail-detail {
+  padding-left: 24px;
+  font-size: 12.5px;
+  line-height: 1.58;
+  color: color-mix(in srgb, var(--color-text) 62%, transparent);
+}
+
+/* Review. A table of what was chosen, not three lines of bolded prose. */
+.onboard-review {
+  display: grid;
+  grid-template-columns: minmax(130px, max-content) 1fr;
+  gap: 1px;
+  margin: 0;
+  border-radius: var(--radius-sm, 4px);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-text) 9%, transparent);
+}
+.onboard-review-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+.onboard-review-row > dt,
+.onboard-review-row > dd {
+  margin: 0;
+  padding: 10px 13px;
+  font-size: 13px;
+  background: var(--color-surface, white);
+}
+.onboard-review-row > dt {
+  color: color-mix(in srgb, var(--color-text) 58%, transparent);
+}
+
+.onboard-note {
+  margin: 18px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--color-text) 62%, transparent);
+}
+
+.onboard-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+}
+.onboard-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--color-text) 50%, transparent);
+}
+
+@media (max-width: 760px) {
+  /* The rail stacks rather than squeezing four labels into a phone width;
+     the connecting lines go with it, since they would point sideways. */
+  .onboard-rail {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 0;
+  }
+  .onboard-stepper::before,
+  .onboard-stepper::after {
+    display: none;
+  }
+  .onboard-panel {
+    padding: 20px 18px;
+  }
+}
+
+/* ── Agents ──────────────────────────────────────────────────────────────── */
+/* Every agent card is the same skeleton: identity, then state, then actions.
+   The slack goes between state and actions and nowhere else, so eleven cards
+   of very different content still line their controls up.
+
+   What it replaces: the design system gives `.card-body` `flex: 1`, so the
+   *description* absorbed all the spare height. A card with little to report
+   pushed its description open and sat its content at the bottom, while a
+   configured card with tags, a metric line and a summary had no slack and sat
+   at the top. Same grid, two completely different rhythms — which is what
+   read as unbalanced. */
+.agent-card {
+  gap: 10px;
+}
+.agent-card .card-body {
+  /* Natural height, directly under the title. */
+  flex: none;
+}
+.agent-state {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Takes the slack, so the action row below it is always at the bottom. */
+  flex: 1;
+}
+.agent-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  /* Sits on the floor of the card even when .agent-state has nothing to
+     stretch, e.g. in a single-row grid. */
+  margin-top: auto;
+  padding-top: 4px;
+}
+/* An empty panel on the dashboard. It says what is missing and links to the
+   screen that fixes it, so a workspace where nothing has been set up reads as
+   unfinished rather than broken. */
+.panel-empty {
+  border: 1px dashed var(--color-divider);
+  padding: 18px 16px;
+  font-size: 13px;
+}
+.panel-empty p {
+  margin: 0;
+}
+.panel-empty p + p {
+  margin-top: 6px;
+}
+
+/* ── The mark on a card ──────────────────────────────────────────────────
+   One tile for both screens. A vendor logo, a lettermark and a drawn glyph
+   are three different kinds of artwork; putting all three in the same tinted
+   square at the same size is what stops a grid of them looking like a
+   collage. The tint comes from the brand colour inline, so only the geometry
+   is here. */
+.connector-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 8px;
+  /* The logos are supplied at wildly different optical weights; a hairline
+     edge gives the sparse ones something to sit against. */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 16%, transparent);
+}
+/* An agent's icon has no brand behind it, so it takes the interface's own
+   ink rather than a vendor colour. */
+.agent-icon {
+  background: color-mix(in srgb, var(--color-text) 7%, transparent);
+  color: color-mix(in srgb, var(--color-text) 74%, transparent);
+}
+.connector-icon-letters {
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+/* Identity: mark on the left, kicker and title stacked beside it. Aligned to
+   the text block rather than centred, so a two-line title does not drag the
+   icon down the card. */
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.card-head-text {
+  min-width: 0;
+  flex: 1;
+}
+
+/* The connector cards are denser — twenty-five of them, three or four to a
+   row — but the skeleton is the same one, so the two screens read as the same
+   product. */
+.connector-card {
+  gap: 8px;
+}
+.connector-card .card-body {
+  flex: none;
+  font-size: 12px;
+}
+
+/* The autonomy switch is inside a card, not a page header: same control,
+   quieter. */
+.agent-state .seg {
+  border-radius: 0;
+}
+.agent-state .seg-opt {
+  padding: 3px 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.agent-error {
+  font-size: 11px;
+  color: #a4433a;
+}
+
+/* ── Creatives ───────────────────────────────────────────────────────────── */
+.creative-tile {
+  border-style: dashed;
+  padding: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+}
+.creative-platform {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 13px;
+  color: var(--color-text);
+  text-transform: uppercase;
+}
+.creative-headline {
+  margin-top: 6px;
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+/* ── Budget ──────────────────────────────────────────────────────────────── */
+.budget-row + .budget-row {
+  margin-top: 14px;
+}
+.budget-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 4px;
+  gap: 8px;
+}
+.budget-bar {
+  height: 6px;
+  background: var(--color-accent-200);
+  margin-top: 2px;
+}
+.budget-meta {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 50%, transparent);
+  margin-top: 3px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ── Meter ───────────────────────────────────────────────────────────────── */
+.meter {
+  height: 8px;
+  background: var(--color-divider);
+  margin-top: 6px;
+}
+.meter-fill {
+  height: 8px;
+}
+.meter-accent {
+  background: var(--color-accent);
+}
+.meter-neutral {
+  background: var(--color-neutral-500);
+}
+
+/* ── Audit log ───────────────────────────────────────────────────────────── */
+.audit-list {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--color-divider);
+}
+.audit-entry {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-divider);
+  font-size: 12px;
+}
+.audit-entry:last-child {
+  border-bottom: 0;
+}
+.audit-time {
+  opacity: 0.6;
+}
+.audit-actor-agent {
+  color: var(--color-accent-700);
+}
+
+/* ── Approvals ───────────────────────────────────────────────────────────── */
+.approval-row {
+  border: 1px solid var(--color-divider);
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.approval-body {
+  flex: 1;
+  min-width: 0;
+}
+.approval-title {
+  font-size: 14px;
+  margin-top: 6px;
+}
+
+/* ── States ──────────────────────────────────────────────────────────────── */
+.loading {
+  padding: 32px 0;
+  font-size: 14px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.empty-state {
+  align-items: flex-start;
+  padding: 24px;
+}
+
+/* ── Toasts ──────────────────────────────────────────────────────────────── */
+.toast-viewport {
+  position: fixed;
+  /* Below the header, not over it. At `top: 16px` a toast covered the bell,
+     the account link and Sign out — the controls someone reaches for right
+     after the action that produced the toast. */
+  top: 68px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 999;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+}
+.toast {
+  border: 1px solid var(--color-divider);
+  background: var(--color-bg);
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.toast-message {
+  font-size: 13px;
+}
+.toast-dismiss {
+  padding: 2px 6px;
+  flex: none;
+}
+.toast-success {
+  border-left: 3px solid var(--color-accent);
+}
+.toast-warning {
+  border-left: 3px solid var(--color-accent-700);
+}
+.toast-error {
+  border-left: 3px solid #a4433a;
+}
+
+/* ── Technical SEO findings ─────────────────────────────────────────────────
+   The recommendation is the part with value, so it is the part that reads
+   like prose rather than like a log line. */
+.issue-card {
+  gap: 6px;
+}
+.issue-url {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-text) 75%, transparent);
+  overflow-wrap: anywhere;
+}
+.issue-summary {
+  font-size: 14px;
+}
+.issue-fix {
+  font-size: 13px;
+  line-height: 1.45;
+  border-left: 2px solid var(--color-accent);
+  padding-left: 10px;
+  color: color-mix(in srgb, var(--color-text) 85%, transparent);
+}
+/* A statement of fact about the data, not a warning about a failure — so it
+   reads as information rather than as something being wrong. */
+.notice {
+  border: 1px dashed var(--color-divider);
+  border-left: 2px solid var(--color-accent-700);
+  padding: 10px 12px;
+  font-size: 13px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+
+/* ── Notification panel ─────────────────────────────────────────────────── */
+.bell-wrap {
+  position: relative;
+  display: flex;
+}
+.bell-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(360px, calc(100vw - 32px));
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  border: 1px solid color-mix(in srgb, var(--color-text) 30%, transparent);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+}
+.bell-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-divider);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--color-text) 65%, transparent);
+  flex: none;
+}
+.bell-panel-head a {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.bell-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  min-height: 0;
+}
+.bell-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.bell-item:last-child {
+  border-bottom: 0;
+}
+.bell-item-action {
+  font-size: 13px;
+  line-height: 1.35;
+}
+.bell-item-meta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+}
+.bell-empty {
+  padding: 16px 12px;
+  font-size: 13px;
+  color: color-mix(in srgb, var(--color-text) 65%, transparent);
+}
+
+/* ── Charts ──────────────────────────────────────────────────────────────── */
+/* ── Reports ─────────────────────────────────────────────────────────────
+   The page was six tiles in one row, a bare <h3> and a bare polyline: no
+   scale, no gridlines, and on an empty workspace a flat line along the
+   bottom that read as a measured zero rather than as no measurement. */
+.reports-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.reports-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 20px;
+}
+.reports-period {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: color-mix(in srgb, var(--color-text) 58%, transparent);
+}
+
+.trend-card {
+  padding: 16px 18px 14px;
+  gap: 0;
+}
+.trend {
+  width: 100%;
+  height: 180px;
+  display: block;
+  /* preserveAspectRatio="none" stretches the stroke, so the line width is
+     set in user units and left un-scaled by the browser. */
+  vector-effect: non-scaling-stroke;
+}
+.trend-grid {
+  stroke: color-mix(in srgb, var(--color-text) 9%, transparent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.trend-line {
+  fill: none;
+  stroke: var(--color-accent-700);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+/* The fill is what turns a line into a quantity. Kept faint: it is context
+   for the line, not a second series. */
+.trend-area {
+  fill: color-mix(in srgb, var(--color-accent-700) 12%, transparent);
+  stroke: none;
+}
+.trend-scale {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--color-text) 9%, transparent);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Utility ─────────────────────────────────────────────────────────────── */
+.w-280 {
+  width: 280px;
+  max-width: 100%;
+}
+.w-auto {
+  width: auto;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Sectioned catalogues ────────────────────────────────────────────────
+   Both card screens were one flat grid, which put a connected card — status,
+   timestamp, two buttons — in the same row as three untouched ones with a
+   single button, and stretched all four to the tallest. Grouping fixes the
+   ragged height as a side effect of fixing the ordering, because the cards
+   inside a section have the same amount to say. */
+.card-section {
+  /* --space-5 does not exist. The Industry scale is 1, 2, 3, 4, 6, 8, so the
+     original `var(--space-5)` here was invalid, the whole declaration was
+     dropped, and every section had zero bottom margin — which is why the
+     next section's heading landed on top of the cards above it. */
+  margin-bottom: var(--space-8);
+}
+/* Blueprint cards draw registration marks 6px *outside* their own box, so a
+   following heading needs clearance the card's own margin does not provide.
+   Applied between sections only, so the first one still sits at the top of
+   the page. */
+.card-section + .card-section {
+  margin-top: var(--space-8);
+}
+.card-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
+}
+.card-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}
+/* The count belongs in the heading: "Connected 2" is the thing somebody came
+   to find out, and it saves them counting a grid. */
+.card-section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  background: color-mix(in srgb, var(--color-text) 10%, transparent);
+  color: color-mix(in srgb, var(--color-text) 75%, transparent);
+}
+.card-section-note {
+  margin: 0;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+/* The one section nobody should scroll past. */
+.card-section.is-attention .card-section-head {
+  border-bottom-color: color-mix(in srgb, var(--color-danger) 45%, transparent);
+}
+.card-section.is-attention .card-section-title {
+  color: var(--color-danger);
+}
+.card-section.is-attention .card-section-count {
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+  color: var(--color-danger);
+}
+
+/* ── A pass in flight ────────────────────────────────────────────────────
+   Runs are started and not awaited, so "running" on its own could mean
+   working or wedged for a minute or two. */
+.agent-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-progress-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--color-text);
+}
+.agent-progress-pct {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+}
+/* A pulse, because a step that takes ninety seconds needs to look alive
+   even while the number behind it does not move. */
+.agent-progress-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-accent-700);
+  animation: agent-pulse 1.4s ease-in-out infinite;
+}
+@keyframes agent-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-progress-dot {
+    animation: none;
+    opacity: 0.9;
+  }
+}
+.agent-progress-track {
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-text) 12%, transparent);
+}
+.agent-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-accent-700);
+  transition: width 0.4s ease;
+}
+
+/* What the last pass achieved, so a card reports an outcome and not only a
+   status. A skip is not a failure and is not a success either, so it reads
+   in the muted voice rather than the red one. */
+.agent-last-run {
+  font-size: 11px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--color-text) 62%, transparent);
+}
+.agent-last-run.is-skipped {
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+}
+
+/* The quieter nav badge: a count of things that are fine, next to the
+   Approvals badge which is a count of things waiting on a person. */
+.nav-badge.is-quiet {
+  background: color-mix(in srgb, var(--color-text) 12%, transparent);
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}
+
+/* ── An approval, in words ───────────────────────────────────────────────
+   This panel was a <pre> of JSON.stringify: braces, quoted snake_case keys
+   and database ids around the one thing the reviewer actually needed to
+   read. The person approving is deciding whether copy goes on their own
+   website. */
+.payload {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 6px;
+}
+.payload-empty {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.payload-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  margin-bottom: 5px;
+}
+/* The substance of the decision, so it reads like a document and not like a
+   field value: measured line length, real line height, its own paper. */
+.payload-text {
+  white-space: pre-wrap;
+  font-size: 13.5px;
+  line-height: 1.62;
+  max-width: 68ch;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm, 4px);
+  background: color-mix(in srgb, var(--color-bg) 55%, white);
+  border: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
+}
+
+/* The figures. Two columns so the labels line up and the eye can run down
+   the values. */
+.payload-facts {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) 1fr;
+  gap: 1px;
+  margin: 0;
+  border-radius: var(--radius-sm, 4px);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-text) 9%, transparent);
+}
+.payload-fact {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+.payload-fact > dt,
+.payload-fact > dd {
+  margin: 0;
+  padding: 7px 11px;
+  font-size: 12px;
+  background: var(--color-surface, white);
+}
+.payload-fact > dt {
+  color: color-mix(in srgb, var(--color-text) 58%, transparent);
+}
+.payload-fact > dd {
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.payload-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.payload-chip {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--color-accent-700) 11%, transparent);
+  color: color-mix(in srgb, var(--color-text) 82%, transparent);
+}
+.payload-nested {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.payload-nested-row {
+  display: flex;
+  gap: 8px;
+}
+.payload-nested-key {
+  min-width: 96px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+/* ── The credential assurance ────────────────────────────────────────────
+   Red, and said where the secrets are actually typed rather than in a help
+   page nobody opens. Somebody pasting a token that can publish to their
+   website and spend their budget is entitled to know what becomes of it at
+   the moment they are deciding whether to paste it.
+
+   Red for the whole paragraph, as asked — kept legible by giving it a tinted
+   ground and a rule instead of shouting it in bold caps. */
+.credential-notice {
+  margin: 0 0 18px;
+  padding: 10px 12px 10px 13px;
+  border-left: 3px solid var(--color-danger);
+  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+  background: color-mix(in srgb, var(--color-danger) 7%, transparent);
+  color: color-mix(in srgb, var(--color-danger) 88%, var(--color-text));
+  font-size: 12px;
+  line-height: 1.6;
+  max-width: 72ch;
+}
+
+/* The note under a dashboard panel that has cards *and* something to say —
+   "two agents are configured and stopped, start them here". The panel used
+   to be able to show cards or a message, never both, so a workspace with
+   paused agents got the message and lost the cards. */
+.panel-note {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+}
+
+/* ── Agent output on a page ──────────────────────────────────────────────
+   The AEO injector and the knowledge-graph agent wrote their work to the
+   database and no screen read it, so both looked inert while holding two
+   dozen finished Q&A pairs. */
+.qa-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qa-item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
+  background: color-mix(in srgb, var(--color-bg) 55%, white);
+}
+.qa-question {
+  font-size: 13px;
+  font-weight: 500;
+}
+.qa-answer {
+  margin: 5px 0 6px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+}
+.qa-state {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+.qa-state.is-live {
+  color: var(--color-accent-700);
+}
+.schema-patch {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
+}
+.schema-patch-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+/* JSON-LD is the one place a code block is the right presentation: it is
+   literally the markup that will be published. */
+.schema-json {
+  margin: 0;
+  max-height: 200px;
+  overflow: auto;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}

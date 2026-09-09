@@ -1,0 +1,140 @@
+# Local stack: PostgreSQL (with TLS), Redis, the API, and the console.
+#
+#   cp .env.compose.example .env
+#   # fill in the three secrets it asks for, then:
+#   docker compose up --build
+#
+# Every secret is required rather than defaulted — `${VAR:?...}` makes compose
+# refuse to start without it. Baked-in keys in a compose file have a way of
+# reaching production, so there are none here.
+#
+# This stack runs the application in development mode. For production, deploy
+# the API image behind a TLS terminator with APP_ENV=production and secrets
+# from your secret manager; see backend/README.md.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: automarket-postgres
+    environment:
+      POSTGRES_DB: automarket
+      POSTGRES_USER: automarket
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Scram rather than md5, enforced from initdb onwards.
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    ports:
+      # Not 5432, so it cannot collide with a PostgreSQL already on the host.
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    command:
+      - postgres
+      # TLS in development too, so the "encrypted in transit" path is the one
+      # actually exercised rather than a production-only branch.
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
+      - -c
+      - ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U automarket -d automarket"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: automarket-redis
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+    container_name: automarket-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: development
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:?set MASTER_ENCRYPTION_KEY in .env}
+      BLIND_INDEX_KEY: ${BLIND_INDEX_KEY:?set BLIND_INDEX_KEY in .env}
+      DATABASE_URL: postgresql+psycopg://automarket:${POSTGRES_PASSWORD}@postgres:5432/automarket?sslmode=require
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      PUBLIC_BASE_URL: http://localhost:5173
+      # Sign-in is a one-time code sent by email. There is no mail server in
+      # this stack, so with SMTP_HOST unset the codes are printed to this
+      # container's log instead — `docker compose logs -f api` is your inbox.
+      # Point these at a real relay in .env to have them delivered properly.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-no-reply@automarket.local}
+      SCHEDULER_ENABLED: "true"
+      # Shortens every agent interval so a run is observable in minutes.
+      SCHEDULER_SPEED: "20"
+      CELERY_ENABLED: "false"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      # Without a key the agents skip their content-generating work rather
+      # than inventing any. Set it in .env to see them write.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "
+        alembic upgrade head &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
+      "
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+    container_name: automarket-worker
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      APP_ENV: development
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:?set MASTER_ENCRYPTION_KEY in .env}
+      BLIND_INDEX_KEY: ${BLIND_INDEX_KEY:?set BLIND_INDEX_KEY in .env}
+      DATABASE_URL: postgresql+psycopg://automarket:${POSTGRES_PASSWORD}@postgres:5432/automarket?sslmode=require
+      CELERY_ENABLED: "true"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    # Only useful with CELERY_ENABLED=true on the API as well, which is what
+    # makes it dispatch instead of running agents in-process.
+    command: celery -A app.orchestration.tasks.celery_app worker -B --loglevel=info
+    profiles: ["celery"]
+    restart: unless-stopped
+
+  console:
+    build:
+      context: ./frontend
+    container_name: automarket-console
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      VITE_PROXY_TARGET: http://api:8000
+    ports:
+      - "5173:5173"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
