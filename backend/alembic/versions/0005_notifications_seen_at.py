@@ -28,6 +28,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    cols = {c["name"] for c in insp.get_columns("users")}
+    if "notifications_seen_at" in cols:
+        return
+
     op.add_column(
         "users",
         sa.Column("notifications_seen_at", sa.DateTime(timezone=True), nullable=True),

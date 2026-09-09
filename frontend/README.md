@@ -40,6 +40,9 @@ The dev server proxies `/api` and `/health` to `http://127.0.0.1:8000`, so the
 browser stays on one origin and CORS behaves as it will in production. Override
 with `VITE_PROXY_TARGET`, or point at a deployed API with `VITE_API_BASE_URL`.
 
+For the free Render static deploy, set `VITE_API_BASE_URL` to your API's
+`/api/v1` URL at build time (see [`../RENDER_DEPLOY.md`](../RENDER_DEPLOY.md)).
+
 ```bash
 npm run typecheck   # tsc --noEmit
 npm run build       # typecheck, then bundle to dist/

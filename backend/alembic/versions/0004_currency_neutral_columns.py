@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0004_currency_neutral"
@@ -37,7 +38,12 @@ _RENAMES: tuple[tuple[str, str, str], ...] = (
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
     for table, old, new in _RENAMES:
+        cols = {c["name"] for c in insp.get_columns(table)}
+        if old not in cols:
+            continue
         op.alter_column(table, old, new_column_name=new)
 
 

@@ -23,6 +23,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    cols = {c["name"] for c in insp.get_columns("agent_runs")}
+    if "step" in cols:
+        return
+
     op.add_column(
         "agent_runs",
         sa.Column("step", sa.String(length=120), nullable=False, server_default=""),

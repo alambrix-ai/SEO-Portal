@@ -126,6 +126,7 @@ services:
   console:
     build:
       context: ./frontend
+      target: development
     container_name: automarket-console
     depends_on:
       api:

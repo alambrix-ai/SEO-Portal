@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0007_cost_currency_neutral"
@@ -26,6 +27,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    cols = {c["name"] for c in insp.get_columns("agent_runs")}
+    if "cost_usd" not in cols:
+        return
+
     op.alter_column("agent_runs", "cost_usd", new_column_name="cost")
 
 

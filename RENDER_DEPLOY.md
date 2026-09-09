@@ -1,100 +1,137 @@
-# Deploying on Render
+# Free deploy on Render + Neon
 
-This repository can be deployed on Render, but not as a single `docker-compose`
-application. Render deploys each part separately, so the local compose stack is
-mapped like this:
+This is the free path for AutoMarket AI:
 
-- `frontend/` -> Docker web service
-- `backend/` -> Docker web service
-- PostgreSQL -> Render managed Postgres
-- Redis/Celery -> Render Key Value + Render worker
+| Piece | Where | Plan |
+|---|---|---|
+| Backend API | Render Docker web service | Free |
+| Frontend console | Render static site | Free |
+| PostgreSQL | [Neon](https://neon.tech) | Free |
+| Redis / Celery | Not used | — |
 
-The included `render.yaml` now describes that setup.
+Agents run with the **in-process scheduler** (`SCHEDULER_ENABLED=true`,
+`CELERY_ENABLED=false`). No Redis or worker service is required.
 
-## What changed
+Local `docker compose` is unchanged for development. Render does **not** run
+`docker-compose.yml` as one unit.
 
-- `frontend/Dockerfile` now builds a production image instead of running the
-  Vite dev server.
-- `frontend/nginx.conf` serves the built SPA and rewrites all routes to
-  `index.html`.
-- `frontend/docker-entrypoint.sh` generates `/config.js` at container startup
-  so `VITE_API_BASE_URL` can come from Render environment variables.
-- `frontend/src/api/client.ts` reads that runtime config first and falls back
-  to the Vite build-time env or `/api/v1`.
-- `backend/Dockerfile` now listens on Render's `PORT` environment variable.
-- `render.yaml` now provisions:
-  - a managed Postgres database
-  - a managed Redis-compatible Key Value instance
-  - the API web service
-  - a Celery worker service
-  - the frontend web service
+## Local `.env` (Neon)
 
-## Render deployment steps
+In `backend/.env`, set one line — it overrides the `POSTGRES_*` fields:
 
-1. Push the repo to GitHub.
-2. In Render, click **New -> Blueprint**.
-3. Select the GitHub repo and deploy from the root `render.yaml`.
-4. Wait for Render to create:
-   - `automarket-db`
-   - `automarket-cache`
-   - `automarket-api`
-   - `automarket-worker`
-   - `automarket-console`
-
-## Required environment values
-
-Render can generate `SECRET_KEY`, but you must provide the following yourself.
-
-Set the same values on both `automarket-api` and `automarket-worker`:
-
-- `MASTER_ENCRYPTION_KEY`
-- `BLIND_INDEX_KEY`
-- `LLM_MODEL`
-- `ANTHROPIC_API_KEY`
-- `SMTP_HOST`
-- `SMTP_USER`
-- `SMTP_PASSWORD`
-- `EMAIL_FROM`
-
-Use these commands locally to generate the two encryption keys:
-
-```bash
-python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
-python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
+```env
+DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
+POSTGRES_SSLMODE=require
 ```
 
-Use the first output for `MASTER_ENCRYPTION_KEY` and the second for
-`BLIND_INDEX_KEY`. They must be different.
+Paste your Neon connection string as `DATABASE_URL`. Do not prefix it twice
+(`DATABASE_URL=DATABASE_URL=...` is invalid). The backend rewrites
+`postgresql://` to `postgresql+psycopg://` automatically.
 
-## Important post-deploy fix
+Then from `backend/`:
 
-The blueprint uses placeholder public URLs:
+```bash
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt   # Windows
+alembic upgrade head
+python manage.py check
+uvicorn app.main:app --reload --port 8000
+```
 
-- `https://automarket-api.onrender.com`
-- `https://automarket-console.onrender.com`
+## 1. Create Neon Postgres
 
-If Render assigns different subdomains, update these values:
+1. Sign up at https://neon.tech and create a free project.
+2. Copy the connection string. Prefer the one that includes `sslmode=require`.
+3. Keep it for `DATABASE_URL` on the API. A normal Neon URL such as
+   `postgresql://...` is fine — the backend rewrites it to the `psycopg` driver.
 
-- On `automarket-api` and `automarket-worker`:
-  - `PUBLIC_BASE_URL`
-  - `TRUSTED_HOSTS`
-  - `CORS_ORIGINS`
-- On `automarket-console`:
-  - `VITE_API_BASE_URL`
+## 2. Generate secrets
 
-Then redeploy the changed services.
+Run locally:
 
-## Why Postgres and Redis are not deployed as your own Docker containers
+```bash
+python -c "import secrets;print('SECRET_KEY='+secrets.token_urlsafe(48))"
+python -c "import os,base64;print('MASTER_ENCRYPTION_KEY='+base64.b64encode(os.urandom(32)).decode())"
+python -c "import os,base64;print('BLIND_INDEX_KEY='+base64.b64encode(os.urandom(32)).decode())"
+```
 
-Render is a good fit for stateless containers, but database and queue
-infrastructure should usually use Render-managed services there:
+`MASTER_ENCRYPTION_KEY` and `BLIND_INDEX_KEY` must be different values.
 
-- managed Postgres gives you persistent storage, backups, and internal network
-  wiring
-- managed Key Value is the correct Redis-compatible service for Celery
-- trying to run a database container the same way as app containers is more
-  fragile on Render than using its native data services
+You also need:
 
-If you strictly need self-hosted Docker containers for Postgres or Redis,
-Render is not the ideal target for that architecture. A VM-based host such as
-Railway, Hetzner, DigitalOcean, or AWS ECS/EC2 is usually a better fit.
+- `LLM_MODEL` (for example `claude-sonnet-4-5`)
+- `ANTHROPIC_API_KEY`
+- SMTP relay values: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`
+
+Production refuses to start without SMTP, encryption keys, and an LLM key.
+
+## 3. Deploy with the Blueprint
+
+1. Push this repo to GitHub.
+2. In Render: **New → Blueprint**.
+3. Select the repo (root `render.yaml`).
+4. When prompted, paste:
+   - `DATABASE_URL` (Neon)
+   - `MASTER_ENCRYPTION_KEY`
+   - `BLIND_INDEX_KEY`
+   - `LLM_MODEL`
+   - `ANTHROPIC_API_KEY`
+   - `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`
+5. Deploy. Render creates:
+   - `automarket-api` (Docker, free)
+   - `automarket-console` (static, free)
+
+## 4. Fix URLs after first deploy
+
+If Render assigns different subdomains than the placeholders:
+
+On **automarket-api**:
+
+- `PUBLIC_BASE_URL` = `https://<actual-console>.onrender.com`
+- `TRUSTED_HOSTS` = `<actual-api>.onrender.com`
+- `CORS_ORIGINS` = `https://<actual-console>.onrender.com`
+
+On **automarket-console**:
+
+- `VITE_API_BASE_URL` = `https://<actual-api>.onrender.com/api/v1`
+
+Then **redeploy the console** (static env vars are baked at build time).
+
+## 5. Manual create (if you skip Blueprint)
+
+### Backend — New Web Service
+
+- Runtime: Docker
+- Branch: `main`
+- Root directory: leave empty
+- Dockerfile path: `./backend/Dockerfile`
+- Docker context: `./backend`
+- Plan: Free
+- Start / docker command:
+
+```bash
+sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers"
+```
+
+Set the env vars listed in `render.yaml` under `automarket-api`.
+
+### Frontend — New Static Site
+
+- Build command: `cd frontend && npm ci && npm run build`
+- Publish directory: `frontend/dist`
+- Env: `VITE_API_BASE_URL=https://<your-api>.onrender.com/api/v1`
+- Rewrite: `/*` → `/index.html`
+
+## Free-tier limits
+
+- The free API sleeps after ~15 minutes with no traffic.
+- Cold starts are slow.
+- Scheduled agents only run while the API is awake.
+- Neon free storage and compute are capped; fine for demos, not heavy production.
+
+## What this path deliberately skips
+
+- Render Postgres (paid / limited free history)
+- Render Key Value / Redis
+- Celery worker
+- Dockerized frontend on Render (static site is free and enough)

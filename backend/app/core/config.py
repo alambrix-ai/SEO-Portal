@@ -271,6 +271,12 @@ class Settings(BaseSettings):
     def _require_postgres(cls, v: str) -> str:
         if not v:
             return v
+        # Neon and many hosts hand out postgresql:// or postgres://. SQLAlchemy
+        # needs an explicit psycopg3 driver for this codebase.
+        if v.startswith("postgres://"):
+            v = "postgresql+psycopg://" + v[len("postgres://") :]
+        elif v.startswith("postgresql://"):
+            v = "postgresql+psycopg://" + v[len("postgresql://") :]
         scheme = urlsplit(v).scheme
         if not scheme.startswith("postgresql"):
             raise ValueError(

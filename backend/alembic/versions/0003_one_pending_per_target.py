@@ -39,6 +39,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    cols = {c["name"] for c in insp.get_columns("approval_items")}
+    if "payload_digest" in cols:
+        return
+
     op.add_column(
         "approval_items",
         sa.Column("payload_digest", sa.String(length=32), nullable=False, server_default=""),

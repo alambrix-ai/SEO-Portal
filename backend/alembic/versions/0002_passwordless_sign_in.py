@@ -51,6 +51,14 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    tables = set(insp.get_table_names())
+
+    if "login_codes" in tables:
+        # Fresh install: 0001 create_all already created the current schema.
+        return
+
     op.create_table(
         "login_codes",
         sa.Column("id", postgresql.UUID(as_uuid=False), primary_key=True),

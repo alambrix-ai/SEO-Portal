@@ -1,20 +1,38 @@
-# Render Blueprint — https://render.com/docs/blueprint-spec
+# Free-tier Render Blueprint — https://render.com/docs/blueprint-spec
 #
-# Render does not run a docker-compose stack as one deployable unit. Instead,
-# this blueprint maps each compose concern to a Render resource:
-#   - frontend container -> public web service
-#   - backend container  -> public web service
-#   - PostgreSQL         -> Render managed Postgres
-#   - Redis/Celery       -> Render Key Value + background worker
+# Target stack (all free):
+#   - automarket-api:     Docker web service on Render free plan
+#   - automarket-console: Static site on Render (always free)
+#   - Postgres:           Neon free (create outside Render, paste DATABASE_URL)
+#
+# Not used on this free path:
+#   - Redis / Key Value
+#   - Celery worker
+#   - Render-managed Postgres
 #
 # Deploy:
-#   1. Push this repo to GitHub.
-#   2. In Render, choose New -> Blueprint and point it at the repo.
-#   3. After the first sync, open the created services and update the
-#      placeholder public URLs below if Render assigned suffixes.
+#   1. Create a free Neon project and copy the connection string.
+#   2. Push this repo to GitHub.
+#   3. In Render: New -> Blueprint, select the repo.
+#   4. Paste secrets when prompted (Neon URL, encryption keys, SMTP, LLM).
+#   5. After deploy, fix PUBLIC_BASE_URL / CORS / VITE_API_BASE_URL if Render
+#      assigned different subdomains than the placeholders below.
+#
+# Free-tier notes:
+#   - The API sleeps after ~15 minutes idle; the first request wakes it slowly.
+#   - SCHEDULER_ENABLED only runs while the instance is awake.
 
-envVarGroups:
-  - name: automarket-shared
+services:
+  - type: web
+    name: automarket-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: >-
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers"
+    healthCheckPath: /health
     envVars:
       - key: APP_ENV
         value: production
@@ -26,133 +44,58 @@ envVarGroups:
         value: "true"
       - key: RATE_LIMIT_ENABLED
         value: "true"
+      # Paste your Neon connection string in the Render dashboard.
+      - key: DATABASE_URL
+        sync: false
+      # Console URL — update after first deploy if the subdomain differs.
       - key: PUBLIC_BASE_URL
         value: https://automarket-console.onrender.com
       - key: TRUSTED_HOSTS
-        value: automarket-api.onrender.com,automarket-console.onrender.com
+        value: automarket-api.onrender.com
       - key: CORS_ORIGINS
         value: https://automarket-console.onrender.com
       - key: SECRET_KEY
         generateValue: true
+      - key: MASTER_ENCRYPTION_KEY
+        sync: false
+      - key: BLIND_INDEX_KEY
+        sync: false
+      # In-process scheduler; no Redis/Celery on the free path.
+      - key: SCHEDULER_ENABLED
+        value: "true"
+      - key: SCHEDULER_SPEED
+        value: "1.0"
+      - key: CELERY_ENABLED
+        value: "false"
       - key: LLM_PROVIDER
         value: anthropic
+      - key: LLM_MODEL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
       - key: SMTP_PORT
         value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
       - key: EMAIL_FROM_NAME
         value: AutoMarket AI
 
-databases:
-  - name: automarket-db
-    plan: starter
-    postgresMajorVersion: "17"
-    region: oregon
-
-services:
-  - type: keyvalue
-    name: automarket-cache
-    plan: starter
-    region: oregon
-    ipAllowList: []
-    maxmemoryPolicy: noeviction
-
-  - type: web
-    name: automarket-api
-    runtime: docker
-    plan: starter
-    region: oregon
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    dockerCommand: >-
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers"
-    envVars:
-      - fromGroup: automarket-shared
-      - key: DATABASE_URL
-        fromDatabase:
-          name: automarket-db
-          property: connectionString
-      - key: MASTER_ENCRYPTION_KEY
-        sync: false
-      - key: BLIND_INDEX_KEY
-        sync: false
-      - key: LLM_MODEL
-        sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      - key: EMAIL_FROM
-        sync: false
-      - key: SCHEDULER_ENABLED
-        value: "false"
-      - key: CELERY_ENABLED
-        value: "true"
-      - key: CELERY_BROKER_URL
-        fromService:
-          name: automarket-cache
-          type: keyvalue
-          property: connectionString
-      - key: CELERY_RESULT_BACKEND
-        fromService:
-          name: automarket-cache
-          type: keyvalue
-          property: connectionString
-
-  - type: worker
-    name: automarket-worker
-    runtime: docker
-    plan: starter
-    region: oregon
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    dockerCommand: celery -A app.orchestration.tasks.celery_app worker -B --loglevel=info
-    envVars:
-      - fromGroup: automarket-shared
-      - key: DATABASE_URL
-        fromDatabase:
-          name: automarket-db
-          property: connectionString
-      - key: MASTER_ENCRYPTION_KEY
-        sync: false
-      - key: BLIND_INDEX_KEY
-        sync: false
-      - key: LLM_MODEL
-        sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      - key: EMAIL_FROM
-        sync: false
-      - key: SCHEDULER_ENABLED
-        value: "false"
-      - key: CELERY_ENABLED
-        value: "true"
-      - key: CELERY_BROKER_URL
-        fromService:
-          name: automarket-cache
-          type: keyvalue
-          property: connectionString
-      - key: CELERY_RESULT_BACKEND
-        fromService:
-          name: automarket-cache
-          type: keyvalue
-          property: connectionString
-
   - type: web
     name: automarket-console
-    runtime: docker
-    plan: starter
-    region: oregon
-    dockerfilePath: ./frontend/Dockerfile
-    dockerContext: ./frontend
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/dist
     envVars:
+      # Baked in at build time — update and rebuild if the API subdomain differs.
       - key: VITE_API_BASE_URL
         value: https://automarket-api.onrender.com/api/v1
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

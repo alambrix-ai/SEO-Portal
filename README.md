@@ -80,10 +80,9 @@ emailed to it. The compose stack has no mail server, so that code is printed
 to the API log — `docker compose logs -f api` is your inbox until you point
 `SMTP_HOST` at a real relay.
 
-For Render deployment, see [`RENDER_DEPLOY.md`](RENDER_DEPLOY.md). Render does
-not run this repository as one `docker-compose` stack; the included blueprint
-maps the frontend and backend to Docker services and uses managed Postgres and
-Key Value for the stateful pieces.
+For a free cloud deploy, see [`RENDER_DEPLOY.md`](RENDER_DEPLOY.md): Render
+Docker API + Render static console + Neon Postgres (no Redis/Celery). Local
+`docker compose` stays the full stack for development.
 
 The workspace starts empty, as a real one does: connect a CMS or an ad account
 on the Connectors screen, and the agents begin working on the next tick.

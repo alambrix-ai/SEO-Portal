@@ -31,6 +31,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    if "seo_issues" in insp.get_table_names():
+        return
+
     op.create_table(
         "seo_issues",
         sa.Column("id", postgresql.UUID(as_uuid=False), primary_key=True),
