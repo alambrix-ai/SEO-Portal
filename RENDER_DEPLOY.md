@@ -15,6 +15,22 @@ Agents run with the **in-process scheduler** (`SCHEDULER_ENABLED=true`,
 Local `docker compose` is unchanged for development. Render does **not** run
 `docker-compose.yml` as one unit.
 
+## OTP / email on Render
+
+Render **blocks outbound SMTP** on free (and many paid) plans. Gmail SMTP will
+fail with `Network is unreachable` even when frontend and backend are connected.
+
+Use [Resend](https://resend.com) instead:
+
+1. Create a free Resend account and API key.
+2. Set on `automarket-api`:
+   - `RESEND_API_KEY=<your key>`
+   - `EMAIL_FROM=onboarding@resend.dev` (testing; only sends to your Resend signup email)
+   - or verify your domain and use `EMAIL_FROM=no-reply@yourdomain.com`
+3. Redeploy the API.
+
+For local `.env` OTP with Neon, SMTP still works from your machine.
+
 ## Local `.env` (Neon)
 
 In `backend/.env`, set one line — it overrides the `POSTGRES_*` fields:

@@ -84,6 +84,9 @@ services:
         sync: false
       - key: EMAIL_FROM_NAME
         value: AutoMarket AI
+      # Prefer this on Render free — SMTP ports are blocked.
+      - key: RESEND_API_KEY
+        sync: false
 
   - type: web
     name: automarket-console

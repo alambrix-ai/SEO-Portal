@@ -210,7 +210,9 @@ def cmd_check(args: argparse.Namespace) -> int:
     if not (settings.llm_price_input_per_mtok or settings.llm_price_output_per_mtok):
         print("Model pricing    : unset — run costs will read zero")
 
-    if not settings.smtp_host:
+    if settings.resend_api_key:
+        print("Email            : Resend (HTTPS)")
+    elif not settings.smtp_host:
         # Not a warning on this platform — mail *is* the login system, so an
         # unconfigured mail server means nobody can sign in at all. Codes are
         # written to the log instead, which is only tolerable locally.

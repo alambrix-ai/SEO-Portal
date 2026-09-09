@@ -174,6 +174,10 @@ class Settings(BaseSettings):
     lockout_minutes: int = 15
 
     # ── Outbound email ─────────────────────────────────────────────────────
+    # Prefer Resend (HTTPS) on hosts that block SMTP ports — Render free does.
+    # If RESEND_API_KEY is set it is used instead of SMTP.
+    resend_api_key: str = ""
+    resend_base_url: str = "https://api.resend.com"
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
@@ -316,10 +320,11 @@ class Settings(BaseSettings):
                 f"LLM_PROVIDER is {self.llm_provider!r} — the agents cannot "
                 "generate content without a model"
             )
-        if not self.smtp_host:
+        if not self.smtp_host and not self.resend_api_key:
             problems.append(
-                "SMTP_HOST must be set: sign-in is a one-time code sent by "
-                "email, so without a mail server nobody can log in at all"
+                "SMTP_HOST or RESEND_API_KEY must be set: sign-in is a "
+                "one-time code sent by email, so without mail nobody can "
+                "log in (prefer RESEND_API_KEY on Render — SMTP ports are blocked)"
             )
         if self.public_base_url.startswith("http://"):
             problems.append(
