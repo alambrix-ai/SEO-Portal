@@ -30,8 +30,7 @@ services:
     region: oregon
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    dockerCommand: >-
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers"
+    # Migrations + uvicorn live in backend/docker-entrypoint.sh (Dockerfile CMD).
     healthCheckPath: /health
     envVars:
       - key: APP_ENV
