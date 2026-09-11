@@ -4,10 +4,17 @@
  * Scene code: `src/lib/seo-assistant/scene.js`
  * Vendor Three.js (MIT): `public/vendor/three/`
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 
-export function AssistantBot() {
+type AssistantBotProps = {
+  /** Compact launcher size for the floating dock. */
+  compact?: boolean
+  className?: string
+}
+
+export function AssistantBot({ compact = false, className }: AssistantBotProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const canvasId = useId().replace(/:/g, '')
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -37,22 +44,28 @@ export function AssistantBot() {
   }, [])
 
   return (
-    <div className="assistant-bot" aria-label="SEO Assistant robot">
-      <button type="button" className="motion-toggle" aria-label="Pause 3D animation">
-        Ⅱ
-      </button>
+    <div
+      className={`assistant-bot${compact ? ' is-compact' : ''}${className ? ` ${className}` : ''}`}
+      aria-label="SEO Assistant robot"
+    >
+      {compact ? null : (
+        <button type="button" className="motion-toggle" aria-label="Pause 3D animation">
+          Ⅱ
+        </button>
+      )}
       <div className="model-fallback" hidden>
         <div className="assistant-bot-fallback-mark" aria-hidden="true">
           AI
         </div>
-        <p>3D preview needs WebGL. The chat still works.</p>
+        {compact ? null : <p>3D preview needs WebGL. The chat still works.</p>}
       </div>
       <div className="assistant-bot-stage">
         <canvas
           ref={canvasRef}
-          id="agent-sculpture"
+          id={`agent-sculpture-${canvasId}`}
           className="assistant-bot-canvas"
-          aria-label="Animated SEO assistant robot"
+          aria-hidden={compact ? true : undefined}
+          aria-label={compact ? undefined : 'Animated SEO assistant robot'}
         />
       </div>
     </div>

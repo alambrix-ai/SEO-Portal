@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from pydantic import Field
 
 from app.api.deps import CurrentUserDep, DbSession
+from app.core.exceptions import ForbiddenError
 from app.core.rbac import Module
 from app.schemas.common import ApiModel
 from app.services import seo_assistant
@@ -74,7 +75,17 @@ class AssistantChatResponse(ApiModel):
 @router.post("/chat", response_model=AssistantChatResponse)
 def chat(body: AssistantChatRequest, current: CurrentUserDep, db: DbSession) -> AssistantChatResponse:
     """Analyse a use case and recommend (or plan) connectors and agents."""
-    current.require_view(Module.ONBOARDING)
+    if not current.module_enabled(Module.ONBOARDING):
+        raise ForbiddenError(
+            "The SEO Assistant is not enabled for this workspace. "
+            "Ask a platform administrator to enable Onboarding, or join a "
+            "workspace where it is available."
+        )
+    if not current.can_view(Module.ONBOARDING):
+        raise ForbiddenError(
+            "You do not have access to the SEO Assistant. "
+            "Ask your workspace admin to grant Onboarding access for your role."
+        )
     result = seo_assistant.chat(
         db,
         tenant_id=current.tenant_id,

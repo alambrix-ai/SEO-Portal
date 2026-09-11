@@ -1,11 +1,8 @@
 /**
- * SEO Assistant — describe a use case; get Ask guidance or Action setup.
- *
- * Ask mode explains which connectors and agents fit. Action mode walks the
- * operator through connecting and configuring them with the same APIs the
- * Connectors / Agents screens use.
+ * Floating SEO Assistant — compact animated bot bottom-left on every page.
+ * Opens a panel for Ask / Action chat without a dedicated route.
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { api } from '@/api/client'
@@ -20,7 +17,7 @@ import { AgentIcon } from '@/components/AgentIcon'
 import { AssistantBot } from '@/components/AssistantBot'
 import { ConnectorIcon } from '@/components/ConnectorIcon'
 import { useToasts } from '@/components/Toasts'
-import { Blueprint, Field, Loading, Segmented, Tag } from '@/components/ui'
+import { Field, Loading, Segmented, Tag } from '@/components/ui'
 
 interface ChatMessage {
   id: string
@@ -33,9 +30,10 @@ function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-export function AssistantPage() {
-  const { canWrite } = useAuth()
+export function AssistantDock() {
+  const { session, access, canView, canWrite } = useAuth()
   const { push, fromError } = useToasts()
+  const [open, setOpen] = useState(false)
   const [mode, setMode] = useState<AssistantMode>('ask')
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -52,6 +50,40 @@ export function AssistantPage() {
   const [stepValues, setStepValues] = useState<Record<string, string>>({})
   const [stepBusy, setStepBusy] = useState(false)
 
+  // Always show the bot when signed in; lock the panel when the workspace /
+  // role cannot use Onboarding (the module that gates the assistant).
+  const moduleEnabled = !!session?.enabled_modules.includes('onboarding')
+  const roleAllowed = canView('onboarding')
+  const allowed = moduleEnabled && roleAllowed
+
+  const accessBlock = useMemo(() => {
+    if (!session) return null
+    if (!moduleEnabled) {
+      return {
+        title: 'Assistant not available for this workspace',
+        body:
+          'The SEO Assistant is turned off for this workspace (Onboarding is disabled). Ask a platform administrator to enable it, or join a workspace where it is available.',
+      }
+    }
+    if (access('onboarding') === 'none' || !roleAllowed) {
+      return {
+        title: 'You do not have access',
+        body:
+          'Your workspace admin has not granted you permission to use the SEO Assistant. Ask an admin to give your role access to Onboarding (view or full), then sign in again.',
+      }
+    }
+    return null
+  }, [session, moduleEnabled, roleAllowed, access])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+
   const writableConnectors = canWrite('connectors')
   const writableAgents = canWrite('agents')
 
@@ -63,7 +95,17 @@ export function AssistantPage() {
     [messages],
   )
 
+  if (!session) return null
+
   const send = async () => {
+    if (!allowed) {
+      push(
+        accessBlock?.body ||
+          'You do not have access to the SEO Assistant. Ask your workspace admin.',
+        'warning',
+      )
+      return
+    }
     const text = draft.trim()
     if (!text || busy) return
     setDraft('')
@@ -162,40 +204,62 @@ export function AssistantPage() {
   }
 
   return (
-    <div className="assistant-page">
-      <div className="assistant-hero">
-        <Blueprint className="assistant-hero-card elev-sm">
-          <div className="assistant-hero-copy">
-            <div className="assistant-eyebrow">Smart setup</div>
-            <h2 className="assistant-title">SEO Assistant</h2>
-            <p className="assistant-lede">
-              Describe your use case. In Ask mode I explain which connectors and
-              agents you need. In Action mode I walk you through connecting and
-              configuring them.
-            </p>
-            <div className="assistant-mode">
-              <Segmented
-                name="assistant-mode"
-                value={mode}
-                options={[
-                  { value: 'ask', label: 'Ask' },
-                  { value: 'action', label: 'Action' },
-                ]}
-                onChange={(next) => setMode(next as AssistantMode)}
-              />
-              <span className="small muted">
-                {mode === 'ask'
-                  ? 'Guidance only — nothing is connected for you.'
-                  : 'I will collect what each connector/agent needs, then apply it.'}
-              </span>
+    <div
+      className={`assistant-dock${open ? ' is-open' : ''}${accessBlock ? ' is-locked' : ''}`}
+    >
+      {open ? (
+        <section
+          className="assistant-dock-panel elev-sm"
+          role="dialog"
+          aria-label="SEO Assistant"
+          aria-modal="false"
+        >
+          <header className="assistant-dock-header">
+            <div className="assistant-dock-heading">
+              <span className="assistant-eyebrow">Smart setup</span>
+              <strong>SEO Assistant</strong>
             </div>
-          </div>
-          <AssistantBot />
-        </Blueprint>
-      </div>
+            <button
+              type="button"
+              className="btn btn-ghost assistant-dock-close"
+              aria-label="Close assistant"
+              onClick={() => setOpen(false)}
+            >
+              Close
+            </button>
+          </header>
 
-      <div className="assistant-layout">
-        <Blueprint className="card elev-sm assistant-chat">
+          {accessBlock ? (
+            <div className="assistant-dock-locked" role="status">
+              <div className="assistant-dock-locked-mark" aria-hidden="true">
+                !
+              </div>
+              <h3 className="assistant-dock-locked-title">{accessBlock.title}</h3>
+              <p className="assistant-dock-locked-body">{accessBlock.body}</p>
+              <p className="small muted" style={{ marginTop: 12 }}>
+                Signed in as <strong>{session.user.email}</strong> (
+                {session.user.role_label}) in {session.organization.name}.
+              </p>
+            </div>
+          ) : (
+            <>
+          <div className="assistant-dock-mode">
+            <Segmented
+              name="assistant-dock-mode"
+              value={mode}
+              options={[
+                { value: 'ask', label: 'Ask' },
+                { value: 'action', label: 'Action' },
+              ]}
+              onChange={(next) => setMode(next as AssistantMode)}
+            />
+            <span className="small muted">
+              {mode === 'ask'
+                ? 'Guidance only.'
+                : 'Walk through connect & configure.'}
+            </span>
+          </div>
+
           <div className="assistant-chat-log" role="log" aria-live="polite">
             {messages.map((message) => (
               <div
@@ -213,68 +277,34 @@ export function AssistantPage() {
             ))}
             {busy ? (
               <div className="assistant-bubble assistant-bubble-assistant">
-                <Loading label="Analysing your use case…" />
+                <Loading label="Analysing…" />
               </div>
             ) : null}
           </div>
 
-          <div className="assistant-composer">
-            <textarea
-              className="input assistant-input"
-              rows={3}
-              placeholder="e.g. We sell industrial equipment online and want AI search citations plus healthier technical SEO…"
-              value={draft}
-              disabled={busy}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                  event.preventDefault()
-                  void send()
-                }
-              }}
-            />
-            <div className="assistant-composer-actions">
-              <span className="small muted">Ctrl/⌘ + Enter to send</span>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={busy || !draft.trim()}
-                onClick={() => void send()}
-              >
-                {busy ? 'Thinking…' : mode === 'action' ? 'Plan setup' : 'Ask'}
-              </button>
-            </div>
-          </div>
-        </Blueprint>
-
-        <aside className="assistant-side">
           {currentStep ? (
-            <Blueprint className="card elev-sm assistant-action-card">
+            <div className="assistant-dock-step">
               <div className="card-kicker">
-                Action step {stepIndex + 1} of {plan?.steps.length ?? 0}
+                Step {stepIndex + 1} of {plan?.steps.length ?? 0}
               </div>
-              <div className="card-title" style={{ fontSize: 18 }}>
-                {currentStep.title}
-              </div>
+              <div className="cell-title">{currentStep.title}</div>
               {currentStep.reason ? (
-                <p className="card-meta" style={{ marginTop: 6 }}>
+                <p className="small muted" style={{ marginTop: 4 }}>
                   {currentStep.reason}
                 </p>
               ) : null}
-
               <div className="assistant-step-mark">
                 {currentStep.type === 'connect_connector' ? (
                   <ConnectorIcon
                     slug={currentStep.slug}
                     name={currentStep.title || currentStep.slug}
-                    size={40}
+                    size={32}
                   />
                 ) : (
-                  <AgentIcon slug={currentStep.slug} size={40} />
+                  <AgentIcon slug={currentStep.slug} size={32} />
                 )}
                 <Tag tone="outline">{currentStep.type.replace(/_/g, ' ')}</Tag>
               </div>
-
               {currentStep.type === 'connect_connector' ? (
                 <div className="assistant-step-fields">
                   {(currentStep.fields || [])
@@ -285,10 +315,10 @@ export function AssistantPage() {
                         label={field.label || field.key}
                         required={field.required}
                         hint={field.help || undefined}
-                        htmlFor={`asst-${field.key}`}
+                        htmlFor={`dock-${field.key}`}
                       >
                         <input
-                          id={`asst-${field.key}`}
+                          id={`dock-${field.key}`}
                           className="input"
                           type={field.secret ? 'password' : 'text'}
                           placeholder={field.placeholder}
@@ -304,14 +334,15 @@ export function AssistantPage() {
                     ))}
                   {(currentStep.fields || []).some((field) => field.is_oauth) ? (
                     <p className="muted small">
-                      This connector uses OAuth. Open{' '}
-                      <Link to="/connectors">Connectors</Link> to finish the
-                      vendor sign-in, then return here.
+                      OAuth connector — finish in{' '}
+                      <Link to="/connectors" onClick={() => setOpen(false)}>
+                        Connectors
+                      </Link>
+                      .
                     </p>
                   ) : null}
                 </div>
               ) : null}
-
               {currentStep.type === 'configure_agent' && currentStep.config ? (
                 <ul className="assistant-config-preview">
                   {Object.entries(currentStep.config).map(([key, value]) => (
@@ -322,7 +353,6 @@ export function AssistantPage() {
                   ))}
                 </ul>
               ) : null}
-
               <div className="assistant-step-actions">
                 <button
                   type="button"
@@ -351,33 +381,55 @@ export function AssistantPage() {
                     : currentStep.type === 'connect_connector'
                       ? 'Connect'
                       : currentStep.type === 'configure_agent'
-                        ? 'Save configuration'
-                        : 'Start agent'}
+                        ? 'Save'
+                        : 'Start'}
                 </button>
               </div>
-            </Blueprint>
-          ) : (
-            <Blueprint className="card elev-sm assistant-tips">
-              <div className="card-kicker">How it works</div>
-              <ul className="assistant-tips-list">
-                <li>
-                  <strong>Ask</strong> — get a clear map of connectors and agents
-                  without changing your workspace.
-                </li>
-                <li>
-                  <strong>Action</strong> — I propose steps; you supply secrets
-                  and confirm each connection or agent setup.
-                </li>
-                <li>
-                  Powered by the server .env LLM (
-                  <span className="mono-sub">ANTHROPIC_API_KEY</span>
-                  ), not workspace AI connectors.
-                </li>
-              </ul>
-            </Blueprint>
+            </div>
+          ) : null}
+
+          <div className="assistant-composer">
+            <textarea
+              className="input assistant-input"
+              rows={2}
+              placeholder="Describe your SEO / AEO / ads goal…"
+              value={draft}
+              disabled={busy}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault()
+                  void send()
+                }
+              }}
+            />
+            <div className="assistant-composer-actions">
+              <span className="small muted">Ctrl/⌘ + Enter</span>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy || !draft.trim()}
+                onClick={() => void send()}
+              >
+                {busy ? 'Thinking…' : mode === 'action' ? 'Plan' : 'Ask'}
+              </button>
+            </div>
+          </div>
+            </>
           )}
-        </aside>
-      </div>
+        </section>
+      ) : null}
+
+      <button
+        type="button"
+        className="assistant-dock-launcher"
+        aria-label={open ? 'Hide SEO Assistant' : 'Open SEO Assistant'}
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="assistant-dock-pulse" aria-hidden="true" />
+        <AssistantBot compact />
+      </button>
     </div>
   )
 }
@@ -394,7 +446,7 @@ function RecommendationsBlock({ payload }: { payload: AssistantChatResponse }) {
           <ul className="assistant-recs-list">
             {connectors.map((item) => (
               <li key={`c-${item.slug}`}>
-                <ConnectorIcon slug={item.slug} name={item.name || item.slug} size={28} />
+                <ConnectorIcon slug={item.slug} name={item.name || item.slug} size={24} />
                 <div>
                   <div className="cell-title">{item.name || item.slug}</div>
                   <div className="small muted">{item.reason}</div>
@@ -410,7 +462,7 @@ function RecommendationsBlock({ payload }: { payload: AssistantChatResponse }) {
           <ul className="assistant-recs-list">
             {agents.map((item) => (
               <li key={`a-${item.slug}`}>
-                <AgentIcon slug={item.slug} size={28} />
+                <AgentIcon slug={item.slug} size={24} />
                 <div>
                   <div className="cell-title">{item.name || item.slug}</div>
                   <div className="small muted">{item.reason}</div>

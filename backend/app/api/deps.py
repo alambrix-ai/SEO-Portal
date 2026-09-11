@@ -99,13 +99,27 @@ class CurrentUser:
     def can_write(self, module: Module | str) -> bool:
         return self.access(module) is Access.FULL
 
+    def module_enabled(self, module: Module | str) -> bool:
+        """False when Portal Admin has disabled this module platform-wide."""
+        if self._enabled_modules is None:
+            return True
+        key = module.value if isinstance(module, Module) else str(module)
+        return key in self._enabled_modules
+
     def require_view(self, module: Module | str) -> None:
+        if not self.module_enabled(module):
+            raise ForbiddenError(
+                "This capability is not enabled for your workspace. "
+                "Ask a platform administrator to turn it on."
+            )
         if not self.can_view(module):
-            raise ForbiddenError("Restricted for your role")
+            raise ForbiddenError(
+                "You do not have access for your role. "
+                "Ask your workspace admin to grant permission."
+            )
 
     def require_write(self, module: Module | str) -> None:
-        if not self.can_view(module):
-            raise ForbiddenError("Restricted for your role")
+        self.require_view(module)
         if not self.can_write(module):
             # The exact wording the console shows as a toast.
             raise ForbiddenError("View-only access for your role")
