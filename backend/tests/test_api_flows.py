@@ -229,11 +229,11 @@ def test_login_and_refresh_rotation(client, clean_db):  # noqa: ANN001
     assert after_reuse.status_code == 401
 
 
-def test_a_code_request_reveals_nothing_about_who_has_an_account(client, clean_db, mailbox):  # noqa: ANN001
-    """The two responses must be identical, byte for byte.
+def test_unknown_address_is_told_there_is_no_account(client, clean_db, mailbox):  # noqa: ANN001
+    """Sign-in should say clearly when the address has never registered.
 
-    Otherwise the sign-in screen is a membership oracle: an attacker learns
-    which of a list of addresses are customers without ever authenticating.
+    Waiting on a code that was never sent is worse UX than disclosing that
+    the address is not a customer — the console guides them to sign up.
     """
     register(client)
 
@@ -243,10 +243,11 @@ def test_a_code_request_reveals_nothing_about_who_has_an_account(client, clean_d
     unknown = client.post(
         "/api/v1/auth/request-code", json={"email": "nobody@example.com"}
     )
-    assert known.status_code == unknown.status_code == 200
-    assert known.json() == unknown.json()
+    assert known.status_code == 200
+    assert unknown.status_code == 404
+    detail = (unknown.json().get("detail") or "").lower()
+    assert "no account" in detail
 
-    # And only the real address is actually mailed anything.
     assert mailbox.count_for("owner@northgate.example") >= 1
     assert mailbox.count_for("nobody@example.com") == 0
 
@@ -437,8 +438,10 @@ def test_a_deactivated_account_cannot_sign_in(client, clean_db, mailbox):  # noq
     requested = client.post(
         "/api/v1/auth/request-code", json={"email": "owner@northgate.example"}
     )
-    assert requested.status_code == 200
-    # No code is sent to a closed account, and the response says nothing.
+    assert requested.status_code == 403
+    detail = (requested.json().get("detail") or "").lower()
+    assert "deactivated" in detail
+    # No new sign-in code is mailed to a closed account.
     assert mailbox.count_for("owner@northgate.example") == 1  # only the sign-up one
 
 

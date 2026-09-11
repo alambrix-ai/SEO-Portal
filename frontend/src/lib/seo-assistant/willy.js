@@ -177,8 +177,8 @@ try {
     return mesh;
   }
 
-  // Printed directly on the torso, below the orange chest button.
-  print('WILLY', 0.7, 0.14, 0, -0.53, 0.365, agent, '#38422b', 130, MONO);
+  // No chest lettering in the dock — at launcher size it reads as a watermark
+  // over the face. The panel / “Ask Willy” chip already name him.
 
   // Redraw every label at the resolution it is about to be shown at. Called
   // from the resize pass, where the frustum width is known; the 12% deadband

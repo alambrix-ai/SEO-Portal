@@ -1,31 +1,115 @@
 /**
- * The mark on an agent card.
+ * Agent marks — one distinctive tile per agent.
  *
- * Drawn here rather than borrowed: an agent is this platform's own thing, so
- * these are thin-stroke line icons at 1.5 in exactly the geometry the design
- * system uses for the sidebar. Same tile as the connector cards, so the two
- * screens sit next to each other without one looking heavier.
- *
- * One per registered agent, keyed by slug. Each glyph says what the agent
- * *does* — a shield for the two that block things, a graph for the two that
- * work on link structure — because twelve cards distinguished only by a
- * generic robot icon would be twelve cards distinguished only by their text.
+ * Each slug gets its own warm brand gradient (cream / brown / plum / sage /
+ * gold from the marketing site) and a filled glyph that says what the agent
+ * does, so the Agents grid reads as a set of characters rather than twelve
+ * identical grey squares.
  */
-import type { SVGProps } from 'react'
+import type { CSSProperties, ReactNode, SVGProps } from 'react'
 
-type Props = SVGProps<SVGSVGElement> & { size?: number }
+type GlyphProps = SVGProps<SVGSVGElement> & { size?: number }
 
-function Glyph({ size = 18, children, ...rest }: Props & { children: React.ReactNode }) {
+type Theme = {
+  from: string
+  to: string
+  ink: string
+  glow: string
+}
+
+const AGENT_THEMES: Record<string, Theme> = {
+  aeo_qa_injector: {
+    from: '#5b3e58',
+    to: '#8a5f80',
+    ink: '#fff8f0',
+    glow: 'rgba(91, 62, 88, 0.35)',
+  },
+  backlink_node_discovery: {
+    from: '#966b3f',
+    to: '#c09060',
+    ink: '#fff8f0',
+    glow: 'rgba(150, 107, 63, 0.35)',
+  },
+  click_fraud_controller: {
+    from: '#3d2a18',
+    to: '#7a5632',
+    ink: '#f6efe6',
+    glow: 'rgba(61, 42, 24, 0.4)',
+  },
+  competitor_link_monitor: {
+    from: '#4a3247',
+    to: '#7d9a83',
+    ink: '#faf8f4',
+    glow: 'rgba(125, 154, 131, 0.35)',
+  },
+  digital_pr_outreach: {
+    from: '#a87848',
+    to: '#d4b56a',
+    ink: '#1a1a1a',
+    glow: 'rgba(212, 181, 106, 0.4)',
+  },
+  dynamic_creative_optimizer: {
+    from: '#865a78',
+    to: '#c09060',
+    ink: '#fff8f0',
+    glow: 'rgba(134, 90, 120, 0.35)',
+  },
+  first_party_audience_modeler: {
+    from: '#7d9a83',
+    to: '#5b3e58',
+    ink: '#faf8f4',
+    glow: 'rgba(125, 154, 131, 0.35)',
+  },
+  knowledge_graph_schema: {
+    from: '#5c4026',
+    to: '#966b3f',
+    ink: '#f6efe6',
+    glow: 'rgba(92, 64, 38, 0.4)',
+  },
+  on_page_seo_sync: {
+    from: '#7a5632',
+    to: '#7d9a83',
+    ink: '#fff8f0',
+    glow: 'rgba(122, 86, 50, 0.35)',
+  },
+  predictive_budget_engine: {
+    from: '#d4b56a',
+    to: '#966b3f',
+    ink: '#1a1a1a',
+    glow: 'rgba(212, 181, 106, 0.4)',
+  },
+  referral_spam_guard: {
+    from: '#3d2a18',
+    to: '#5b3e58',
+    ink: '#f6efe6',
+    glow: 'rgba(61, 42, 24, 0.4)',
+  },
+  technical_seo_auditor: {
+    from: '#5b3e58',
+    to: '#966b3f',
+    ink: '#fff8f0',
+    glow: 'rgba(91, 62, 88, 0.35)',
+  },
+}
+
+const FALLBACK_THEME: Theme = {
+  from: '#efe8dc',
+  to: '#e0d5c4',
+  ink: '#5c4026',
+  glow: 'rgba(150, 107, 63, 0.2)',
+}
+
+function Glyph({
+  size = 20,
+  children,
+  ...rest
+}: GlyphProps & { children: ReactNode }) {
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 20 20"
+      viewBox="0 0 24 24"
       fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
       {...rest}
@@ -35,148 +119,306 @@ function Glyph({ size = 18, children, ...rest }: Props & { children: React.React
   )
 }
 
-/** A question answered — what an AEO answer block is. */
-function AnswerIcon(props: Props) {
+function AnswerIcon({ size }: GlyphProps) {
   return (
-    <Glyph {...props}>
-      <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h11A1.5 1.5 0 0 1 17 5.5v6A1.5 1.5 0 0 1 15.5 13H7l-4 3.5V5.5Z" />
-      <path d="M8.4 7.1a1.6 1.6 0 0 1 3.1.5c0 1.1-1.5 1.2-1.5 2.3" />
-      <line x1="10" y1="11.4" x2="10" y2="11.5" />
+    <Glyph size={size}>
+      <path
+        fill="currentColor"
+        fillOpacity="0.22"
+        d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v7A2.5 2.5 0 0 1 17.5 15H9.2L4 19.2V5.5Z"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v7A2.5 2.5 0 0 1 17.5 15H9.2L4 19.2V5.5Z"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        d="M9.2 8.2a2 2 0 0 1 3.8.7c0 1.4-1.9 1.5-1.9 2.9"
+      />
+      <circle cx="11.1" cy="13.6" r="0.9" fill="currentColor" />
     </Glyph>
   )
 }
 
-/** Nodes found and joined — link prospecting. */
-function NodesIcon(props: Props) {
+function NodesIcon({ size }: GlyphProps) {
   return (
-    <Glyph {...props}>
-      <circle cx="4" cy="6" r="2" />
-      <circle cx="16" cy="4.5" r="2" />
-      <circle cx="15" cy="15" r="2" />
-      <circle cx="6" cy="14" r="2" />
-      <path d="M5.9 6.6 14 4.9M5.7 12.3 13.7 6M8 14.2l5 .7" />
+    <Glyph size={size}>
+      <path
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        d="M7.2 8.2 15.2 6.2M7 15.2 15.4 8.4M9.4 16.4l5.2.8"
+      />
+      <circle cx="5.5" cy="7.5" r="2.6" fill="currentColor" fillOpacity="0.28" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="18" cy="5.5" r="2.4" fill="currentColor" fillOpacity="0.45" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="17" cy="17" r="2.5" fill="currentColor" fillOpacity="0.28" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="7.2" cy="16.2" r="2.3" fill="currentColor" fillOpacity="0.55" stroke="currentColor" strokeWidth="1.5" />
     </Glyph>
   )
 }
 
-/** A shield with a pointer in it — fraudulent clicks, stopped. */
-function ClickShieldIcon(props: Props) {
+function ClickShieldIcon({ size }: GlyphProps) {
   return (
-    <Glyph {...props}>
-      <path d="M10 2.6l5.6 2v4.9c0 3.2-2.3 6-5.6 7-3.3-1-5.6-3.8-5.6-7V4.6l5.6-2Z" />
-      <path d="M8.4 6.9l4.2 4.3-2 .3-.6 2-1.6-6.6Z" />
+    <Glyph size={size}>
+      <path
+        fill="currentColor"
+        fillOpacity="0.25"
+        d="M12 2.8 19 5.4v5.8c0 4-2.9 7.5-7 8.8-4.1-1.3-7-4.8-7-8.8V5.4L12 2.8Z"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+        d="M12 2.8 19 5.4v5.8c0 4-2.9 7.5-7 8.8-4.1-1.3-7-4.8-7-8.8V5.4L12 2.8Z"
+      />
+      <path
+        fill="currentColor"
+        d="M10.1 8.2 15.4 13.6l-2.4.4-.8 2.5L10.1 8.2Z"
+      />
     </Glyph>
   )
 }
 
-/** A link, watched. */
-function WatchLinkIcon(props: Props) {
+function WatchLinkIcon({ size }: GlyphProps) {
   return (
-    <Glyph {...props}>
-      <path d="M8.4 5.6 10 4a2.8 2.8 0 0 1 4 4l-1.6 1.6" />
-      <path d="M11.6 11.4 10 13" />
-      <path d="M2 15.5c1.8-2.6 5.4-2.6 7.2 0-1.8 2.6-5.4 2.6-7.2 0Z" />
-      <circle cx="5.6" cy="15.5" r="1" />
+    <Glyph size={size}>
+      <path
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        d="M9.2 7.2 11 5.4a3.4 3.4 0 0 1 4.8 4.8l-1.8 1.8"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        d="M14.8 13.8 13 15.6a3.4 3.4 0 0 1-4.8-4.8l1.2-1.2"
+      />
+      <path
+        fill="currentColor"
+        fillOpacity="0.28"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        d="M3.2 18.2c2-3 6.2-3 8.2 0-2 3-6.2 3-8.2 0Z"
+      />
+      <circle cx="7.3" cy="18.2" r="1.2" fill="currentColor" />
     </Glyph>
   )
 }
 
-/** A megaphone — outreach. */
-function OutreachIcon(props: Props) {
+function OutreachIcon({ size }: GlyphProps) {
   return (
-    <Glyph {...props}>
-      <path d="M3 8.4 14 4.4v11.2L3 11.6V8.4Z" />
-      <path d="M5.6 10.6v3.6a1.4 1.4 0 0 0 2.8 0v-2.6" />
-      <path d="M16.2 8.2a2.4 2.4 0 0 1 0 3.6" />
+    <Glyph size={size}>
+      <path
+        fill="currentColor"
+        fillOpacity="0.3"
+        d="M3.5 9.2 16.5 4.5v15L3.5 14.8V9.2Z"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+        d="M3.5 9.2 16.5 4.5v15L3.5 14.8V9.2Z"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        d="M6.8 12.2v4.2a1.8 1.8 0 0 0 3.5.3v-3"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        d="M18.8 9.4a3 3 0 0 1 0 5.2"
+      />
     </Glyph>
   )
 }
 
-/** Layered creatives, with the one that won on top. */
-function CreativeIcon(props: Props) {
+function CreativeIcon({ size }: GlyphProps) {
   return (
-    <Glyph {...props}>
-      <rect x="2.5" y="6" width="10" height="8" rx="1" />
-      <path d="M5.5 8.5h2M5.5 11.5h4" />
-      <path d="M15 4.5v4M13 6.5h4" />
-      <path d="M15.5 12v4.5" />
-      <path d="M14 14.2h3" />
+    <Glyph size={size}>
+      <rect
+        x="3"
+        y="7"
+        width="12"
+        height="10"
+        rx="2"
+        fill="currentColor"
+        fillOpacity="0.28"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" d="M6 10.2h3.2M6 13.8h5.5" />
+      <circle cx="17.2" cy="6.2" r="3.2" fill="currentColor" fillOpacity="0.45" stroke="currentColor" strokeWidth="1.5" />
+      <path stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" d="M17.2 4.6v3.2M15.6 6.2h3.2" />
+      <path stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" d="M17.2 14.2v4" />
     </Glyph>
   )
 }
 
-/** People, grouped — a modelled audience. */
-function AudienceIcon(props: Props) {
+function AudienceIcon({ size }: GlyphProps) {
   return (
-    <Glyph {...props}>
-      <circle cx="7.5" cy="7" r="2.4" />
-      <path d="M3.2 15.5c0-2.4 1.9-4.2 4.3-4.2s4.3 1.8 4.3 4.2" />
-      <circle cx="14.4" cy="6.2" r="1.8" />
-      <path d="M13.2 11.5c2 .1 3.6 1.7 3.6 4" />
+    <Glyph size={size}>
+      <circle cx="9" cy="8" r="3.2" fill="currentColor" fillOpacity="0.35" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        fill="currentColor"
+        fillOpacity="0.22"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        d="M3.5 18.5c0-3 2.4-5.2 5.5-5.2s5.5 2.2 5.5 5.2"
+      />
+      <circle cx="16.8" cy="7.2" r="2.4" fill="currentColor" fillOpacity="0.45" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        d="M15.4 13.2c2.2.2 4 2 4 4.4"
+      />
     </Glyph>
   )
 }
 
-/** Braces around a node — structured data. */
-function SchemaIcon(props: Props) {
+function SchemaIcon({ size }: GlyphProps) {
   return (
-    <Glyph {...props}>
-      <path d="M7 3.5C5 3.5 5.4 8.6 3.2 10c2.2 1.4 1.8 6.5 3.8 6.5" />
-      <path d="M13 3.5c2 0 1.6 5.1 3.8 6.5-2.2 1.4-1.8 6.5-3.8 6.5" />
-      <circle cx="10" cy="10" r="1.8" />
+    <Glyph size={size}>
+      <path
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        d="M8.2 4C5.6 4 6.2 10.2 3.5 12c2.7 1.8 2.1 8 4.7 8"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        d="M15.8 4c2.6 0 2 6.2 4.7 8-2.7 1.8-2.1 8-4.7 8"
+      />
+      <circle cx="12" cy="12" r="2.6" fill="currentColor" fillOpacity="0.4" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="12" cy="12" r="0.9" fill="currentColor" />
     </Glyph>
   )
 }
 
-/** A page, being written back. */
-function PageSyncIcon(props: Props) {
+function PageSyncIcon({ size }: GlyphProps) {
   return (
-    <Glyph {...props}>
-      <path d="M4.5 8.5V3.5h7l3.5 3.5v5" />
-      <path d="M11.5 3.5V7H15" />
-      <path d="M4 14.5a3.4 3.4 0 0 0 5.8 1.9" />
-      <path d="M16 12.5a3.4 3.4 0 0 0-5.8-1.9" />
-      <path d="M4 11.8v2.7h2.7M16 15.2v-2.7h-2.7" />
+    <Glyph size={size}>
+      <path
+        fill="currentColor"
+        fillOpacity="0.22"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+        d="M5.5 9.2V4h8.2L17.5 7.8v5"
+      />
+      <path stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" d="M13.7 4v3.8H17.5" />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        d="M5 16.2a4 4 0 0 0 6.8 2.2M19 13.8a4 4 0 0 0-6.8-2.2"
+      />
+      <path stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" d="M5 13.2v3.2h3.2M19 16.8v-3.2h-3.2" />
     </Glyph>
   )
 }
 
-/** A forecast line over the budget it is allocating. */
-function ForecastIcon(props: Props) {
+function ForecastIcon({ size }: GlyphProps) {
   return (
-    <Glyph {...props}>
-      <path d="M3 16.5V4" />
-      <path d="M3 16.5h14" />
-      <path d="M5.6 13.4l3-3.4 2.6 2 4.2-5" />
-      <path d="M12.4 7h3v3" />
+    <Glyph size={size}>
+      <path stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M4 19V5M4 19h16" />
+      <path
+        fill="currentColor"
+        fillOpacity="0.2"
+        d="M6.5 15.5 10.2 11l3 2.4 4.8-6.2V19H6.5Z"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6.5 15.5 10.2 11l3 2.4 4.8-6.2"
+      />
+      <path stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" d="M15 7.2h3.2V10" />
     </Glyph>
   )
 }
 
-/** A shield turning traffic away — referral spam. */
-function SpamShieldIcon(props: Props) {
+function SpamShieldIcon({ size }: GlyphProps) {
   return (
-    <Glyph {...props}>
-      <path d="M10 2.6l5.6 2v4.9c0 3.2-2.3 6-5.6 7-3.3-1-5.6-3.8-5.6-7V4.6l5.6-2Z" />
-      <line x1="7.6" y1="11.6" x2="12.4" y2="7.2" />
+    <Glyph size={size}>
+      <path
+        fill="currentColor"
+        fillOpacity="0.25"
+        d="M12 2.8 19 5.4v5.8c0 4-2.9 7.5-7 8.8-4.1-1.3-7-4.8-7-8.8V5.4L12 2.8Z"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+        d="M12 2.8 19 5.4v5.8c0 4-2.9 7.5-7 8.8-4.1-1.3-7-4.8-7-8.8V5.4L12 2.8Z"
+      />
+      <path stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="M8.6 14.2 15.4 8.2" />
+      <circle cx="12" cy="11.2" r="1.1" fill="currentColor" />
     </Glyph>
   )
 }
 
-/** A gauge under a wrench — the technical audit. */
-function AuditIcon(props: Props) {
+function AuditIcon({ size }: GlyphProps) {
   return (
-    <Glyph {...props}>
-      <path d="M3.4 14.5a7.6 7.6 0 1 1 13.2 0" />
-      <path d="M10 14.4 13.2 9" />
-      <line x1="10" y1="4.2" x2="10" y2="5.6" />
-      <line x1="4.9" y1="7.2" x2="6.1" y2="7.9" />
-      <line x1="15.1" y1="7.2" x2="13.9" y2="7.9" />
+    <Glyph size={size}>
+      <path
+        fill="currentColor"
+        fillOpacity="0.2"
+        d="M4.2 16.2a8.5 8.5 0 1 1 15.6 0"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        d="M4.2 16.2a8.5 8.5 0 1 1 15.6 0"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        d="M12 16.2 16.2 9.4"
+      />
+      <circle cx="12" cy="16.2" r="1.3" fill="currentColor" />
+      <path stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" d="M12 5.2v1.8M5.8 8.4l1.3.8M18.2 8.4l-1.3.8" />
     </Glyph>
   )
 }
 
-const AGENT_ICONS: Record<string, (props: Props) => React.ReactNode> = {
+function GenericAgentIcon({ size }: GlyphProps) {
+  return (
+    <Glyph size={size}>
+      <rect
+        x="5.5"
+        y="7"
+        width="13"
+        height="11"
+        rx="2.5"
+        fill="currentColor"
+        fillOpacity="0.28"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <circle cx="9.2" cy="12" r="1.2" fill="currentColor" />
+      <circle cx="14.8" cy="12" r="1.2" fill="currentColor" />
+      <path stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" d="M12 4.5v2.5M8.5 5.2 10 7M15.5 5.2 14 7" />
+    </Glyph>
+  )
+}
+
+const AGENT_ICONS: Record<string, (props: GlyphProps) => ReactNode> = {
   aeo_qa_injector: AnswerIcon,
   backlink_node_discovery: NodesIcon,
   click_fraud_controller: ClickShieldIcon,
@@ -191,23 +433,21 @@ const AGENT_ICONS: Record<string, (props: Props) => React.ReactNode> = {
   technical_seo_auditor: AuditIcon,
 }
 
-/** Fallback for an agent registered after this file was last touched. */
-function GenericAgentIcon(props: Props) {
-  return (
-    <Glyph {...props}>
-      <rect x="5" y="5" width="10" height="10" rx="0.5" />
-      <line x1="10" y1="1.5" x2="10" y2="5" />
-      <line x1="10" y1="15" x2="10" y2="18.5" />
-    </Glyph>
-  )
-}
-
-/** The tile, matching `ConnectorIcon` so the two screens agree. */
 export function AgentIcon({ slug, size = 34 }: { slug: string; size?: number }) {
+  const theme = AGENT_THEMES[slug] ?? FALLBACK_THEME
   const Component = AGENT_ICONS[slug] ?? GenericAgentIcon
+  const glyphSize = Math.max(16, Math.round(size * 0.58))
+  const style = {
+    width: size,
+    height: size,
+    color: theme.ink,
+    background: `linear-gradient(145deg, ${theme.from} 0%, ${theme.to} 100%)`,
+    boxShadow: `0 6px 14px -6px ${theme.glow}, inset 0 1px 0 rgba(255,255,255,0.22)`,
+  } as CSSProperties
+
   return (
-    <span className="connector-icon agent-icon" style={{ width: size, height: size }}>
-      {Component({ size: Math.round(size * 0.56) })}
+    <span className="connector-icon agent-icon agent-icon-rich" style={style}>
+      {Component({ size: glyphSize })}
     </span>
   )
 }

@@ -144,11 +144,10 @@ def _challenge(challenge: CodeChallenge, detail: str) -> CodeChallengeResponse:
 def request_code(
     payload: RequestCodeRequest, db: DbSession, request: Request, ip: ClientIp
 ) -> CodeChallengeResponse:
-    """Mail a sign-in code.
+    """Mail a sign-in code to an existing active account.
 
-    Answers identically whether or not the address has an account, and whether
-    or not a code was actually sent — a caller cannot tell from this response
-    which addresses are customers. The wording says "if" for the same reason.
+    Returns 404 when the address has no account, and 403 when the account is
+    deactivated, so the console can guide the operator clearly.
     """
     challenge = auth_service.request_sign_in_code(
         db,
@@ -157,9 +156,7 @@ def request_code(
         user_agent=request.headers.get("user-agent", ""),
     )
     db.commit()
-    return _challenge(
-        challenge, "If that address has an account, a sign-in code is on its way"
-    )
+    return _challenge(challenge, "A sign-in code is on its way to that address")
 
 
 @router.post("/request-signup-code", response_model=CodeChallengeResponse)

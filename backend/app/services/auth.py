@@ -429,36 +429,33 @@ def _assert_not_locked(user: User) -> None:
 def request_sign_in_code(
     db: Session, *, email: str, ip_address: str | None = None, user_agent: str = ""
 ) -> CodeChallenge:
-    """Start a sign-in. Reveals nothing about whether the address is known.
+    """Start a sign-in for an address that already has an active account.
 
-    An unknown or deactivated address takes the same path as a real one, minus
-    the mail — see ``deliver`` in :func:`issue_code`.
+    Unknown and deactivated addresses are refused with a clear message so the
+    sign-in screen can tell the operator to create a workspace (or contact an
+    admin) instead of waiting for a code that will never arrive.
     """
     address = normalize_email(email)
     if "@" not in address:
         raise InvalidInputError("Enter a valid email address")
 
     user = find_user_by_email(db, address)
-    known = user is not None and user.is_active
-    if not known:
-        # Outside production, name the address. The endpoint deliberately
-        # tells the *caller* nothing, which makes a typo indistinguishable
-        # from a real account and impossible to debug from the console alone.
-        # In production this line would be a record of who is signing in, so
-        # it stays anonymous there.
-        if settings.is_production:
-            log.info("Sign-in code requested for an unknown or inactive address")
-        else:
-            log.info(
-                "Sign-in code requested for %s — no active account, so nothing was sent",
-                address,
-            )
+    if user is None:
+        raise NotFoundError(
+            "No account found for that email. Create a workspace to get started, "
+            "or ask your admin for an invitation."
+        )
+    if not user.is_active:
+        raise ForbiddenError(
+            "That account is deactivated. Ask a workspace admin to restore access."
+        )
+
     return issue_code(
         db,
         address=address,
         purpose=CodePurpose.SIGN_IN,
-        name=user.name if known and user is not None else "",
-        deliver=known,
+        name=user.name or "",
+        deliver=True,
         ip_address=ip_address,
         user_agent=user_agent,
     )

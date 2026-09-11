@@ -1,16 +1,12 @@
 /**
  * Sign in.
  *
- * Two steps, because there is no password: give an address, then type the code
- * that arrives in it. SSO buttons sit above a divider when a deployment offers
- * any — the providers come from the API, so the buttons shown are the ones
- * that work.
+ * Two steps: give an address, then type the code that arrives in it. SSO
+ * buttons sit above a divider when a deployment offers any.
  *
- * The first step's response is deliberately uninformative: it looks the same
- * whether or not the address has an account, so this screen cannot be used to
- * find out who the customers are. That means the second step is shown even for
- * an address that will never receive anything, which is the intended
- * behaviour rather than an oversight.
+ * If the address has no account, the API says so immediately so we can guide
+ * the operator to create a workspace (or ask for an invite) instead of
+ * waiting for a code that will never arrive.
  */
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
@@ -31,6 +27,7 @@ export function LoginPage() {
   const [step, setStep] = useState<'email' | 'code'>('email')
   const [resendIn, setResendIn] = useState(0)
   const [error, setError] = useState('')
+  const [noAccount, setNoAccount] = useState(false)
   const [busy, setBusy] = useState(false)
   const [policy, setPolicy] = useState<RegistrationPolicy | null>(null)
 
@@ -44,6 +41,7 @@ export function LoginPage() {
   const destination = (location.state as { from?: string } | null)?.from ?? '/dashboard'
   const ssoProviders = policy?.sso_providers ?? []
   const codeLength = policy?.code_length ?? 6
+  const signupOpen = policy?.public_signup !== false
 
   const message = (caught: unknown, fallback: string) =>
     softenErrorMessage(
@@ -55,16 +53,32 @@ export function LoginPage() {
     const address = email.trim()
     if (!address) {
       setError('Enter your email address')
+      setNoAccount(false)
       return
     }
     setError('')
+    setNoAccount(false)
     setBusy(true)
     try {
       const challenge = await api.requestCode(address)
       setResendIn(challenge.resend_in)
       setStep('code')
     } catch (caught) {
-      setError(message(caught, 'Could not send a code'))
+      if (caught instanceof ApiError && caught.status === 404) {
+        setNoAccount(true)
+        setError(
+          caught.message ||
+            'No account found for that email. Create a workspace to get started.',
+        )
+      } else if (caught instanceof ApiError && caught.status === 403) {
+        setNoAccount(false)
+        setError(
+          caught.message ||
+            'That account is deactivated. Ask a workspace admin to restore access.',
+        )
+      } else {
+        setError(message(caught, 'Could not send a code'))
+      }
     } finally {
       setBusy(false)
     }
@@ -72,6 +86,7 @@ export function LoginPage() {
 
   const submitCode = async (code: string) => {
     setError('')
+    setNoAccount(false)
     setBusy(true)
     try {
       await signIn(email.trim(), code)
@@ -135,14 +150,36 @@ export function LoginPage() {
                   autoFocus
                   placeholder="you@yourcompany.com"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(event) => {
+                    setEmail(event.target.value)
+                    if (noAccount) setNoAccount(false)
+                    if (error) setError('')
+                  }}
                 />
                 <div className="field-hint">
                   No password needed — we email you a {codeLength}-digit code.
                 </div>
               </div>
 
-              {error ? <div className="auth-error">{error}</div> : null}
+              {noAccount ? (
+                <div className="auth-error" role="alert">
+                  <strong>No account for that email.</strong>
+                  <div style={{ marginTop: 6 }}>
+                    {signupOpen ? (
+                      <>
+                        <Link to="/register">Create a workspace</Link> to get
+                        started, or ask your admin for an invitation.
+                      </>
+                    ) : (
+                      <>Ask your workspace admin for an invitation to join.</>
+                    )}
+                  </div>
+                </div>
+              ) : error ? (
+                <div className="auth-error" role="alert">
+                  {error}
+                </div>
+              ) : null}
 
               <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
                 {busy ? 'Sending a code…' : 'Email me a sign-in code'}
@@ -163,11 +200,12 @@ export function LoginPage() {
             onChangeEmail={() => {
               setStep('email')
               setError('')
+              setNoAccount(false)
             }}
           />
         )}
 
-        {policy?.public_signup !== false ? (
+        {signupOpen ? (
           <div className="auth-footer">
             New here? <Link to="/register">Create a workspace</Link>
           </div>
