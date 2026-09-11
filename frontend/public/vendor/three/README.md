@@ -4,7 +4,7 @@
 |------|------|
 | `LICENSE` | MIT license for three.js |
 | `three.core.min.js` | Three.js core (imported by the module build) |
-| `three.module.min.js` | ES module build used by the SEO Assistant sculpture |
+| `three.module.min.js` | ES module build used by Willy |
 
-These are served statically by Vite from `/vendor/three/…`.
-Application scene code lives in `src/lib/seo-assistant/scene.js`.
+Bundled via Vite alias `three` → `public/vendor/three/three.module.min.js`.
+Willy scene code: `src/lib/seo-assistant/willy.js`.

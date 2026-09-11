@@ -14,8 +14,8 @@ import type {
 } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { AgentIcon } from '@/components/AgentIcon'
-import { AssistantBot } from '@/components/AssistantBot'
 import { ConnectorIcon } from '@/components/ConnectorIcon'
+import { WillyBot } from '@/components/WillyBot'
 import { useToasts } from '@/components/Toasts'
 import { Field, Loading, Segmented, Tag } from '@/components/ui'
 
@@ -209,23 +209,28 @@ export function AssistantDock() {
     >
       {open ? (
         <section
-          className="assistant-dock-panel elev-sm"
+          className="assistant-dock-panel"
           role="dialog"
           aria-label="SEO Assistant"
           aria-modal="false"
         >
           <header className="assistant-dock-header">
-            <div className="assistant-dock-heading">
-              <span className="assistant-eyebrow">Smart setup</span>
-              <strong>SEO Assistant</strong>
+            <div className="assistant-dock-brand">
+              <div className="assistant-dock-heading">
+                <span className="assistant-eyebrow">Smart setup</span>
+                <strong>SEO Assistant</strong>
+                <span className="assistant-dock-sub">
+                  Maps your use case to connectors and agents
+                </span>
+              </div>
             </div>
             <button
               type="button"
-              className="btn btn-ghost assistant-dock-close"
+              className="assistant-dock-close"
               aria-label="Close assistant"
               onClick={() => setOpen(false)}
             >
-              Close
+              <span aria-hidden="true">×</span>
             </button>
           </header>
 
@@ -243,178 +248,182 @@ export function AssistantDock() {
             </div>
           ) : (
             <>
-          <div className="assistant-dock-mode">
-            <Segmented
-              name="assistant-dock-mode"
-              value={mode}
-              options={[
-                { value: 'ask', label: 'Ask' },
-                { value: 'action', label: 'Action' },
-              ]}
-              onChange={(next) => setMode(next as AssistantMode)}
-            />
-            <span className="small muted">
-              {mode === 'ask'
-                ? 'Guidance only.'
-                : 'Walk through connect & configure.'}
-            </span>
-          </div>
+              <div className="assistant-dock-toolbar">
+                <Segmented
+                  name="assistant-dock-mode"
+                  value={mode}
+                  options={[
+                    { value: 'ask', label: 'Ask' },
+                    { value: 'action', label: 'Action' },
+                  ]}
+                  onChange={(next) => setMode(next as AssistantMode)}
+                />
+                <span className="assistant-dock-mode-hint">
+                  {mode === 'ask'
+                    ? 'Guidance only — nothing is changed in your workspace.'
+                    : 'Guided connect & configure with your confirmation.'}
+                </span>
+              </div>
 
-          <div className="assistant-chat-log" role="log" aria-live="polite">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`assistant-bubble assistant-bubble-${message.role}`}
-              >
-                <div className="assistant-bubble-role">
-                  {message.role === 'user' ? 'You' : 'Assistant'}
-                </div>
-                <div className="assistant-bubble-body">{message.content}</div>
-                {message.payload?.recommendations ? (
-                  <RecommendationsBlock payload={message.payload} />
+              <div className="assistant-chat-log" role="log" aria-live="polite">
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`assistant-bubble assistant-bubble-${message.role}`}
+                  >
+                    <div className="assistant-bubble-role">
+                      {message.role === 'user' ? 'You' : 'Assistant'}
+                    </div>
+                    <div className="assistant-bubble-body">{message.content}</div>
+                    {message.payload?.recommendations ? (
+                      <RecommendationsBlock payload={message.payload} />
+                    ) : null}
+                  </div>
+                ))}
+                {busy ? (
+                  <div className="assistant-bubble assistant-bubble-assistant">
+                    <Loading label="Analysing your use case…" />
+                  </div>
                 ) : null}
               </div>
-            ))}
-            {busy ? (
-              <div className="assistant-bubble assistant-bubble-assistant">
-                <Loading label="Analysing…" />
-              </div>
-            ) : null}
-          </div>
 
-          {currentStep ? (
-            <div className="assistant-dock-step">
-              <div className="card-kicker">
-                Step {stepIndex + 1} of {plan?.steps.length ?? 0}
-              </div>
-              <div className="cell-title">{currentStep.title}</div>
-              {currentStep.reason ? (
-                <p className="small muted" style={{ marginTop: 4 }}>
-                  {currentStep.reason}
-                </p>
-              ) : null}
-              <div className="assistant-step-mark">
-                {currentStep.type === 'connect_connector' ? (
-                  <ConnectorIcon
-                    slug={currentStep.slug}
-                    name={currentStep.title || currentStep.slug}
-                    size={32}
-                  />
-                ) : (
-                  <AgentIcon slug={currentStep.slug} size={32} />
-                )}
-                <Tag tone="outline">{currentStep.type.replace(/_/g, ' ')}</Tag>
-              </div>
-              {currentStep.type === 'connect_connector' ? (
-                <div className="assistant-step-fields">
-                  {(currentStep.fields || [])
-                    .filter((field) => !field.is_oauth)
-                    .map((field) => (
-                      <Field
-                        key={field.key}
-                        label={field.label || field.key}
-                        required={field.required}
-                        hint={field.help || undefined}
-                        htmlFor={`dock-${field.key}`}
-                      >
-                        <input
-                          id={`dock-${field.key}`}
-                          className="input"
-                          type={field.secret ? 'password' : 'text'}
-                          placeholder={field.placeholder}
-                          value={stepValues[field.key] || ''}
-                          onChange={(event) =>
-                            setStepValues((current) => ({
-                              ...current,
-                              [field.key]: event.target.value,
-                            }))
-                          }
-                        />
-                      </Field>
-                    ))}
-                  {(currentStep.fields || []).some((field) => field.is_oauth) ? (
-                    <p className="muted small">
-                      OAuth connector — finish in{' '}
-                      <Link to="/connectors" onClick={() => setOpen(false)}>
-                        Connectors
-                      </Link>
-                      .
+              {currentStep ? (
+                <div className="assistant-dock-step">
+                  <div className="card-kicker">
+                    Step {stepIndex + 1} of {plan?.steps.length ?? 0}
+                  </div>
+                  <div className="cell-title">{currentStep.title}</div>
+                  {currentStep.reason ? (
+                    <p className="small muted" style={{ marginTop: 4 }}>
+                      {currentStep.reason}
                     </p>
                   ) : null}
+                  <div className="assistant-step-mark">
+                    {currentStep.type === 'connect_connector' ? (
+                      <ConnectorIcon
+                        slug={currentStep.slug}
+                        name={currentStep.title || currentStep.slug}
+                        size={32}
+                      />
+                    ) : (
+                      <AgentIcon slug={currentStep.slug} size={32} />
+                    )}
+                    <Tag tone="outline">{currentStep.type.replace(/_/g, ' ')}</Tag>
+                  </div>
+                  {currentStep.type === 'connect_connector' ? (
+                    <div className="assistant-step-fields">
+                      {(currentStep.fields || [])
+                        .filter((field) => !field.is_oauth)
+                        .map((field) => (
+                          <Field
+                            key={field.key}
+                            label={field.label || field.key}
+                            required={field.required}
+                            hint={field.help || undefined}
+                            htmlFor={`dock-${field.key}`}
+                          >
+                            <input
+                              id={`dock-${field.key}`}
+                              className="input"
+                              type={field.secret ? 'password' : 'text'}
+                              placeholder={field.placeholder}
+                              value={stepValues[field.key] || ''}
+                              onChange={(event) =>
+                                setStepValues((current) => ({
+                                  ...current,
+                                  [field.key]: event.target.value,
+                                }))
+                              }
+                            />
+                          </Field>
+                        ))}
+                      {(currentStep.fields || []).some((field) => field.is_oauth) ? (
+                        <p className="muted small">
+                          OAuth connector — finish in{' '}
+                          <Link to="/connectors" onClick={() => setOpen(false)}>
+                            Connectors
+                          </Link>
+                          .
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {currentStep.type === 'configure_agent' && currentStep.config ? (
+                    <ul className="assistant-config-preview">
+                      {Object.entries(currentStep.config).map(([key, value]) => (
+                        <li key={key}>
+                          <span className="muted">{key}</span>
+                          <strong>{String(value)}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <div className="assistant-step-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      disabled={stepBusy}
+                      onClick={() => {
+                        const next = stepIndex + 1
+                        if (plan && next < plan.steps.length) {
+                          setStepIndex(next)
+                          setStepValues({})
+                        } else {
+                          setPlan(null)
+                        }
+                      }}
+                    >
+                      Skip
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={stepBusy}
+                      onClick={() => void runStep()}
+                    >
+                      {stepBusy
+                        ? 'Working…'
+                        : currentStep.type === 'connect_connector'
+                          ? 'Connect'
+                          : currentStep.type === 'configure_agent'
+                            ? 'Save'
+                            : 'Start'}
+                    </button>
+                  </div>
                 </div>
               ) : null}
-              {currentStep.type === 'configure_agent' && currentStep.config ? (
-                <ul className="assistant-config-preview">
-                  {Object.entries(currentStep.config).map(([key, value]) => (
-                    <li key={key}>
-                      <span className="muted">{key}</span>
-                      <strong>{String(value)}</strong>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              <div className="assistant-step-actions">
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  disabled={stepBusy}
-                  onClick={() => {
-                    const next = stepIndex + 1
-                    if (plan && next < plan.steps.length) {
-                      setStepIndex(next)
-                      setStepValues({})
-                    } else {
-                      setPlan(null)
+
+              <div className="assistant-composer">
+                <label className="assistant-composer-label" htmlFor="assistant-dock-input">
+                  Your use case
+                </label>
+                <textarea
+                  id="assistant-dock-input"
+                  className="input assistant-input"
+                  rows={3}
+                  placeholder="e.g. Analyse our product pages and make them SEO-ready for organic and AI search…"
+                  value={draft}
+                  disabled={busy}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                      event.preventDefault()
+                      void send()
                     }
                   }}
-                >
-                  Skip
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={stepBusy}
-                  onClick={() => void runStep()}
-                >
-                  {stepBusy
-                    ? 'Working…'
-                    : currentStep.type === 'connect_connector'
-                      ? 'Connect'
-                      : currentStep.type === 'configure_agent'
-                        ? 'Save'
-                        : 'Start'}
-                </button>
+                />
+                <div className="assistant-composer-actions">
+                  <span className="small muted">Ctrl / ⌘ + Enter</span>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={busy || !draft.trim()}
+                    onClick={() => void send()}
+                  >
+                    {busy ? 'Thinking…' : mode === 'action' ? 'Plan setup' : 'Ask assistant'}
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : null}
-
-          <div className="assistant-composer">
-            <textarea
-              className="input assistant-input"
-              rows={2}
-              placeholder="Describe your SEO / AEO / ads goal…"
-              value={draft}
-              disabled={busy}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                  event.preventDefault()
-                  void send()
-                }
-              }}
-            />
-            <div className="assistant-composer-actions">
-              <span className="small muted">Ctrl/⌘ + Enter</span>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={busy || !draft.trim()}
-                onClick={() => void send()}
-              >
-                {busy ? 'Thinking…' : mode === 'action' ? 'Plan' : 'Ask'}
-              </button>
-            </div>
-          </div>
             </>
           )}
         </section>
@@ -427,8 +436,7 @@ export function AssistantDock() {
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="assistant-dock-pulse" aria-hidden="true" />
-        <AssistantBot compact />
+        <WillyBot compact />
       </button>
     </div>
   )

@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 
-function mountAgent(canvas) {
-const container = canvas.parentElement.parentElement;
+export function mountWilly(canvas) {
+const container = canvas.parentElement;
 const toggle = container.querySelector('.motion-toggle');
-const checklist = canvas.dataset.scene === 'checklist';
-const admirer = canvas.dataset.scene === 'admirer';
-const pricing = canvas.dataset.scene === 'pricing';
-const faq = canvas.dataset.scene === 'faq';
-const farewell = canvas.dataset.scene === 'farewell';
+const checklist = false;
+const admirer = false;
+const pricing = false;
+const faq = false;
+const farewell = true;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 try {
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
@@ -126,37 +126,6 @@ try {
   agent.position.set(-0.85, 1.32, -0.25);
   world.add(agent);
 
-  // The reference becomes a solid, bevelled console with physical chart bars.
-  const teal = new THREE.MeshStandardMaterial({ color: 0x10876d, roughness: 0.32, metalness: 0.18 });
-  const graphite = new THREE.MeshStandardMaterial({ color: 0x41413d, roughness: 0.55 });
-  const inset = new THREE.MeshStandardMaterial({ color: 0x242420, roughness: 0.48 });
-  const consoleModel = new THREE.Group();
-  consoleModel.position.set(0.05, -0.43, 0.1);
-  consoleModel.rotation.set(0, 0, 0);
-  world.add(consoleModel);
-  modelParent = consoleModel;
-  roundedBox(3.0, 3.08, 0.3, teal, 0.1, -0.08, -0.13, 0.17);
-  roundedBox(3.0, 3.08, 0.33, dark, 0, 0, 0, 0.17);
-  // Flat text sits on actual extruded geometry, like print on a physical model.
-  //
-  // The console's labels are canvas textures, and how many pixels each one is
-  // drawn at decides whether they read as print or as mush. Three things matter
-  // and all three used to be wrong.
-  //
-  // Resolution has to follow the screen. A fixed-size canvas is either wasted
-  // on a phone or starved on a 5K display, so each label is redrawn at whatever
-  // the renderer is actually about to show it at — see `retexture()` below,
-  // driven from the resize pass.
-  //
-  // Mipmaps have to be off. They exist to stop a minified texture shimmering,
-  // and they do it by blurring; when the texture is already sized to the screen
-  // there is nothing to minify, and the blur is pure loss. Linear on both
-  // filters, no mipmap chain.
-  //
-  // And the type has to be the page's own — Space Mono for the machine labels,
-  // Bricolage Grotesque for the copy — not whatever `system-ui` resolves to.
-  // Those fonts load with the page, so the first draw can land before they
-  // arrive; every label is redrawn once `document.fonts.ready` settles.
   const MONO = "'Space Mono', ui-monospace, monospace";
   const SANS = "'Bricolage Grotesque', system-ui, sans-serif";
   // Texels per world unit, clamped: below the floor type breaks up, above the
@@ -220,130 +189,8 @@ try {
     texels = wanted;
     prints.forEach(draw => draw());
   }
-  [teal, clay, cream].forEach((material, i) => sphere(0.042, material, -1.22 + i * 0.14, 1.27, 0.21));
-  print('agent.log', 0.7, 0.17, 0.95, 1.27, 0.22, consoleModel, '#aaa99e', 85, MONO);
-  roundedBox(2.65, 0.018, 0.025, graphite, 0, 1.08, 0.19, 0.005);
-  const heights = [0.18, 0.28, 0.23, 0.43, 0.39, 0.58, 0.72, 0.86];
-  heights.forEach((height, i) => {
-    const material = i < 3 ? graphite : i < 5 ? clay : i < 7 ? cream : teal;
-    roundedBox(0.26, height, 0.19, material, -1.13 + i * 0.323, 0.05 + height / 2, 0.26, 0.035);
-  });
-  print('WEEK 1', 0.64, 0.15, -1.06, -0.065, 0.22, consoleModel, '#aaa99e', 85, MONO);
-  print('WEEK 12', 0.65, 0.15, 1.02, -0.065, 0.22, consoleModel, '#aaa99e', 85, MONO);
-  print('◆  Drafting content   62%', 2.48, 0.18, 0, -0.34, 0.23, consoleModel, '#eee3c1', 55);
-  print('✓  Fixed 3 broken links', 2.48, 0.18, 0, -0.57, 0.23, consoleModel, '#f3f1e8', 55);
-  print('✓  Sent 8 outreach emails', 2.48, 0.18, 0, -0.8, 0.23, consoleModel, '#f3f1e8', 55);
-  const metrics = [['+312%', 'TRAFFIC'], ['37', 'TOP-10 KWS'], ['0', 'HIRES']];
-  metrics.forEach(([value, label], i) => {
-    const x = -0.89 + i * 0.9;
-    roundedBox(0.78, 0.45, 0.075, inset, x, -1.18, 0.21, 0.05);
-    print(value, 0.62, 0.19, x, -1.11, 0.26, consoleModel, '#fff8e7', 150);
-    print(label, 0.62, 0.11, x, -1.29, 0.26, consoleModel, '#aaa99e', 85, MONO);
-  });
-  const badge = new THREE.Group();
-  badge.position.set(0.75, 1.57, 0.27); badge.rotation.z = 0.08;
-  consoleModel.add(badge); modelParent = badge;
-  roundedBox(1.3, 0.36, 0.16, dark, 0, 0, 0, 0.12);
-  roundedBox(1.22, 0.29, 0.09, clay, 0, 0, 0.1, 0.09);
-  print('WORKING 24/7', 1.08, 0.19, 0, 0, 0.16, badge, '#fff8e7', 88, MONO);
-  // The upper body stands above the console; its attached arms stay still.
-  modelParent = world;
-  const speech = new THREE.Group();
-  speech.position.set(0.65, 1.97, 0.18);
-  world.add(speech); modelParent = speech;
-  roundedBox(1.65, 0.58, 0.12, cream, 0, 0, 0, 0.1);
-  const tail = new THREE.Shape();
-  tail.moveTo(-0.65, -0.2); tail.lineTo(-0.8, -0.43); tail.lineTo(-0.35, -0.2); tail.closePath();
-  speech.add(new THREE.Mesh(new THREE.ExtrudeGeometry(tail, { depth: 0.06, bevelEnabled: false }), cream));
-  print('I work.', 1.35, 0.2, 0, 0.12, 0.08, speech, '#242420', 88);
-  print('You grow.', 1.35, 0.22, 0, -0.12, 0.08, speech, '#10876d', 102);
-  if (checklist) {
-    // The second scene depicts the seven jobs as a physical checklist.
-    consoleModel.visible = false;
-    speech.visible = false;
-    agent.position.set(-0.68, -0.12, 0.2);
-    agent.scale.setScalar(0.82);
-    const board = new THREE.Group();
-    board.position.set(0.82, 0.08, -0.05);
-    board.rotation.set(0, -0.12, -0.045);
-    world.add(board); modelParent = board;
-    roundedBox(1.45, 2.38, 0.19, teal, 0, 0, 0, 0.1);
-    roundedBox(1.28, 2.2, 0.08, cream, 0, 0, 0.13, 0.045);
-    roundedBox(0.6, 0.22, 0.1, clay, 0, 1.13, 0.2, 0.04);
-    print('7 JOBS. HANDLED.', 1.1, 0.19, 0, 0.85, 0.19, board, '#151412', 95, MONO);
-    ['Keywords', 'Content', 'Backlinks', 'Technical', 'Local SEO', 'Paid + social', 'Reporting'].forEach((label, i) => {
-      const y = 0.55 - i * 0.23;
-      roundedBox(0.13, 0.13, 0.035, teal, -0.48, y, 0.19, 0.015);
-      print('✓', 0.1, 0.1, -0.48, y, 0.22, board, '#fff8e7', 400);
-      print(label, 0.91, 0.16, 0.1, y, 0.19, board, '#242420', 115);
-    });
-  }
-  if (admirer) {
-    consoleModel.visible = false;
-    speech.visible = false;
-    // Only the larger face peeks above the shelf; omit the torso and feet.
-    for (const part of agent.children) part.visible = part === head;
-    agent.position.set(-0.6, 0, 0.2);
-    agent.scale.setScalar(0.95);
-    const reply = new THREE.Group();
-    reply.position.set(0.85, 0.94, 0.2);
-    world.add(reply); modelParent = reply;
-    roundedBox(1.43, 0.49, 0.12, cream, 0, 0, 0, 0.09);
-    const tail = new THREE.Shape();
-    tail.moveTo(-0.56,-0.16); tail.lineTo(-0.73,-0.36); tail.lineTo(-0.28,-0.16); tail.closePath();
-    reply.add(new THREE.Mesh(new THREE.ExtrudeGeometry(tail,{depth:0.05,bevelEnabled:false}),cream));
-    print('That’s me!', 1.25, 0.27, 0, 0, 0.08, reply, '#10876d', 130);
-  }
-  if (pricing) {
-    consoleModel.visible = false;
-    speech.visible = false;
-    for (const part of agent.children) part.visible = part === head;
-    agent.position.set(0, 0, 0.2);
-    agent.scale.setScalar(0.95);
-  }
-  const celebration = [];
-  if (pricing) {
-    // Small physical sparkle shapes stay within the existing render footprint.
-    const positions = [[-1.02,1.24],[1.03,1.25],[-0.65,1.56],[0.66,1.56],[-1.03,0.96],[1.04,0.98]];
-    positions.forEach(([x,y],i) => {
-      const shape = new THREE.Shape();
-      for (let point=0;point<8;point++) {
-        const radius = point%2 ? 0.027 : 0.095;
-        const angle=point*Math.PI/4;
-        if (!point) shape.moveTo(Math.cos(angle)*radius,Math.sin(angle)*radius);
-        else shape.lineTo(Math.cos(angle)*radius,Math.sin(angle)*radius);
-      }
-      shape.closePath();
-      const sparkle = new THREE.Mesh(new THREE.ExtrudeGeometry(shape,{depth:0.025,bevelEnabled:false}),i%2 ? teal : clay);
-      sparkle.position.set(x,y,0.6); sparkle.visible=false; world.add(sparkle); celebration.push(sparkle);
-    });
-  }
-  if (faq) {
-    consoleModel.visible = false;
-    speech.visible = false;
-    agent.position.set(-0.12,-0.35,0.2);
-    agent.scale.setScalar(1.05);
-    head.rotation.z = -0.09;
-    eyes[0].scale.y = 0.68;
-    smile.rotation.z = 0.17;
-    modelParent = head;
-    const brow = roundedBox(0.24,0.035,0.03,glow,-0.28,0.25,0.55,0.01);
-    brow.rotation.z = -0.2;
-    roundedBox(0.23,0.035,0.03,glow,0.28,0.22,0.55,0.01);
-    const quip = new THREE.Group();
-    quip.position.set(0.05,1.65,0.2);
-    world.add(quip); modelParent = quip;
-    roundedBox(2.55,0.67,0.13,cream,0,0,0,0.1);
-    const tail = new THREE.Shape();
-    tail.moveTo(-0.65,-0.25); tail.lineTo(-0.45,-0.46); tail.lineTo(-0.22,-0.25); tail.closePath();
-    quip.add(new THREE.Mesh(new THREE.ExtrudeGeometry(tail,{depth:0.05,bevelEnabled:false}),cream));
-    print('More reliable',2.2,0.23,0,0.13,0.085,quip,'#242420',78);
-    print('than your ex.',2.2,0.26,0,-0.13,0.085,quip,'#10876d',88);
-  }
   let wavingArm = null;
   if (farewell) {
-    consoleModel.visible = false;
-    speech.visible = false;
     agent.position.set(-0.12,-0.1,0.2);
     agent.scale.setScalar(0.92);
     // Pivot the entire forearm and hand at the shoulder, so they stay attached.
@@ -514,7 +361,7 @@ try {
     });
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
-  canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); cancelAnimationFrame(frame); canvas.parentElement.hidden = true; if (toggle) toggle.hidden = true; container.querySelector('.model-fallback').hidden = false; });
+  canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); cancelAnimationFrame(frame); canvas.parentElement.hidden = true; if (toggle) toggle.hidden = true; canvas.setAttribute('aria-label', 'Willy requires WebGL to display.'); });
   updateToggle();
   resume();
   // Space Mono and Bricolage Grotesque come from the page's stylesheet, so the
@@ -527,16 +374,8 @@ try {
   // Keep a useful message when the browser cannot render the 3D model.
   canvas.parentElement.hidden = true;
   if (toggle) toggle.hidden = true;
-  container.querySelector('.model-fallback').hidden = false;
+  canvas.setAttribute('aria-label', 'Willy requires WebGL to display.');
 }
 
 }
 
-export { mountAgent };
-
-// Auto-mount when a canvas is already in the document (marketing pages).
-document
-  .querySelectorAll(
-    '#agent-sculpture, [data-scene="checklist"], [data-scene="admirer"], [data-scene="pricing"], [data-scene="faq"], [data-scene="farewell"]',
-  )
-  .forEach(mountAgent);
