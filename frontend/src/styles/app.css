@@ -2147,8 +2147,31 @@ input[type='range']:disabled::-webkit-slider-thumb {
   margin: 4px 0 18px;
 }
 
+.portal-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
 .portal-filter-summary {
   white-space: nowrap;
+}
+
+.portal-show-disabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+  user-select: none;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+}
+
+.portal-show-disabled input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-accent);
 }
 
 .portal-feature-list {

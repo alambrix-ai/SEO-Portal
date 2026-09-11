@@ -42,6 +42,8 @@ export function PortalAdminPage() {
   const [featureFilter, setFeatureFilter] = useState<FeatureKindFilter>('all')
   const [workspaceQuery, setWorkspaceQuery] = useState('')
   const [featureQuery, setFeatureQuery] = useState('')
+  /** Off items leave the catalogue; turn this on only to restore them. */
+  const [showDisabled, setShowDisabled] = useState(false)
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const isPortalAdmin = Boolean(session?.is_portal_admin)
 
@@ -81,6 +83,7 @@ export function PortalAdminPage() {
     const rows = features.data ?? []
     const q = featureQuery.trim().toLowerCase()
     return rows.filter((row) => {
+      if (!showDisabled && !row.enabled) return false
       if (featureFilter !== 'all' && row.kind !== featureFilter) return false
       if (!q) return true
       return (
@@ -89,7 +92,12 @@ export function PortalAdminPage() {
         row.kind.toLowerCase().includes(q)
       )
     })
-  }, [features.data, featureFilter, featureQuery])
+  }, [features.data, featureFilter, featureQuery, showDisabled])
+
+  const hiddenCount = useMemo(
+    () => (features.data ?? []).filter((row) => !row.enabled).length,
+    [features.data],
+  )
 
   const featuresByKind = useMemo(() => {
     const groups: { kind: string; rows: PortalFeature[] }[] = []
@@ -315,7 +323,7 @@ export function PortalAdminPage() {
         <section className="portal-panel" aria-label="Catalogue">
           <SectionHeading
             title="Product catalogue"
-            description="Off items stay in the database but are hidden from every customer console."
+            description="Turning a row Off removes it from this list and from every customer console. Open Show disabled only when you need to restore one."
             action={
               <div className="portal-search">
                 <input
@@ -342,9 +350,24 @@ export function PortalAdminPage() {
               ]}
               onChange={(next) => setFeatureFilter(next as FeatureKindFilter)}
             />
-            <div className="portal-filter-summary muted small">
-              Showing {filteredFeatures.length}
-              {features.data ? ` of ${features.data.length}` : ''}
+            <div className="portal-filter-actions">
+              <label className="portal-show-disabled">
+                <input
+                  type="checkbox"
+                  checked={showDisabled}
+                  onChange={(event) => setShowDisabled(event.target.checked)}
+                />
+                <span>
+                  Show disabled
+                  {hiddenCount > 0 ? ` (${hiddenCount})` : ''}
+                </span>
+              </label>
+              <div className="portal-filter-summary muted small">
+                Showing {filteredFeatures.length}
+                {features.data
+                  ? ` · ${showDisabled ? features.data.length : features.data.length - hiddenCount} live`
+                  : ''}
+              </div>
             </div>
           </div>
 
@@ -357,8 +380,27 @@ export function PortalAdminPage() {
 
           {!features.loading && filteredFeatures.length === 0 ? (
             <EmptyState
-              title="Nothing in this view"
-              description="Change the filter or search to find connectors, agents, or modules."
+              title={
+                !showDisabled && hiddenCount > 0
+                  ? 'No live catalogue items in this view'
+                  : 'Nothing in this view'
+              }
+              description={
+                !showDisabled && hiddenCount > 0
+                  ? 'Turn on Show disabled to restore hidden connectors, agents, or modules.'
+                  : 'Change the filter or search to find connectors, agents, or modules.'
+              }
+              action={
+                !showDisabled && hiddenCount > 0 ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowDisabled(true)}
+                  >
+                    Show disabled ({hiddenCount})
+                  </button>
+                ) : undefined
+              }
             />
           ) : null}
 

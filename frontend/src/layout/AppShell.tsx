@@ -130,6 +130,10 @@ export function AppShell() {
             if (portalAdminOnly && !session.is_portal_admin) {
               return null
             }
+            // Portal-disabled modules leave the product entirely — not a locked link.
+            if (module && !session.enabled_modules.includes(module)) {
+              return null
+            }
             const locked = module ? !canView(module) : false
             if (locked) {
               return (
