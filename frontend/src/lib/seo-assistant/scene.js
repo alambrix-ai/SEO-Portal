@@ -1,4 +1,4 @@
-import * as THREE from '/vendor/three/three.module.min.js';
+import * as THREE from 'three';
 
 function mountAgent(canvas) {
 const container = canvas.parentElement.parentElement;
