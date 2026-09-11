@@ -116,6 +116,9 @@ class AgentSpec:
     scope_placeholder: str = ""
     # Continuous agents show "ongoing" rather than a countdown.
     continuous: bool = False
+    # When True the Configure dialog asks which connected AI model to use,
+    # and a run is skipped until that connector is chosen and healthy.
+    requires_llm: bool = False
 
 
 class BaseAgent(ABC):
@@ -193,6 +196,20 @@ class BaseAgent(ABC):
                 _describe(capability) for capability in self.spec.any_of_capabilities
             )
             return f"Waiting on a connector that can {needed}"
+
+        if self.spec.requires_llm:
+            choice = (getattr(ctx.record, "llm_connector", None) or "").strip()
+            if not choice:
+                return (
+                    "Choose which AI model this agent should use — open "
+                    "Configure and pick a connected model."
+                )
+            if choice not in ctx.connectors:
+                name = ctx.connector_names.get(choice, choice)
+                return (
+                    f"Waiting on {name}. Connect it under Connectors, then "
+                    "save this agent's configuration again."
+                )
         return None
 
     def __repr__(self) -> str:  # pragma: no cover

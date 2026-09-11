@@ -157,8 +157,8 @@ def cmd_check(args: argparse.Namespace) -> int:
     print(f"TLS mode         : {settings.effective_sslmode}")
     print(f"RLS enforced     : {settings.db_enforce_rls}")
     print(
-        f"Model            : {settings.llm_provider}/"
-        f"{settings.llm_model or 'UNSET'} (effort {settings.llm_effort})"
+        "Model            : chosen per agent from connected AI connectors "
+        f"(effort {settings.llm_effort})"
     )
     print(f"Public sign-up   : {settings.allow_public_signup}")
     print(
@@ -196,17 +196,10 @@ def cmd_check(args: argparse.Namespace) -> int:
     print(f"Agents           : {len(all_agents())}")
     print(f"Connectors       : {len(all_specs())}")
 
-    if not settings.llm_model:
-        print("Model access     : LLM_MODEL IS UNSET — no default, so no agent can generate")
-        ok = False
-    elif not settings.active_llm_key:
-        print(
-            f"Model access     : NO {settings.llm_provider.upper()}_API_KEY — "
-            "agents cannot generate content"
-        )
-        ok = False
-    else:
-        print("Model access     : API key present")
+    print(
+        "Model access     : connect OpenAI / Claude / Gemini / Perplexity, "
+        "then pick one when configuring each agent"
+    )
     if not (settings.llm_price_input_per_mtok or settings.llm_price_output_per_mtok):
         print("Model pricing    : unset — run costs will read zero")
 

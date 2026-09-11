@@ -66,12 +66,11 @@ services:
         value: "1.0"
       - key: CELERY_ENABLED
         value: "false"
-      - key: LLM_PROVIDER
-        value: anthropic
-      - key: LLM_MODEL
-        sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
+      # Agent writing models come from Connectors (per agent), not env keys.
+      - key: LLM_EFFORT
+        value: medium
+      - key: LLM_MAX_TOKENS
+        value: "16000"
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

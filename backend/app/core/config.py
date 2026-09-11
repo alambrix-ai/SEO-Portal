@@ -209,20 +209,16 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
 
-    # ── LLM ────────────────────────────────────────────────────────────────
-    # Anthropic is the only provider. The agents publish to live websites and
-    # ad accounts, so a "fake" provider is not a configuration option — the
-    # deterministic one used by tests lives in the test suite.
-    # ── The model ──────────────────────────────────────────────────────────
-    # Which vendor runs the agents, and which model. Both are required and
-    # neither has a default: the model decides what gets written to a
-    # customer's site and what it costs, so it is named explicitly or the
-    # process refuses to build a provider at all.
-    llm_provider: Literal["anthropic", "openai", "gemini", "grok"] = "anthropic"
+    # ── LLM transport knobs (optional) ─────────────────────────────────────
+    # Which model an agent writes with comes from the connector the operator
+    # picks on that agent — not from these settings. The fields below remain
+    # for shared HTTP limits, Anthropic effort, and spend accounting only.
+    # Legacy LLM_PROVIDER / LLM_MODEL / vendor API keys are unused by agents.
+    llm_provider: str = ""
     llm_model: str = ""
 
-    # One key per vendor, so switching LLM_PROVIDER does not mean re-entering
-    # credentials. Only the selected provider's key is required.
+    # One key per vendor — unused by agent runs (connectors hold the keys).
+    # Kept so older .env files and get_provider() tooling still parse.
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     gemini_api_key: str = ""
@@ -308,17 +304,6 @@ class Settings(BaseSettings):
             problems.append(
                 "FORCE_HTTPS must be true so sessions and credentials are not "
                 "sent in the clear"
-            )
-        if not self.llm_model:
-            problems.append(
-                "LLM_MODEL must name the model the agents should use — there "
-                "is deliberately no default"
-            )
-        if not self.active_llm_key:
-            problems.append(
-                f"{self.llm_provider.upper()}_API_KEY must be set, because "
-                f"LLM_PROVIDER is {self.llm_provider!r} — the agents cannot "
-                "generate content without a model"
             )
         if not self.smtp_host and not self.resend_api_key:
             problems.append(

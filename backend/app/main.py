@@ -99,11 +99,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.info("Scheduler disabled; agents run only when triggered manually")
 
     log.info(
-        "Ready: %d agents, %d connectors, model %s/%s",
+        "Ready: %d agents, %d connectors (LLM from connected models per agent)",
         len(agents),
         len(connectors),
-        settings.llm_provider,
-        settings.llm_model or "UNSET",
     )
 
     yield
@@ -230,7 +228,7 @@ def create_app() -> FastAPI:
             database=database,
             agents_registered=len(all_agents()),
             connectors_registered=len(all_specs()),
-            model=f"{settings.llm_provider}/{settings.llm_model}",
+            model="per-agent connector",
             scheduler=(
                 "celery"
                 if settings.celery_enabled

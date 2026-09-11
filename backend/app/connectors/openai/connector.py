@@ -19,8 +19,8 @@ class OpenAiConnector(BaseAeoConnector):
     spec = ConnectorSpec(
         slug="openai",
         name="OpenAI",
-        category="AEO/LLM Monitoring",
-        description="Check whether ChatGPT's search surfaces cite your pages.",
+        category="AI models",
+        description="Writing for agents, and citation checks in ChatGPT search.",
         fields=(
             secret("apiKey", "API key", "sk-••••••••"),
             text(

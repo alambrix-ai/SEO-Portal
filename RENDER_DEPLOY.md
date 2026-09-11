@@ -75,11 +75,12 @@ python -c "import os,base64;print('BLIND_INDEX_KEY='+base64.b64encode(os.urandom
 
 You also need:
 
-- `LLM_MODEL` (for example `claude-sonnet-4-5`)
-- `ANTHROPIC_API_KEY`
-- SMTP relay values: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`
+- SMTP or Resend for sign-in codes: prefer `RESEND_API_KEY` on Render free
+  (SMTP ports are blocked), plus `EMAIL_FROM`
+- AI model keys are **not** set in Render env — connect OpenAI / Claude /
+  Gemini / Perplexity in the console, then pick one when configuring each agent
 
-Production refuses to start without SMTP, encryption keys, and an LLM key.
+Production refuses to start without mail delivery and encryption keys.
 
 ## 3. Deploy with the Blueprint
 
@@ -90,9 +91,7 @@ Production refuses to start without SMTP, encryption keys, and an LLM key.
    - `DATABASE_URL` (Neon)
    - `MASTER_ENCRYPTION_KEY`
    - `BLIND_INDEX_KEY`
-   - `LLM_MODEL`
-   - `ANTHROPIC_API_KEY`
-   - `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`
+   - `RESEND_API_KEY` (or SMTP values) and `EMAIL_FROM`
 5. Deploy. Render creates:
    - `automarket-api` (Docker, free)
    - `automarket-console` (static, free)

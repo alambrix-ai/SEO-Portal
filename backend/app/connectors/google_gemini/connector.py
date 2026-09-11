@@ -21,8 +21,8 @@ class GoogleGeminiConnector(BaseAeoConnector):
     spec = ConnectorSpec(
         slug="google_gemini",
         name="Google Gemini",
-        category="AEO/LLM Monitoring",
-        description="Track citations in Gemini's grounded answers.",
+        category="AI models",
+        description="Writing for agents, and citation checks in Gemini answers.",
         fields=(
             secret("apiKey", "API key", "AIza••••••••"),
             text(

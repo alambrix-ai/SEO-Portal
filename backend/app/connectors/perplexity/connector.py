@@ -20,8 +20,8 @@ class PerplexityConnector(BaseAeoConnector):
     spec = ConnectorSpec(
         slug="perplexity",
         name="Perplexity",
-        category="AEO/LLM Monitoring",
-        description="Track whether Perplexity cites your pages when answering buyer questions.",
+        category="AI models",
+        description="Writing for agents, and citation checks in Perplexity answers.",
         fields=(
             secret("apiKey", "API key", "pplx-••••••••"),
             text(

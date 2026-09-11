@@ -149,6 +149,10 @@ export interface AgentOut {
   scope: string
   scope_placeholder: string
   notify_channel: string
+  /** Connected AI model connector slug when this agent writes with a model. */
+  llm_connector: string
+  /** True when Configure must ask which model connector to use. */
+  requires_llm: boolean
   max_actions_per_day: number
   configured: boolean
   config_summary: string
@@ -183,9 +187,17 @@ export interface NotifyChannelOut {
   reason: string
 }
 
+export interface LlmConnectorOut {
+  slug: string
+  name: string
+  available: boolean
+  reason: string
+}
+
 export interface AgentOptions {
   schedules: string[]
   notify_channels: NotifyChannelOut[]
+  llm_connectors: LlmConnectorOut[]
 }
 
 export interface AgentRun {
@@ -207,6 +219,7 @@ export interface AgentConfigRequest {
   schedule: string
   scope: string
   notify_channel: string
+  llm_connector: string
   max_actions_per_day: number
 }
 

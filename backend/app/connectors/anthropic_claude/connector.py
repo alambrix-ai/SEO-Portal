@@ -27,8 +27,8 @@ class AnthropicClaudeConnector(BaseAeoConnector):
     spec = ConnectorSpec(
         slug="anthropic_claude",
         name="Anthropic Claude",
-        category="AEO/LLM Monitoring",
-        description="Track whether Claude's web search cites your pages.",
+        category="AI models",
+        description="Writing for agents, and citation checks in Claude web search.",
         fields=(
             secret("apiKey", "API key", "sk-ant-••••••••"),
             text(

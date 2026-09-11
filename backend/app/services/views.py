@@ -114,12 +114,21 @@ def agent_out(
     """
     agent = get_agent(record.slug)
     continuous = bool(agent and agent.spec.continuous)
+    requires_llm = bool(agent and agent.spec.requires_llm)
     config_summary = ""
     if record.configured:
-        config_summary = (
-            f"Configured: {record.schedule} · notify {record.notify_channel} · "
-            f"max {record.max_actions_per_day}/day"
-        )
+        parts = [
+            f"Configured: {record.schedule}",
+            f"notify {record.notify_channel}",
+            f"max {record.max_actions_per_day}/day",
+        ]
+        if requires_llm and record.llm_connector:
+            from app.connectors.base import registry as connector_registry
+
+            spec = connector_registry.get_spec(record.llm_connector)
+            label = spec.name if spec else record.llm_connector
+            parts.insert(1, f"model {label}")
+        config_summary = " · ".join(parts)
 
     return AgentOut(
         slug=record.slug,
@@ -140,6 +149,8 @@ def agent_out(
         group=AGENT_GROUPS.get(agent_rank(record), "idle"),
         **_run_progress(run),
         notify_channel=record.notify_channel,
+        llm_connector=record.llm_connector or "",
+        requires_llm=requires_llm,
         max_actions_per_day=record.max_actions_per_day,
         configured=record.configured,
         config_summary=config_summary,

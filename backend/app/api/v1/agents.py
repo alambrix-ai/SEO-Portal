@@ -15,6 +15,7 @@ from app.schemas.common import ActionResult, Toast
 from app.schemas.workspace import (
     AgentConfigRequest,
     AgentOptionsOut,
+    LlmConnectorOut,
     NotifyChannelOut,
     AgentOut,
     AgentRunOut,
@@ -88,12 +89,39 @@ def _notify_options(db: DbSession, org) -> list[NotifyChannelOut]:  # noqa: ANN0
     return out
 
 
+def _llm_options(db: DbSession, org) -> list[LlmConnectorOut]:  # noqa: ANN001
+    """AI model connectors agents can write with, and whether each is connected."""
+    from app.connectors.base.connector import Capability
+    from app.llm.from_connector import supports_agent_llm
+
+    bundle = connector_service.build_connector_bundle(db, org)
+    out: list[LlmConnectorOut] = []
+    for spec in connector_registry.all_specs():
+        if not supports_agent_llm(spec.slug):
+            continue
+        if Capability.COMPLETE not in spec.capabilities:
+            continue
+        connected = spec.slug in bundle.instances
+        out.append(
+            LlmConnectorOut(
+                slug=spec.slug,
+                name=spec.name,
+                available=connected,
+                reason=""
+                if connected
+                else f"Connect {spec.name} under Connectors first.",
+            )
+        )
+    return out
+
+
 @router.get("/options", response_model=AgentOptionsOut)
 def options(current: CurrentUserDep, db: DbSession) -> AgentOptionsOut:
     current.require_view(Module.AGENTS)
     return AgentOptionsOut(
         schedules=views.AGENT_SCHEDULES,
         notify_channels=_notify_options(db, current.organization),
+        llm_connectors=_llm_options(db, current.organization),
     )
 
 
@@ -161,6 +189,29 @@ def _validate_config(
         if scope_problem:
             problems.append(scope_problem)
 
+        if agent.spec.requires_llm:
+            choice = (payload.llm_connector or "").strip()
+            if not choice:
+                problems.append(
+                    "Choose which AI model this agent should use. Connect one "
+                    "under Connectors if none are listed."
+                )
+            else:
+                llm_opts = {
+                    option.slug: option for option in _llm_options(db, current.organization)
+                }
+                option = llm_opts.get(choice)
+                if option is None:
+                    problems.append(
+                        "That AI model cannot be used for writing. Pick one "
+                        "from the list."
+                    )
+                elif not option.available:
+                    problems.append(
+                        f"{option.name} is not connected yet. "
+                        f"{option.reason}"
+                    )
+
     if problems:
         raise InvalidInputError(
             problems[0]
@@ -206,7 +257,7 @@ def _assert_configured(record: AgentRecord) -> None:
     if not record.configured:
         raise ConflictError(
             f"Configure {record.name} before starting it — set its schedule, "
-            "scope and daily action cap, then start it."
+            "scope, AI model (when needed) and daily action cap, then start it."
         )
 
 
@@ -320,6 +371,11 @@ def configure(
     record.schedule = payload.schedule
     record.scope = payload.scope.strip()
     record.notify_channel = payload.notify_channel
+    agent = lookup_agent(slug)
+    if agent is not None and agent.spec.requires_llm:
+        record.llm_connector = (payload.llm_connector or "").strip()
+    else:
+        record.llm_connector = ""
     record.max_actions_per_day = payload.max_actions_per_day
     record.configured = True
 
@@ -334,7 +390,6 @@ def configure(
     # Let the agent react to its own configuration change.
     from app.orchestration.runner import build_context
 
-    agent = lookup_agent(slug)
     if agent is not None:
         agent.on_configure(
             build_context(db, record, current.organization, trigger="config"),
@@ -392,6 +447,7 @@ def reset_config(
     record.scope = ""
     record.schedule = spec.default_schedule
     record.notify_channel = settings.default_notify_channel
+    record.llm_connector = ""
     record.max_actions_per_day = spec.default_max_actions_per_day
     record.metric_label = "Not started yet"
     record.last_error = ""

@@ -66,6 +66,9 @@ class AgentRecord(Base, TimestampMixin, TenantScopedMixin):
     # None by default: a workspace has nothing connected on its first day,
     # and a default channel that cannot deliver is worse than no channel.
     notify_channel: Mapped[str] = mapped_column(String(32), default="None")
+    # Which connected AI model writes for this agent. Empty until Configure
+    # is saved — agents that need a model refuse to run without it.
+    llm_connector: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     max_actions_per_day: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
     configured: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

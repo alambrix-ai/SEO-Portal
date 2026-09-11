@@ -65,6 +65,7 @@ class OnPageSeoSyncAgent(BaseAgent):
         max_impact=Impact.HIGH,
         default_max_actions_per_day=20,
         scope_placeholder="/blog/* or leave blank for the whole site",
+        requires_llm=True,
     )
 
     def validate_scope(self, scope: str) -> str | None:

@@ -59,15 +59,13 @@ class HttpLLMProvider(LLMProvider):
     def __init__(self, *, api_key: str, model: str, base_url: str) -> None:
         if not api_key:
             raise LLMError(
-                f"{self.name} is the configured LLM provider but {self.key_setting} "
-                "is empty. Set it, or point LLM_PROVIDER at a provider you have "
-                "a key for."
+                f"{self.name} is missing its API key. Open Connectors, "
+                "reconnect this model, and try again."
             )
         if not model:
             raise LLMError(
-                "LLM_MODEL is not set. There is deliberately no default: the "
-                "model decides what the agents write and what it costs, so it "
-                "is named explicitly or not at all."
+                f"{self.name} has no model name set. Open Connectors and "
+                "enter the exact model name — there is no default."
             )
         self.api_key = api_key
         self.model = model

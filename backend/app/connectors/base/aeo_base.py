@@ -23,7 +23,9 @@ from app.db.base import utcnow
 
 log = get_logger(__name__)
 
-AEO_CAPABILITIES = frozenset({Capability.CHECK_CITATIONS})
+# Citation checks plus text generation: the same apiKey + model credentials
+# power both AEO monitoring and agent writing.
+AEO_CAPABILITIES = frozenset({Capability.CHECK_CITATIONS, Capability.COMPLETE})
 
 # Queries per run. Each is a paid model call against a live search tool, so
 # the cap is deliberate: citation tracking should cost cents, not dollars.

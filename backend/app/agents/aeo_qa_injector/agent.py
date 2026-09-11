@@ -59,6 +59,7 @@ class AeoQaInjectorAgent(BaseAgent):
         max_impact=Impact.LOW,
         default_max_actions_per_day=40,
         scope_placeholder="/pricing/* or leave blank for every synced page",
+        requires_llm=True,
     )
 
     def validate_scope(self, scope: str) -> str | None:

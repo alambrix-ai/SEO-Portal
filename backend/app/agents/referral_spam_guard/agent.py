@@ -57,6 +57,7 @@ class ReferralSpamGuardAgent(BaseAgent):
         default_max_actions_per_day=500,
         scope_placeholder="Extra domains to always block, comma separated",
         continuous=True,
+        requires_llm=True,
     )
 
     def validate_scope(self, scope: str) -> str | None:

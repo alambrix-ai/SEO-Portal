@@ -1,21 +1,9 @@
 """LLM provider selection.
 
-Agents call :func:`get_provider`; nothing else in the codebase names a vendor.
-Which vendor and which model come from ``LLM_PROVIDER`` and ``LLM_MODEL``, and
-there is no default for either — see :func:`get_provider`.
-
-There is no mock provider and no offline mode. An earlier version shipped a
-deterministic one that synthesised plausible marketing copy: convenient for
-demos, and a genuine hazard in a platform whose agents publish to a customer's
-live website and ad accounts, because a misconfigured deployment would write
-invented content and nothing would look wrong. The deterministic provider
-lives in the test suite, where it is a test double and cannot be selected by
-configuration.
-
-There is also no chain of providers. If the configured one is unreachable the
-call fails and the agent reports that it is waiting on a model — it does not
-quietly ask a different vendor. Copy on a customer's page should only ever
-come from the model somebody chose.
+Agent runs resolve their model from the connector the operator picked on that
+agent (see :mod:`app.llm.from_connector`). :func:`get_provider` remains for
+tests and rare tooling that still want a process-wide provider from env —
+it is not used by the agent runner.
 """
 from __future__ import annotations
 
@@ -29,12 +17,10 @@ _provider: LLMProvider | None = None
 
 
 def get_provider() -> LLMProvider:
-    """Return the process-wide provider, built on first use.
+    """Return a process-wide provider from env, built on first use.
 
-    Raises :class:`LLMError` when the configuration does not name a provider,
-    a model and a key for that provider. Deliberately loud: the alternative is
-    a deployment that looks healthy and writes nothing, or writes with a model
-    nobody chose.
+    Prefer connector-backed providers for agent work. This path is for tests
+    and tooling only; missing env config raises :class:`LLMError`.
     """
     global _provider
     if _provider is not None:
@@ -45,8 +31,8 @@ def get_provider() -> LLMProvider:
     choice = (settings.llm_provider or "").strip().lower()
     if choice not in PROVIDERS:
         raise LLMError(
-            f"LLM_PROVIDER is {settings.llm_provider!r}. Set it to one of: "
-            + ", ".join(sorted(PROVIDERS))
+            "No process-wide LLM is configured. Agents use the AI model "
+            "connector chosen on each agent instead."
         )
 
     klass, key_field, base_url_field = PROVIDERS[choice]
@@ -56,20 +42,10 @@ def get_provider() -> LLMProvider:
         base_url=getattr(settings, base_url_field),
     )
     log.info(
-        "LLM provider: %s (%s, effort=%s, max_tokens=%d)",
+        "LLM provider (env tooling): %s (%s)",
         _provider.name,
         settings.llm_model,
-        settings.llm_effort,
-        settings.llm_max_tokens,
     )
-    if not settings.llm_price_input_per_mtok and not settings.llm_price_output_per_mtok:
-        # Said once, at the point the provider is built, because the number it
-        # affects is written to every agent run and reported as spend.
-        log.warning(
-            "LLM_PRICE_INPUT_PER_MTOK and LLM_PRICE_OUTPUT_PER_MTOK are unset, "
-            "so agent run costs will read zero. Set them to your contracted "
-            "rates if you report on model spend."
-        )
     return _provider
 
 

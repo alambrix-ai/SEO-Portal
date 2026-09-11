@@ -57,15 +57,36 @@ class RunOutcome:
 def build_context(
     db: Session, record: AgentRecord, org: Organization, *, trigger: str = "schedule"
 ) -> AgentContext:
-    from app.llm import get_provider
+    from app.agents.base.registry import get_agent
+    from app.llm.from_connector import UnusedLLMProvider, provider_from_connector
 
     bundle = build_connector_bundle(db, org)
+    agent = get_agent(record.slug)
+    requires_llm = bool(agent and agent.spec.requires_llm)
+
+    if not requires_llm:
+        llm = UnusedLLMProvider()
+    else:
+        # Configure-time on_configure may run before a model is chosen; do not
+        # fail the save path. Real runs still raise and become a skip.
+        try:
+            llm = provider_from_connector(
+                record.llm_connector,
+                bundle.instances,
+                names=bundle.names,
+            )
+        except LLMError:
+            if trigger == "config":
+                llm = UnusedLLMProvider()
+            else:
+                raise
+
     return AgentContext(
         db=db,
         org=org,
         record=record,
         cipher=OrgCipher.for_org(org),
-        llm=get_provider(),
+        llm=llm,
         connectors=bundle.instances,
         connector_names=bundle.names,
         connected_slugs=bundle.connected,
@@ -172,11 +193,15 @@ def run_agent(
     try:
         ctx = build_context(db, record, org, trigger=trigger)
     except LLMError as exc:
-        # No model credential is a setup gap, not a defect — the same class of
-        # thing as a missing connector. Report it as a skip an operator can
-        # act on, rather than an error that looks like a bug.
-        reason = str(exc)
-        record.metric_label = "Waiting on a model credential"
+        # No model connector is a setup gap, not a defect — the same class of
+        # thing as a missing CMS. Report it as a skip an operator can act on.
+        from app.core.user_messages import public_error_message
+
+        reason = public_error_message(
+            exc,
+            fallback="Choose which AI model this agent should use, then try again.",
+        )
+        record.metric_label = "Waiting on an AI model"
         _schedule_next(record, agent)
         return finish(RunStatus.SKIPPED, summary=reason)
 

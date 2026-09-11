@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { api } from '@/api/client'
-import type { AgentOut, NotifyChannelOut } from '@/api/types'
+import type { AgentOut, LlmConnectorOut, NotifyChannelOut } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { AgentIcon } from '@/components/AgentIcon'
 import { CardSection } from '@/components/CardSection'
@@ -383,6 +383,7 @@ export function AgentsPage() {
           agent={configuring}
           schedules={options.data?.schedules ?? []}
           channels={options.data?.notify_channels ?? []}
+          llmConnectors={options.data?.llm_connectors ?? []}
           onClose={() => setConfiguring(null)}
           onSaved={async () => {
             setConfiguring(null)
@@ -398,12 +399,14 @@ function ConfigureDialog({
   agent,
   schedules,
   channels,
+  llmConnectors,
   onClose,
   onSaved,
 }: {
   agent: AgentOut
   schedules: string[]
   channels: NotifyChannelOut[]
+  llmConnectors: LlmConnectorOut[]
   onClose: () => void
   onSaved: () => Promise<void>
 }) {
@@ -418,6 +421,14 @@ function ConfigureDialog({
   )
   const [notify, setNotify] = useState(
     deadChannel ? 'None' : agent.notify_channel,
+  )
+  const deadModel = llmConnectors.find(
+    (option) => option.slug === agent.llm_connector && !option.available,
+  )
+  const firstAvailableModel =
+    llmConnectors.find((option) => option.available)?.slug ?? ''
+  const [llmConnector, setLlmConnector] = useState(
+    deadModel ? firstAvailableModel : agent.llm_connector || firstAvailableModel,
   )
   const [maxActions, setMaxActions] = useState(String(agent.max_actions_per_day))
   const [busy, setBusy] = useState(false)
@@ -452,12 +463,20 @@ function ConfigureDialog({
       push('Maximum actions must be at least 1', 'warning')
       return
     }
+    if (agent.requires_llm && !llmConnector) {
+      push(
+        'Choose which AI model this agent should use, or connect one under Connectors first.',
+        'warning',
+      )
+      return
+    }
     setBusy(true)
     try {
       const saved = await api.configureAgent(agent.slug, {
         schedule,
         scope,
         notify_channel: notify,
+        llm_connector: agent.requires_llm ? llmConnector : '',
         max_actions_per_day: Math.floor(parsed),
       })
       push('Configuration saved', 'success')
@@ -544,6 +563,48 @@ function ConfigureDialog({
           onChange={(event) => setScope(event.target.value)}
         />
       </Field>
+
+      {agent.requires_llm ? (
+        <Field
+          label="AI model"
+          htmlFor="cfg-llm"
+          required
+          hint={
+            llmConnectors.find((option) => option.slug === llmConnector)?.reason ||
+            (llmConnectors.some((option) => option.available)
+              ? 'This agent writes with the model you connect and choose here.'
+              : 'Connect OpenAI, Anthropic Claude, Google Gemini, or Perplexity under Connectors first.')
+          }
+        >
+          <select
+            id="cfg-llm"
+            className="input"
+            value={llmConnector}
+            onChange={(event) => setLlmConnector(event.target.value)}
+          >
+            <option value="" disabled>
+              Choose a connected model
+            </option>
+            {llmConnectors.map((option) => (
+              <option
+                key={option.slug}
+                value={option.slug}
+                disabled={!option.available}
+              >
+                {option.name}
+                {option.available ? '' : ' — connect first'}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
+
+      {deadModel ? (
+        <div className="notice">
+          This agent was set to use {deadModel.name}, but that connector is no
+          longer connected — so it could not write. {deadModel.reason}
+        </div>
+      ) : null}
 
       <Field
         label="Notify channel on action"

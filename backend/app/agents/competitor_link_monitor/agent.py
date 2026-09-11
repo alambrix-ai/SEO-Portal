@@ -62,6 +62,7 @@ class CompetitorLinkMonitorAgent(BaseAgent):
         # waiting on a connector.
         required_capabilities=(Capability.READ_BACKLINKS,),
         scope_placeholder="Competitor names or domains, comma separated",
+        requires_llm=True,
     )
 
     def validate_scope(self, scope: str) -> str | None:

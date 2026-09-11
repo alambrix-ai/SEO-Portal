@@ -66,6 +66,7 @@ class KnowledgeGraphSchemaAgent(BaseAgent):
         max_impact=Impact.HIGH,
         default_max_actions_per_day=15,
         scope_placeholder="Product, FAQPage — or blank to infer per page",
+        requires_llm=True,
     )
 
     #: Common types, offered as examples. **Not** an allow-list: schema.org

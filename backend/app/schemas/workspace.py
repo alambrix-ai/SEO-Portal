@@ -33,6 +33,10 @@ class AgentOut(ApiModel):
     # eleven of the twelve.
     scope_placeholder: str = ""
     notify_channel: str
+    # Connected AI model slug when this agent writes with a model; empty otherwise.
+    llm_connector: str = ""
+    # True when Configure must ask which model connector to use.
+    requires_llm: bool = False
     max_actions_per_day: int
     configured: bool
     config_summary: str = ""
@@ -69,6 +73,9 @@ class AgentConfigRequest(ApiModel):
     schedule: str = Field(default="Daily")
     scope: str = Field(default="", max_length=255)
     notify_channel: str = Field(default="None")
+    # Connector slug (openai, anthropic_claude, …). Required when the agent
+    # needs a model; ignored (and stored empty) when it does not.
+    llm_connector: str = Field(default="", max_length=64)
     max_actions_per_day: int = Field(default=20, ge=1, le=1000)
 
 
@@ -99,11 +106,22 @@ class NotifyChannelOut(ApiModel):
     reason: str = ""
 
 
+class LlmConnectorOut(ApiModel):
+    """One AI model connector the Configure dialog can offer."""
+
+    slug: str
+    name: str
+    #: False when this workspace has not connected it yet.
+    available: bool = True
+    reason: str = ""
+
+
 class AgentOptionsOut(ApiModel):
     """Choices the Configure dialog offers."""
 
     schedules: list[str]
     notify_channels: list[NotifyChannelOut]
+    llm_connectors: list[LlmConnectorOut] = Field(default_factory=list)
 
 
 # ── Connectors ─────────────────────────────────────────────────────────────

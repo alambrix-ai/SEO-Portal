@@ -63,6 +63,8 @@ class Capability(StrEnum):
     READ_FIRST_PARTY_SIGNALS = "read_first_party_signals"
     # AEO / LLM monitoring
     CHECK_CITATIONS = "check_citations"
+    # Text generation for agents (rewrite, outreach, creative, etc.)
+    COMPLETE = "complete"
     # Collaboration
     SEND_NOTIFICATION = "send_notification"
     SEND_EMAIL = "send_email"

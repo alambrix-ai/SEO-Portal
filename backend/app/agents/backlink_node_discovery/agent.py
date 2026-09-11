@@ -66,6 +66,7 @@ class BacklinkNodeDiscoveryAgent(BaseAgent):
             Capability.READ_BACKLINKS,
         ),
         scope_placeholder="Topics to hunt, comma separated",
+        requires_llm=True,
     )
 
     def validate_scope(self, scope: str) -> str | None:

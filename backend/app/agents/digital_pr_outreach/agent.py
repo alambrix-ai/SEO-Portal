@@ -62,6 +62,7 @@ class DigitalPrOutreachAgent(BaseAgent):
         max_impact=Impact.HIGH,
         default_max_actions_per_day=5,
         scope_placeholder="Story angle — the claim the pitch is built on",
+        requires_llm=True,
     )
 
     def validate_scope(self, scope: str) -> str | None:
