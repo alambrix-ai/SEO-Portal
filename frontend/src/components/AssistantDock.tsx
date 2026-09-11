@@ -49,6 +49,7 @@ export function AssistantDock() {
   const [stepValues, setStepValues] = useState<Record<string, string>>({})
   const [stepBusy, setStepBusy] = useState(false)
   const chatLogRef = useRef<HTMLDivElement>(null)
+  const stepPanelRef = useRef<HTMLDivElement>(null)
 
   // Always show the bot when signed in; lock the panel when the workspace /
   // role cannot use Onboarding (the module that gates the assistant).
@@ -90,10 +91,22 @@ export function AssistantDock() {
     el.scrollTop = el.scrollHeight
   }, [messages, busy, open])
 
+  useEffect(() => {
+    if (!plan) return
+    stepPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [plan, stepIndex])
+
   const writableConnectors = canWrite('connectors')
   const writableAgents = canWrite('agents')
 
   if (!session) return null
+
+  const appendAssistantNote = (content: string) => {
+    setMessages((current) => [
+      ...current,
+      { id: newId(), role: 'assistant', content },
+    ])
+  }
 
   const send = async () => {
     if (!allowed) {
@@ -135,6 +148,12 @@ export function AssistantDock() {
       if (mode === 'action' && response.action_plan?.steps?.length) {
         setPlan(response.action_plan)
         setStepIndex(0)
+        setStepValues({})
+      } else if (mode === 'action') {
+        push(
+          'No actionable steps yet — try naming the connectors or agents you want set up.',
+          'info',
+        )
       }
     } catch (caught) {
       fromError(caught)
@@ -145,6 +164,27 @@ export function AssistantDock() {
 
   const currentStep: ActionStep | null =
     plan && plan.steps[stepIndex] ? plan.steps[stepIndex] : null
+
+  const credentialFields = (currentStep?.fields || []).filter((field) => !field.is_oauth)
+  const isOauthOnly =
+    currentStep?.type === 'connect_connector' &&
+    (currentStep.fields || []).some((field) => field.is_oauth) &&
+    credentialFields.length === 0
+
+  const advancePlan = (note?: string) => {
+    if (note) appendAssistantNote(note)
+    const next = stepIndex + 1
+    if (plan && next < plan.steps.length) {
+      setStepIndex(next)
+      setStepValues({})
+    } else {
+      push('Action plan complete', 'success')
+      appendAssistantNote('All set — the planned connections and agent steps are done.')
+      setPlan(null)
+      setStepIndex(0)
+      setStepValues({})
+    }
+  }
 
   const runStep = async () => {
     if (!currentStep) return
@@ -160,11 +200,16 @@ export function AssistantDock() {
       return
     }
 
+    if (isOauthOnly) {
+      push('This connector needs OAuth — finish it under Connectors, then continue.', 'warning')
+      return
+    }
+
     setStepBusy(true)
     try {
       if (currentStep.type === 'connect_connector') {
-        const missing = (currentStep.fields || [])
-          .filter((field) => field.required && !field.is_oauth)
+        const missing = credentialFields
+          .filter((field) => field.required)
           .filter((field) => !(stepValues[field.key] || '').trim())
         if (missing.length) {
           const first = missing[0]!
@@ -173,6 +218,7 @@ export function AssistantDock() {
         }
         await api.connect(currentStep.slug, stepValues)
         push(`${currentStep.title || currentStep.slug} connected`, 'success')
+        advancePlan(`Connected **${currentStep.title || currentStep.slug}**.`)
       } else if (currentStep.type === 'configure_agent') {
         const config = currentStep.config || {}
         await api.configureAgent(currentStep.slug, {
@@ -183,20 +229,11 @@ export function AssistantDock() {
           max_actions_per_day: Number(config.max_actions_per_day || 20),
         })
         push(`${currentStep.title || currentStep.slug} configured`, 'success')
+        advancePlan(`Configured **${currentStep.title || currentStep.slug}**.`)
       } else if (currentStep.type === 'resume_agent') {
         await api.resumeAgent(currentStep.slug)
         push(`${currentStep.title || currentStep.slug} started`, 'success')
-      }
-
-      const next = stepIndex + 1
-      if (plan && next < plan.steps.length) {
-        setStepIndex(next)
-        setStepValues({})
-      } else {
-        push('Action plan complete', 'success')
-        setPlan(null)
-        setStepIndex(0)
-        setStepValues({})
+        advancePlan(`Started **${currentStep.title || currentStep.slug}**.`)
       }
     } catch (caught) {
       fromError(caught)
@@ -220,6 +257,12 @@ export function AssistantDock() {
             <div className="assistant-dock-brand">
               <div className="assistant-dock-heading">
                 <strong>Willy</strong>
+                {plan ? (
+                  <span className="assistant-dock-sub">
+                    Action {stepIndex + 1}/{plan.steps.length}
+                    {plan.summary ? ` — ${plan.summary}` : ''}
+                  </span>
+                ) : null}
               </div>
             </div>
             <button
@@ -276,39 +319,48 @@ export function AssistantDock() {
                 ))}
                 {busy ? (
                   <div className="assistant-bubble assistant-bubble-assistant">
-                    <Loading label="Analysing your use case…" />
+                    <Loading
+                      label={
+                        mode === 'action'
+                          ? 'Building your action plan…'
+                          : 'Analysing your use case…'
+                      }
+                    />
                   </div>
                 ) : null}
               </div>
 
-              {currentStep ? (
-                <div className="assistant-dock-step">
-                  <div className="card-kicker">
-                    Step {stepIndex + 1} of {plan?.steps.length ?? 0}
+              {plan && currentStep ? (
+                <>
+                  <div className="assistant-plan-banner" role="status">
+                    Enter credentials below — Willy will connect and configure each step
+                    for you.
                   </div>
-                  <div className="cell-title">{currentStep.title}</div>
-                  {currentStep.reason ? (
-                    <p className="small muted" style={{ marginTop: 4 }}>
-                      {currentStep.reason}
-                    </p>
-                  ) : null}
-                  <div className="assistant-step-mark">
+                  <div ref={stepPanelRef} className="assistant-dock-step">
+                    <div className="card-kicker">
+                      Step {stepIndex + 1} of {plan.steps.length}
+                    </div>
+                    <div className="cell-title">{currentStep.title}</div>
+                    {currentStep.reason ? (
+                      <p className="small muted" style={{ marginTop: 4 }}>
+                        {currentStep.reason}
+                      </p>
+                    ) : null}
+                    <div className="assistant-step-mark">
+                      {currentStep.type === 'connect_connector' ? (
+                        <ConnectorIcon
+                          slug={currentStep.slug}
+                          name={currentStep.title || currentStep.slug}
+                          size={32}
+                        />
+                      ) : (
+                        <AgentIcon slug={currentStep.slug} size={32} />
+                      )}
+                      <Tag tone="outline">{currentStep.type.replace(/_/g, ' ')}</Tag>
+                    </div>
                     {currentStep.type === 'connect_connector' ? (
-                      <ConnectorIcon
-                        slug={currentStep.slug}
-                        name={currentStep.title || currentStep.slug}
-                        size={32}
-                      />
-                    ) : (
-                      <AgentIcon slug={currentStep.slug} size={32} />
-                    )}
-                    <Tag tone="outline">{currentStep.type.replace(/_/g, ' ')}</Tag>
-                  </div>
-                  {currentStep.type === 'connect_connector' ? (
-                    <div className="assistant-step-fields">
-                      {(currentStep.fields || [])
-                        .filter((field) => !field.is_oauth)
-                        .map((field) => (
+                      <div className="assistant-step-fields">
+                        {credentialFields.map((field) => (
                           <Field
                             key={field.key}
                             label={field.label || field.key}
@@ -320,7 +372,8 @@ export function AssistantDock() {
                               id={`dock-${field.key}`}
                               className="input"
                               type={field.secret ? 'password' : 'text'}
-                              placeholder={field.placeholder}
+                              autoComplete="off"
+                              placeholder={field.placeholder || `Enter ${field.label || field.key}`}
                               value={stepValues[field.key] || ''}
                               onChange={(event) =>
                                 setStepValues((current) => ({
@@ -328,63 +381,72 @@ export function AssistantDock() {
                                   [field.key]: event.target.value,
                                 }))
                               }
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                  event.preventDefault()
+                                  void runStep()
+                                }
+                              }}
                             />
                           </Field>
                         ))}
-                      {(currentStep.fields || []).some((field) => field.is_oauth) ? (
-                        <p className="muted small">
-                          OAuth connector — finish in{' '}
-                          <Link to="/connectors" onClick={() => setOpen(false)}>
-                            Connectors
-                          </Link>
-                          .
-                        </p>
-                      ) : null}
+                        {isOauthOnly ? (
+                          <p className="muted small">
+                            This connector uses OAuth — finish signing in under{' '}
+                            <Link to="/connectors" onClick={() => setOpen(false)}>
+                              Connectors
+                            </Link>
+                            , then skip this step.
+                          </p>
+                        ) : null}
+                        {(currentStep.fields || []).some((field) => field.is_oauth) &&
+                        credentialFields.length > 0 ? (
+                          <p className="muted small">
+                            Also needs OAuth — complete that in{' '}
+                            <Link to="/connectors" onClick={() => setOpen(false)}>
+                              Connectors
+                            </Link>{' '}
+                            after saving these fields.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {currentStep.type === 'configure_agent' && currentStep.config ? (
+                      <ul className="assistant-config-preview">
+                        {Object.entries(currentStep.config).map(([key, value]) => (
+                          <li key={key}>
+                            <span className="muted">{key}</span>
+                            <strong>{String(value)}</strong>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <div className="assistant-step-actions">
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={stepBusy}
+                        onClick={() => advancePlan()}
+                      >
+                        Skip
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={stepBusy || isOauthOnly}
+                        onClick={() => void runStep()}
+                      >
+                        {stepBusy
+                          ? 'Working…'
+                          : currentStep.type === 'connect_connector'
+                            ? 'Connect'
+                            : currentStep.type === 'configure_agent'
+                              ? 'Save'
+                              : 'Start'}
+                      </button>
                     </div>
-                  ) : null}
-                  {currentStep.type === 'configure_agent' && currentStep.config ? (
-                    <ul className="assistant-config-preview">
-                      {Object.entries(currentStep.config).map(([key, value]) => (
-                        <li key={key}>
-                          <span className="muted">{key}</span>
-                          <strong>{String(value)}</strong>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <div className="assistant-step-actions">
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      disabled={stepBusy}
-                      onClick={() => {
-                        const next = stepIndex + 1
-                        if (plan && next < plan.steps.length) {
-                          setStepIndex(next)
-                          setStepValues({})
-                        } else {
-                          setPlan(null)
-                        }
-                      }}
-                    >
-                      Skip
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={stepBusy}
-                      onClick={() => void runStep()}
-                    >
-                      {stepBusy
-                        ? 'Working…'
-                        : currentStep.type === 'connect_connector'
-                          ? 'Connect'
-                          : currentStep.type === 'configure_agent'
-                            ? 'Save'
-                            : 'Start'}
-                    </button>
                   </div>
-                </div>
+                </>
               ) : null}
 
               <div className="assistant-query">
@@ -416,7 +478,11 @@ export function AssistantDock() {
                   id="assistant-dock-input"
                   className="assistant-query-input"
                   type="text"
-                  placeholder="Ask Willy…"
+                  placeholder={
+                    mode === 'action'
+                      ? 'What should Willy set up?'
+                      : 'Ask Willy…'
+                  }
                   value={draft}
                   disabled={busy}
                   onChange={(event) => setDraft(event.target.value)}

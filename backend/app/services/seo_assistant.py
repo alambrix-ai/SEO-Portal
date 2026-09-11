@@ -100,11 +100,17 @@ def _system_prompt(catalogue: dict[str, Any], mode: AssistantMode) -> str:
         "why, and how the operator should connect them in the console. Do not "
         "claim you will connect anything yourself. action_plan must be null."
         if mode == "ask"
-        else "MODE: action — After analysing the use case, return an action_plan "
-        "the console will execute step by step. Only include connectors/agents "
-        "from the catalogue. Prefer connectors that are already connected when "
-        "they cover the need. Order steps: connectors first, then agent configs, "
-        "then optional resume."
+        else "MODE: action — You MUST return a non-null action_plan the console "
+        "will execute step by step (credentials forms + Connect / Save / Start). "
+        "Only include connectors/agents from the catalogue. Prefer already-"
+        "connected connectors when they cover the need. Order steps: "
+        "connect_connector first (one step per missing connector), then "
+        "configure_agent, then optional resume_agent. For every "
+        "connect_connector step, copy that connector's fields from the "
+        "catalogue into the step (keys/labels/secret/required) so the UI can "
+        "collect credentials. In reply, tell the operator you will ask for "
+        "credentials next and apply the connections for them. Never leave "
+        "action_plan null when you can recommend at least one connector or agent."
     )
     return f"""You are Willy, the AutoMarket AI assistant inside THIS customer console.
 
@@ -269,6 +275,177 @@ def _looks_off_topic(message: str) -> bool:
     return False
 
 
+def _agent_default_config(agent: dict[str, Any], catalogue: dict[str, Any]) -> dict[str, Any]:
+    llm_slug = ""
+    for row in catalogue.get("connectors") or []:
+        if row.get("connected") and row.get("slug") in {
+            "openai",
+            "anthropic_claude",
+            "google_gemini",
+            "perplexity",
+        }:
+            llm_slug = str(row["slug"])
+            break
+    return {
+        "schedule": agent.get("default_schedule") or "Daily",
+        "scope": agent.get("scope_placeholder") or "/",
+        "notify_channel": "None",
+        "llm_connector": llm_slug if agent.get("requires_llm") else "",
+        "max_actions_per_day": 20,
+    }
+
+
+def _synthesize_action_plan(
+    catalogue: dict[str, Any],
+    *,
+    rec_connectors: list[dict[str, Any]],
+    rec_agents: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Build an executable plan when the model omitted action_plan."""
+    by_c = {c["slug"]: c for c in catalogue.get("connectors") or []}
+    by_a = {a["slug"]: a for a in catalogue.get("agents") or []}
+    steps: list[dict[str, Any]] = []
+
+    for row in rec_connectors:
+        slug = str(row.get("slug") or "")
+        conn = by_c.get(slug)
+        if not conn or conn.get("connected"):
+            continue
+        steps.append(
+            {
+                "id": f"connect-{slug}",
+                "type": "connect_connector",
+                "slug": slug,
+                "title": f"Connect {conn.get('name') or slug}",
+                "reason": str(row.get("reason") or ""),
+                "fields": list(conn.get("fields") or []),
+            }
+        )
+
+    for row in rec_agents:
+        slug = str(row.get("slug") or "")
+        agent = by_a.get(slug)
+        if not agent:
+            continue
+        for dep in row.get("depends_on") or []:
+            dep_slug = str(dep)
+            conn = by_c.get(dep_slug)
+            if conn and not conn.get("connected"):
+                if not any(s.get("slug") == dep_slug and s.get("type") == "connect_connector" for s in steps):
+                    steps.append(
+                        {
+                            "id": f"connect-{dep_slug}",
+                            "type": "connect_connector",
+                            "slug": dep_slug,
+                            "title": f"Connect {conn.get('name') or dep_slug}",
+                            "reason": f"Required for {agent.get('name') or slug}",
+                            "fields": list(conn.get("fields") or []),
+                        }
+                    )
+        steps.append(
+            {
+                "id": f"configure-{slug}",
+                "type": "configure_agent",
+                "slug": slug,
+                "title": f"Configure {agent.get('name') or slug}",
+                "reason": str(row.get("reason") or ""),
+                "config": _agent_default_config(agent, catalogue),
+            }
+        )
+        steps.append(
+            {
+                "id": f"resume-{slug}",
+                "type": "resume_agent",
+                "slug": slug,
+                "title": f"Start {agent.get('name') or slug}",
+                "reason": "Run the agent with the configuration above.",
+                "config": None,
+            }
+        )
+
+    if not steps:
+        return None
+    return {
+        "summary": "Connect required integrations, then configure and start agents.",
+        "steps": steps,
+    }
+
+
+def _normalize_action_plan(
+    action_plan: Any,
+    catalogue: dict[str, Any],
+    *,
+    rec_connectors: list[dict[str, Any]],
+    rec_agents: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    known_c = {c["slug"] for c in catalogue["connectors"]}
+    known_a = {a["slug"] for a in catalogue["agents"]}
+    steps: list[dict[str, Any]] = []
+
+    if isinstance(action_plan, dict):
+        for step in action_plan.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            step_type = step.get("type")
+            slug = step.get("slug")
+            if step_type == "connect_connector" and slug in known_c:
+                catalog_row = next(
+                    (c for c in catalogue["connectors"] if c["slug"] == slug),
+                    None,
+                )
+                if not catalog_row or catalog_row.get("connected"):
+                    continue
+                steps.append(
+                    {
+                        "id": step.get("id") or f"connect-{slug}",
+                        "type": "connect_connector",
+                        "slug": slug,
+                        "title": step.get("title") or f"Connect {catalog_row.get('name') or slug}",
+                        "reason": step.get("reason") or "",
+                        "fields": list(catalog_row.get("fields") or step.get("fields") or []),
+                    }
+                )
+            elif step_type == "configure_agent" and slug in known_a:
+                agent = next((a for a in catalogue["agents"] if a["slug"] == slug), None)
+                config = step.get("config") if isinstance(step.get("config"), dict) else None
+                if not config and agent:
+                    config = _agent_default_config(agent, catalogue)
+                steps.append(
+                    {
+                        "id": step.get("id") or f"configure-{slug}",
+                        "type": "configure_agent",
+                        "slug": slug,
+                        "title": step.get("title") or f"Configure {slug}",
+                        "reason": step.get("reason") or "",
+                        "config": config,
+                    }
+                )
+            elif step_type == "resume_agent" and slug in known_a:
+                steps.append(
+                    {
+                        "id": step.get("id") or f"resume-{slug}",
+                        "type": "resume_agent",
+                        "slug": slug,
+                        "title": step.get("title") or f"Start {slug}",
+                        "reason": step.get("reason") or "",
+                        "config": None,
+                    }
+                )
+
+    if not steps:
+        return _synthesize_action_plan(
+            catalogue,
+            rec_connectors=rec_connectors,
+            rec_agents=rec_agents,
+        )
+
+    return {
+        "summary": (action_plan.get("summary") if isinstance(action_plan, dict) else None)
+        or "Connect integrations and configure agents.",
+        "steps": steps,
+    }
+
+
 def _refusal_payload(mode: AssistantMode) -> dict[str, Any]:
     return {
         "reply": _OFF_TOPIC_REPLY,
@@ -376,9 +553,8 @@ def chat(
         "I looked at your use case — open the recommendations below."
     )
     recommendations = parsed.get("recommendations") or {"connectors": [], "agents": []}
-    action_plan = parsed.get("action_plan") if mode == "action" else None
-    if mode == "ask":
-        action_plan = None
+    if not isinstance(recommendations, dict):
+        recommendations = {"connectors": [], "agents": []}
 
     # Drop unknown slugs so the UI never offers a dead link.
     known_c = {c["slug"] for c in catalogue["connectors"]}
@@ -394,51 +570,20 @@ def chat(
         if isinstance(row, dict) and row.get("slug") in known_a
     ]
 
-    if isinstance(action_plan, dict):
-        steps = []
-        for step in action_plan.get("steps") or []:
-            if not isinstance(step, dict):
-                continue
-            step_type = step.get("type")
-            slug = step.get("slug")
-            if step_type == "connect_connector" and slug in known_c:
-                catalog_fields = next(
-                    (c["fields"] for c in catalogue["connectors"] if c["slug"] == slug),
-                    [],
-                )
-                already = next(
-                    (c["connected"] for c in catalogue["connectors"] if c["slug"] == slug),
-                    False,
-                )
-                if already:
-                    continue
-                steps.append(
-                    {
-                        "id": step.get("id") or f"connect-{slug}",
-                        "type": "connect_connector",
-                        "slug": slug,
-                        "title": step.get("title") or f"Connect {slug}",
-                        "reason": step.get("reason") or "",
-                        "fields": catalog_fields or step.get("fields") or [],
-                    }
-                )
-            elif step_type in {"configure_agent", "resume_agent"} and slug in known_a:
-                steps.append(
-                    {
-                        "id": step.get("id") or f"{step_type}-{slug}",
-                        "type": step_type,
-                        "slug": slug,
-                        "title": step.get("title") or step_type.replace("_", " ").title(),
-                        "reason": step.get("reason") or "",
-                        "config": step.get("config") if step_type == "configure_agent" else None,
-                    }
-                )
-        action_plan = {
-            "summary": action_plan.get("summary") or "",
-            "steps": steps,
-        }
-        if not steps:
-            action_plan = None
+    action_plan = None
+    if mode == "action":
+        action_plan = _normalize_action_plan(
+            parsed.get("action_plan"),
+            catalogue,
+            rec_connectors=rec_connectors,
+            rec_agents=rec_agents,
+        )
+        if action_plan and "credential" not in reply.lower() and "connect" not in reply.lower():
+            reply = (
+                f"{reply}\n\n"
+                "**Next:** I’ll collect any credentials below and connect / configure "
+                "each step for you."
+            ).strip()
 
     return {
         "reply": reply,
