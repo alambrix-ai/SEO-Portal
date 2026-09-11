@@ -2197,18 +2197,12 @@ input[type='range']:disabled::-webkit-slider-thumb {
   background: color-mix(in srgb, var(--color-text) 3.5%, transparent);
 }
 
-.portal-feature-mark {
-  width: 40px;
-  height: 40px;
+.portal-feature-icon {
   display: grid;
   place-items: center;
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 16px;
-  letter-spacing: 0.04em;
-  color: var(--color-accent-900);
-  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
+  width: 40px;
+  height: 40px;
+  flex: none;
 }
 
 .portal-feature-title {
@@ -2251,16 +2245,14 @@ input[type='range']:disabled::-webkit-slider-thumb {
     min-width: 150px;
   }
   .portal-feature-row {
-    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-columns: 40px minmax(0, 1fr);
     grid-template-areas:
-      'mark copy'
-      'mark status'
+      'icon copy'
+      'icon status'
       'toggle toggle';
   }
-  .portal-feature-mark {
-    grid-area: mark;
-    width: 36px;
-    height: 36px;
+  .portal-feature-icon {
+    grid-area: icon;
   }
   .portal-feature-copy {
     grid-area: copy;

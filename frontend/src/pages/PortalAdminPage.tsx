@@ -10,7 +10,21 @@ import { Navigate } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { PortalFeature, PortalOrganization } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
+import { AgentIcon } from '@/components/AgentIcon'
 import { CardSection } from '@/components/CardSection'
+import { ConnectorIcon } from '@/components/ConnectorIcon'
+import {
+  AdminIcon,
+  AdsIcon,
+  AgentsIcon,
+  ApprovalsIcon,
+  ConnectorsIcon,
+  DashboardIcon,
+  OffPageIcon,
+  OnboardingIcon,
+  ReportsIcon,
+  SeoIcon,
+} from '@/components/icons'
 import { useToasts } from '@/components/Toasts'
 import {
   Blueprint,
@@ -32,6 +46,42 @@ const KIND_LABEL: Record<string, string> = {
   connector: 'Connector',
   agent: 'Agent',
   module: 'Module',
+}
+
+/** Same marks as Connectors / Agents / sidebar — not letter placeholders. */
+const MODULE_ICONS: Record<string, typeof DashboardIcon> = {
+  dashboard: DashboardIcon,
+  onboarding: OnboardingIcon,
+  agents: AgentsIcon,
+  seo: SeoIcon,
+  offpage: OffPageIcon,
+  ads: AdsIcon,
+  connectors: ConnectorsIcon,
+  approvals: ApprovalsIcon,
+  reports: ReportsIcon,
+  admin: AdminIcon,
+}
+
+function PortalFeatureIcon({ feature }: { feature: PortalFeature }) {
+  if (feature.kind === 'connector') {
+    return <ConnectorIcon slug={feature.slug} name={feature.name} size={40} />
+  }
+  if (feature.kind === 'agent') {
+    return <AgentIcon slug={feature.slug} size={40} />
+  }
+  if (feature.kind === 'module') {
+    const Icon = MODULE_ICONS[feature.slug] ?? DashboardIcon
+    return (
+      <span className="connector-icon agent-icon" style={{ width: 40, height: 40 }}>
+        <Icon size={22} />
+      </span>
+    )
+  }
+  return (
+    <span className="connector-icon" style={{ width: 40, height: 40 }}>
+      <span className="connector-icon-letters">{(feature.name || feature.slug).slice(0, 1)}</span>
+    </span>
+  )
 }
 
 export function PortalAdminPage() {
@@ -430,8 +480,8 @@ export function PortalAdminPage() {
                     const busy = busyKey === key
                     return (
                       <li key={key} className="portal-feature-row">
-                        <div className="portal-feature-mark" aria-hidden="true">
-                          {(feature.name || feature.slug).slice(0, 1).toUpperCase()}
+                        <div className="portal-feature-icon">
+                          <PortalFeatureIcon feature={feature} />
                         </div>
                         <div className="portal-feature-copy">
                           <div className="portal-feature-title">{feature.name}</div>
