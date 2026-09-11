@@ -32,7 +32,7 @@ from app.connectors.base.connector import Capability, ConnectorSpec, HealthRepor
 from app.connectors.base.credentials import text
 from app.connectors.base.interfaces import CmsConnector, RemotePage
 from app.core.config import settings
-from app.core.exceptions import ConnectorError
+from app.core.exceptions import ConnectorConfigError, ConnectorError
 from app.core.logging import get_logger
 from app.db.base import utcnow
 
@@ -65,17 +65,19 @@ class SiteCrawlerConnector(CmsConnector):
                 "sitemapPath",
                 "Sitemap path",
                 "/sitemap.xml",
-                required=False,
-                help_text="Only if it is not at /sitemap.xml.",
+                help_text=(
+                    "Required when Discovery is sitemap — for example "
+                    "/sitemap.xml. There is no default."
+                ),
             ),
         ),
         capabilities=frozenset({Capability.LIST_PAGES, Capability.READ_PAGE}),
         requirements=(
             "The site must be reachable over HTTPS from this server — a "
             "staging site behind a VPN or basic auth cannot be crawled.",
-            "Discovery uses sitemap.xml by default. Without one, switch "
-            "Discovery to 'crawl' and it follows internal links from the "
-            "home page instead.",
+            "When Discovery is sitemap, enter the sitemap path explicitly. "
+            "Without a sitemap, switch Discovery to crawl and it follows "
+            "internal links from the home page instead.",
             "robots.txt is respected. If it disallows everything, nothing is "
             "crawled — which is itself worth knowing.",
             "It reads the published site and cannot write to it. Pair it with "
@@ -117,7 +119,12 @@ class SiteCrawlerConnector(CmsConnector):
         return hp.disallowed_paths(body)
 
     def _from_sitemap(self) -> list[str]:
-        configured = self.credentials.get("sitemapPath") or "/sitemap.xml"
+        configured = (self.credentials.get("sitemapPath") or "").strip()
+        if not configured:
+            raise ConnectorConfigError(
+                "Enter the sitemap path (for example /sitemap.xml). "
+                "There is no default."
+            )
         found: list[str] = []
         queue = deque([f"{self.site}{configured if configured.startswith('/') else '/' + configured}"])
         seen_sitemaps: set[str] = set()

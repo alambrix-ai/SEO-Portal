@@ -208,7 +208,7 @@ def verify_credentials(
     """
     klass = registry.get_class(slug)
     if klass is None:
-        raise ConnectorError(f"Connector {slug!r} has no implementation on this build")
+        raise ConnectorError("This connection is not available right now.")
 
     instance = klass(
         Credentials(values=dict(values), oauth_completed=oauth_completed), org_id=org_id
@@ -220,10 +220,17 @@ def verify_credentials(
         # Give the connector a chance to explain its own platform's limits
         # before the raw vendor error is handed to somebody who can only
         # retype the token.
-        raise ConnectorError(instance.diagnose(exc) or str(exc)) from exc
+        from app.core.user_messages import soften_technical_message
+
+        detail = soften_technical_message(instance.diagnose(exc) or str(exc))
+        raise ConnectorError(detail) from exc
 
     if report.probed and not report.ok:
-        detail = report.detail or "the credentials were rejected"
+        from app.core.user_messages import soften_technical_message
+
+        detail = soften_technical_message(
+            report.detail or "Those credentials could not be verified."
+        )
         raise ConnectorError(instance.diagnose(ConnectorError(detail)) or detail)
     return report
 
@@ -246,7 +253,7 @@ def connect(
     record = get_record(db, tenant_id=org.id, slug=slug)
     spec = registry.get_spec(slug)
     if spec is None:
-        raise ConnectorError(f"Connector {slug!r} has no implementation on this build")
+        raise ConnectorError("This connection is not available right now.")
 
     cleaned = {k: (v or "").strip() for k, v in (values or {}).items()}
     validate(spec.fields, cleaned, oauth_done=oauth_completed or record.oauth_completed)

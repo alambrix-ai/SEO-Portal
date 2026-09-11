@@ -15,7 +15,7 @@ from email.utils import formataddr, make_msgid
 from app.connectors.base.connector import Capability, ConnectorSpec, HealthReport
 from app.connectors.base.credentials import secret, text
 from app.connectors.base.interfaces import NotificationConnector
-from app.core.exceptions import ConnectorError
+from app.core.exceptions import ConnectorConfigError, ConnectorError
 from app.core.logging import get_logger
 from app.db.base import utcnow
 
@@ -35,7 +35,7 @@ class SmtpEmailConnector(NotificationConnector):
             text("port", "Port", "587"),
             text("user", "Username", "notifications@yourdomain.com"),
             secret("password", "Password", "••••••••"),
-            text("fromName", "From name", "Your Brand", required=False),
+            text("fromName", "From name", "Your Brand"),
             text(
                 "notifyTo",
                 "Send notifications to",
@@ -48,10 +48,13 @@ class SmtpEmailConnector(NotificationConnector):
 
     @property
     def port(self) -> int:
+        raw = self.credentials.require("port")
         try:
-            return int(self.credentials.require("port"))
-        except ValueError:
-            return 587
+            return int(raw)
+        except ValueError as exc:
+            raise ConnectorConfigError(
+                "Port must be a number such as 587 or 465"
+            ) from exc
 
     @property
     def sender(self) -> str:
@@ -64,11 +67,11 @@ class SmtpEmailConnector(NotificationConnector):
         # delivery nobody asked for, and it looks like success.
         recipient = channel or self.credentials.require("notifyTo")
         if "@" not in recipient:
-            raise ConnectorError(f"{recipient!r} is not a deliverable email address")
+            raise ConnectorError("That email address does not look valid")
 
         email = EmailMessage()
         email["From"] = formataddr(
-            (self.credentials.get("fromName") or "AutoMarket AI", self.sender)
+            (self.credentials.require("fromName"), self.sender)
         )
         email["To"] = recipient
         email["Subject"] = subject
@@ -94,19 +97,29 @@ class SmtpEmailConnector(NotificationConnector):
                     smtp.login(self.sender, password)
                     smtp.send_message(email)
         except smtplib.SMTPAuthenticationError as exc:
-            raise ConnectorError("SMTP rejected the credentials") from exc
+            raise ConnectorError(
+                "The mail server rejected those credentials. Check the username and password."
+            ) from exc
         except smtplib.SMTPRecipientsRefused as exc:
-            raise ConnectorError(f"Recipient {recipient} was refused") from exc
+            raise ConnectorError(
+                "The mail server refused that recipient address."
+            ) from exc
         except (smtplib.SMTPException, OSError, ssl.SSLError) as exc:
-            raise ConnectorError(f"SMTP delivery failed: {exc}") from exc
+            log.warning("SMTP delivery failed: %s", exc)
+            raise ConnectorError(
+                "Could not send email through that mail server. Try again shortly."
+            ) from exc
 
         log.info("Sent %r to %s", subject, recipient)
         return True
 
     def check_health(self) -> HealthReport:
-        host = self.credentials.get("host")
-        if not host:
-            return HealthReport(ok=False, detail="No SMTP host configured", checked_at=utcnow())
+        try:
+            host = self.credentials.require("host")
+        except Exception:  # noqa: BLE001
+            return HealthReport(
+                ok=False, detail="Enter the SMTP host before connecting.", checked_at=utcnow()
+            )
 
         context = ssl.create_default_context()
         try:
@@ -119,10 +132,17 @@ class SmtpEmailConnector(NotificationConnector):
                 with smtplib.SMTP(host, self.port, timeout=TIMEOUT_SECONDS) as smtp:
                     smtp.starttls(context=context)
                     smtp.login(self.sender, self.credentials.require("password"))
-        except Exception as exc:  # noqa: BLE001 - a probe must not raise
+        except ConnectorError as exc:
             return HealthReport(ok=False, detail=str(exc), checked_at=utcnow())
+        except Exception as exc:  # noqa: BLE001 - a probe must not raise
+            log.warning("SMTP health probe failed: %s", exc)
+            return HealthReport(
+                ok=False,
+                detail="Could not sign in to that mail server. Check the host, port and password.",
+                checked_at=utcnow(),
+            )
         return HealthReport(
-            ok=True, detail=f"Authenticated to {host}:{self.port}", checked_at=utcnow()
+            ok=True, detail="Connection looks good", checked_at=utcnow()
         )
 
 

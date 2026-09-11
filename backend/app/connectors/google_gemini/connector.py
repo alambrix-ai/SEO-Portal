@@ -14,8 +14,6 @@ from app.db.base import utcnow
 
 log = get_logger(__name__)
 
-DEFAULT_MODEL = "gemini-2.0-flash"
-
 
 class GoogleGeminiConnector(BaseAeoConnector):
     engine = "gemini"
@@ -27,7 +25,12 @@ class GoogleGeminiConnector(BaseAeoConnector):
         description="Track citations in Gemini's grounded answers.",
         fields=(
             secret("apiKey", "API key", "AIza••••••••"),
-            text("model", "Model", DEFAULT_MODEL, required=False),
+            text(
+                "model",
+                "Model",
+                "gemini-2.0-flash",
+                help_text="The exact model name from Google — there is no default.",
+            ),
         ),
         capabilities=AEO_CAPABILITIES,
         docs_url="https://ai.google.dev/gemini-api/docs",
@@ -42,29 +45,26 @@ class GoogleGeminiConnector(BaseAeoConnector):
             "Content-Type": "application/json",
         }
 
-    def check_health(self) -> HealthReport:
-        """Cheap key/model probe — not a grounded search.
+    def _probe_credentials(self) -> None:
+        model = self.credentials.require("model")
+        self.request("GET", f"/models/{model}")
 
-        Connect used to call ``_ask_with_search``, which burns free-tier quota
-        and often returns 429 before the key is even saved.
-        """
-        model = self.credentials.get("model", DEFAULT_MODEL) or DEFAULT_MODEL
+    def check_health(self) -> HealthReport:
         try:
-            self.request("GET", f"/models/{model}")
+            self._probe_credentials()
         except ConnectorError as exc:
-            detail = str(exc)
-            if "429" in detail:
-                detail = (
-                    "Google Gemini rate limit or free-tier quota exceeded. "
-                    "Wait a minute and try again, or use a key with available quota."
-                )
-            return HealthReport(ok=False, detail=detail, checked_at=utcnow())
-        except Exception as exc:  # noqa: BLE001 - a probe must not raise
             return HealthReport(ok=False, detail=str(exc), checked_at=utcnow())
-        return HealthReport(ok=True, detail="API key valid", checked_at=utcnow())
+        except Exception as exc:  # noqa: BLE001 - a probe must not raise
+            log.warning("Gemini health probe failed: %s", exc)
+            return HealthReport(
+                ok=False,
+                detail="Could not verify those credentials. Check the key and model name.",
+                checked_at=utcnow(),
+            )
+        return HealthReport(ok=True, detail="Connection looks good", checked_at=utcnow())
 
     def _ask_with_search(self, query: str) -> list[str]:
-        model = self.credentials.get("model", DEFAULT_MODEL)
+        model = self.credentials.require("model")
         data = self.request(
             "POST",
             f"/models/{model}:generateContent",

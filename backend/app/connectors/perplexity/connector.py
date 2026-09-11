@@ -28,7 +28,7 @@ class PerplexityConnector(BaseAeoConnector):
                 "model",
                 "Model",
                 "sonar",
-                help_text="Which model answers the citation checks.",
+                help_text="The exact model name from Perplexity — there is no default.",
             ),
         ),
         capabilities=AEO_CAPABILITIES,
@@ -41,6 +41,19 @@ class PerplexityConnector(BaseAeoConnector):
             "Authorization": "Bearer " + self.credentials.require("apiKey"),
             "Content-Type": "application/json",
         }
+
+    def _probe_credentials(self) -> None:
+        # Perplexity has no cheap model-lookup endpoint; one tiny completion
+        # is enough to prove the key without running a full citation search.
+        self.request(
+            "POST",
+            "/chat/completions",
+            json_body={
+                "model": self.credentials.require("model"),
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+            },
+        )
 
     def _ask_with_search(self, query: str) -> list[str]:
         data = self.request(

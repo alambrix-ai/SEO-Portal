@@ -147,9 +147,15 @@ def create_app() -> FastAPI:
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
         """Domain errors carry their own status and user-facing message."""
+        from app.core.user_messages import soften_technical_message
+
         return JSONResponse(
             status_code=exc.status_code,
-            content={"code": exc.code, "detail": exc.message, "fields": exc.details},
+            content={
+                "code": exc.code,
+                "detail": soften_technical_message(exc.message),
+                "fields": exc.details,
+            },
         )
 
     @app.exception_handler(CryptoError)

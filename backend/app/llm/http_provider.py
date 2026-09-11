@@ -145,28 +145,42 @@ class HttpLLMProvider(LLMProvider):
         try:
             response = self._send(request)
         except httpx.HTTPStatusError as exc:
+            log.warning(
+                "%s HTTP %s after retries: %s",
+                self.name,
+                exc.response.status_code,
+                (exc.response.text or "")[:300],
+            )
+            from app.core.user_messages import message_for_http_status
+
             raise LLMError(
-                f"{self.name} returned {exc.response.status_code} after "
-                f"{settings.llm_max_attempts} attempts"
+                message_for_http_status(exc.response.status_code, service=self.name)
             ) from exc
         except httpx.TransportError as exc:
-            raise LLMError(f"Could not reach {self.name}: {exc}") from exc
+            log.warning("%s transport error: %s", self.name, exc)
+            from app.core.user_messages import message_for_unreachable
+
+            raise LLMError(message_for_unreachable(self.name)) from exc
 
         if response.status_code == 401 or response.status_code == 403:
-            raise LLMError(
-                f"{self.name} rejected {self.key_setting} "
-                f"({response.status_code}). Check the key and its permissions."
-            )
+            from app.core.user_messages import message_for_http_status
+
+            raise LLMError(message_for_http_status(response.status_code, service=self.name))
         if response.status_code == 404:
             raise LLMError(
-                f"{self.name} has no model called {self.model!r}. "
-                "Check LLM_MODEL against the vendor's current model list."
+                f"{self.name}: that model name was not found. "
+                "Check the model setting and try again."
             )
         if response.status_code >= 400:
-            raise LLMError(
-                f"{self.name} rejected the request ({response.status_code}): "
-                f"{response.text[:300]}"
+            log.warning(
+                "%s rejected request with HTTP %s: %s",
+                self.name,
+                response.status_code,
+                response.text[:300],
             )
+            from app.core.user_messages import message_for_http_status
+
+            raise LLMError(message_for_http_status(response.status_code, service=self.name))
 
         try:
             data = response.json()

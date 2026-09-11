@@ -12,11 +12,11 @@ from app.connectors.base.connector import ConnectorSpec, HealthReport
 from app.connectors.base.credentials import secret, text
 from app.core.exceptions import ConnectorError
 from app.core.logging import get_logger
+from app.core.user_messages import message_for_http_status, message_for_unreachable
 from app.db.base import utcnow
 
 log = get_logger(__name__)
 
-DEFAULT_MODEL = "claude-opus-5"
 # The current web search tool version, which returns structured results.
 WEB_SEARCH_TOOL = "web_search_20260209"
 
@@ -31,7 +31,12 @@ class AnthropicClaudeConnector(BaseAeoConnector):
         description="Track whether Claude's web search cites your pages.",
         fields=(
             secret("apiKey", "API key", "sk-ant-••••••••"),
-            text("model", "Model", DEFAULT_MODEL, required=False),
+            text(
+                "model",
+                "Model",
+                "claude-sonnet-4-5",
+                help_text="The exact model name from Anthropic — there is no default.",
+            ),
         ),
         capabilities=AEO_CAPABILITIES,
         docs_url="https://docs.anthropic.com/en/api/messages",
@@ -45,13 +50,13 @@ class AnthropicClaudeConnector(BaseAeoConnector):
             import anthropic
         except ImportError as exc:  # pragma: no cover
             raise ConnectorError(
-                "The 'anthropic' package is required for the Claude connector"
+                "Anthropic Claude is not available in this deployment"
             ) from exc
         return anthropic.Anthropic(api_key=self.credentials.require("apiKey")), anthropic
 
     def _ask_with_search(self, query: str) -> list[str]:
         client, anthropic = self._anthropic()
-        model = self.credentials.get("model", DEFAULT_MODEL)
+        model = self.credentials.require("model")
 
         try:
             message = client.messages.create(
@@ -61,13 +66,24 @@ class AnthropicClaudeConnector(BaseAeoConnector):
                 tools=[{"type": WEB_SEARCH_TOOL, "name": "web_search"}],
             )
         except anthropic.NotFoundError as exc:
-            raise ConnectorError(f"Model {model!r} is unavailable to this key") from exc
+            raise ConnectorError(
+                "That model name was not found. Check the model field and try again."
+            ) from exc
         except anthropic.RateLimitError as exc:
-            raise ConnectorError("Anthropic rate limit reached; retry later") from exc
+            raise ConnectorError(
+                message_for_http_status(429, service=self.name)
+            ) from exc
+        except anthropic.AuthenticationError as exc:
+            raise ConnectorError(
+                message_for_http_status(401, service=self.name)
+            ) from exc
         except anthropic.APIStatusError as exc:
-            raise ConnectorError(f"Anthropic API error {exc.status_code}") from exc
+            log.warning("Anthropic API status %s: %s", exc.status_code, exc)
+            raise ConnectorError(
+                message_for_http_status(exc.status_code, service=self.name)
+            ) from exc
         except anthropic.APIConnectionError as exc:
-            raise ConnectorError("Could not reach the Anthropic API") from exc
+            raise ConnectorError(message_for_unreachable(self.name)) from exc
 
         # A refusal is not a connector failure: it means this particular query
         # was declined, and the citation check simply has no result for it.
@@ -96,15 +112,23 @@ class AnthropicClaudeConnector(BaseAeoConnector):
             return [u for u in urls if not (u in seen or seen.add(u))]
         return urls_in_text("\n".join(text_parts))
 
+    def _probe_credentials(self) -> None:
+        client, _ = self._anthropic()
+        client.models.retrieve(self.credentials.require("model"))
+
     def check_health(self) -> HealthReport:
         try:
-            client, _ = self._anthropic()
-            client.models.retrieve(self.credentials.get("model", DEFAULT_MODEL))
+            self._probe_credentials()
         except ConnectorError as exc:
             return HealthReport(ok=False, detail=str(exc), checked_at=utcnow())
         except Exception as exc:  # noqa: BLE001 - a probe must not raise
-            return HealthReport(ok=False, detail=str(exc), checked_at=utcnow())
-        return HealthReport(ok=True, detail="API key valid", checked_at=utcnow())
+            log.warning("Anthropic health probe failed: %s", exc)
+            return HealthReport(
+                ok=False,
+                detail="Could not verify those credentials. Check the key and model name.",
+                checked_at=utcnow(),
+            )
+        return HealthReport(ok=True, detail="Connection looks good", checked_at=utcnow())
 
 
 CONNECTOR_CLASS = AnthropicClaudeConnector

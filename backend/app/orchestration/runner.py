@@ -193,9 +193,12 @@ def run_agent(
         skip_reason = agent.preflight(ctx)
     except Exception as exc:  # noqa: BLE001
         log.exception("Preflight failed for %s", record.slug)
-        record.last_error = str(exc)
+        from app.core.user_messages import public_error_message
+
+        public = public_error_message(exc, fallback="This agent could not start its run.")
+        record.last_error = public
         _schedule_next(record, agent)
-        return finish(RunStatus.FAILED, error=str(exc))
+        return finish(RunStatus.FAILED, error=public)
 
     if skip_reason:
         _schedule_next(record, agent)
@@ -207,14 +210,19 @@ def run_agent(
         result = agent.run(ctx)
     except Exception as exc:  # noqa: BLE001 - one agent must not stop the fleet
         log.exception("Agent %s failed", record.slug)
+        from app.core.user_messages import public_error_message
+
+        public = public_error_message(
+            exc, fallback="This agent could not finish its run. Try again later."
+        )
         record.consecutive_failures += 1
-        record.last_error = f"{type(exc).__name__}: {exc}"
+        record.last_error = public
         if record.consecutive_failures == 1:
             _notify(
                 ctx,
                 record,
                 subject=f"{record.name} could not finish its run",
-                message=f"{record.last_error}\n\nWorkspace: {org.name}",
+                message=f"{public}\n\nWorkspace: {org.name}",
             )
             # Once, at the start of the streak. Every tick would be noise, and
             # only recording it at the pause threshold meant the first four
@@ -223,7 +231,7 @@ def run_agent(
                 db,
                 tenant_id=org.id,
                 agent_name=record.name,
-                action=f"could not finish its run — {record.last_error}",
+                action=f"could not finish its run — {public}",
                 module=_module_for(record.category),
                 context={"error": type(exc).__name__},
             )

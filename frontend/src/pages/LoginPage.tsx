@@ -17,6 +17,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { BrandLogo } from '@/components/BrandLogo'
 import { ApiError, api } from '@/api/client'
+import { softenErrorMessage } from '@/lib/softenError'
 import type { RegistrationPolicy } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { CodeEntry } from '@/components/CodeEntry'
@@ -45,7 +46,10 @@ export function LoginPage() {
   const codeLength = policy?.code_length ?? 6
 
   const message = (caught: unknown, fallback: string) =>
-    caught instanceof ApiError || caught instanceof Error ? caught.message : fallback
+    softenErrorMessage(
+      caught instanceof ApiError || caught instanceof Error ? caught.message : '',
+      fallback,
+    )
 
   const requestCode = async () => {
     const address = email.trim()

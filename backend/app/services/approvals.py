@@ -285,9 +285,14 @@ def approve(
         applier(db, org, item, payload)
     except Exception as exc:  # noqa: BLE001 - reported, not swallowed
         log.exception("Applying approval %s failed", item.id)
-        item.apply_error = f"{type(exc).__name__}: {exc}"
+        from app.core.user_messages import public_error_message
+
+        public = public_error_message(
+            exc, fallback="This change could not be applied. Try again later."
+        )
+        item.apply_error = public
         db.flush()
-        raise
+        raise ConflictError(public) from exc
 
     item.status = ApprovalStatus.APPROVED.value
     item.decided_at = utcnow()

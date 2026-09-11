@@ -202,24 +202,37 @@ class BaseConnector(ABC):
             response = self._send(request)
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
-            if status == 429:
-                raise ConnectorError(
-                    f"{self.name} rate limit or quota exceeded (429) after "
-                    f"{settings.connector_max_attempts} attempts — wait and retry"
-                ) from exc
-            raise ConnectorError(
-                f"{self.name} returned {status} after "
-                f"{settings.connector_max_attempts} attempts"
-            ) from exc
+            log.warning(
+                "%s %s %s failed after retries: HTTP %s body=%s",
+                self.slug,
+                method.upper(),
+                path,
+                status,
+                (exc.response.text or "")[:300],
+            )
+            from app.core.user_messages import message_for_http_status
+
+            raise ConnectorError(message_for_http_status(status, service=self.name)) from exc
         except httpx.TransportError as exc:
-            raise ConnectorError(f"Could not reach {self.name}: {exc}") from exc
+            log.warning("%s transport error on %s %s: %s", self.slug, method.upper(), path, exc)
+            from app.core.user_messages import message_for_unreachable
+
+            raise ConnectorError(message_for_unreachable(self.name)) from exc
 
         if response.status_code >= 400:
-            # The body may echo submitted values, so it is truncated and the
-            # request headers are never included.
+            # Vendor bodies may contain keys or internals — log only.
+            log.warning(
+                "%s rejected %s %s with HTTP %s: %s",
+                self.slug,
+                method.upper(),
+                path,
+                response.status_code,
+                response.text[:300],
+            )
+            from app.core.user_messages import message_for_http_status
+
             raise ConnectorError(
-                f"{self.name} rejected the request ({response.status_code}): "
-                f"{response.text[:200]}"
+                message_for_http_status(response.status_code, service=self.name)
             )
 
         log.debug("%s %s %s -> %s", self.slug, method.upper(), path, response.status_code)
@@ -230,7 +243,9 @@ class BaseConnector(ABC):
         try:
             return response.json()
         except ValueError as exc:
-            raise ConnectorError(f"{self.name} returned a non-JSON response") from exc
+            raise ConnectorError(
+                f"{self.name} sent a response that could not be read. Try again."
+            ) from exc
 
     def close(self) -> None:
         if self._client is not None:

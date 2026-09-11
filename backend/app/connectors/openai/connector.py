@@ -27,7 +27,7 @@ class OpenAiConnector(BaseAeoConnector):
                 "model",
                 "Model",
                 "gpt-4o",
-                help_text="Which model answers the citation checks.",
+                help_text="The exact model name from OpenAI — there is no default.",
             ),
         ),
         capabilities=AEO_CAPABILITIES,
@@ -44,6 +44,10 @@ class OpenAiConnector(BaseAeoConnector):
         if organization:
             headers["OpenAI-Organization"] = organization
         return headers
+
+    def _probe_credentials(self) -> None:
+        model = self.credentials.require("model")
+        self.request("GET", f"/models/{model}")
 
     def _ask_with_search(self, query: str) -> list[str]:
         data = self.request(

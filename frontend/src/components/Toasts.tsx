@@ -17,6 +17,7 @@ import {
 
 import { ApiError } from '@/api/client'
 import type { Toast } from '@/api/types'
+import { softenErrorMessage } from '@/lib/softenError'
 
 interface ToastItem extends Toast {
   id: number
@@ -63,15 +64,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   )
 
   const fromError = useCallback(
-    (error: unknown, fallback = 'Something went wrong') => {
+    (error: unknown, fallback = 'Something went wrong. Please try again.') => {
       if (error instanceof ApiError) {
         // Field errors are more useful than the summary when present.
         const fieldMessage = Object.values(error.fields ?? {})[0]
-        push(fieldMessage ?? error.message, error.isForbidden ? 'warning' : 'error')
+        const raw = fieldMessage ?? error.message
+        push(softenErrorMessage(raw, fallback), error.isForbidden ? 'warning' : 'error')
         return
       }
       if (error instanceof Error && error.name === 'AbortError') return
-      push(error instanceof Error ? error.message : fallback, 'error')
+      if (error instanceof Error) {
+        push(softenErrorMessage(error.message, fallback), 'error')
+        return
+      }
+      push(fallback, 'error')
     },
     [push],
   )

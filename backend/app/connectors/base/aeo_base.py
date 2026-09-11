@@ -99,10 +99,24 @@ class BaseAeoConnector(AeoMonitorConnector):
         raise NotImplementedError(f"{self.name} does not implement citation checks")
 
     def check_health(self) -> HealthReport:
+        """Cheap credential probe — never a full search.
+
+        Subclasses override ``_probe_credentials``. The old default called
+        ``_ask_with_search``, which burned free-tier quota and showed rate-limit
+        errors to people simply trying to connect.
+        """
         try:
-            self._ask_with_search("test query for connectivity")
+            self._probe_credentials()
+        except ConnectorConfigError:
+            raise
         except ConnectorError as exc:
             return HealthReport(ok=False, detail=str(exc), checked_at=utcnow())
         except NotImplementedError as exc:
             return HealthReport(ok=False, detail=str(exc), checked_at=utcnow())
-        return HealthReport(ok=True, detail="Engine reachable", checked_at=utcnow())
+        return HealthReport(ok=True, detail="Connection looks good", checked_at=utcnow())
+
+    def _probe_credentials(self) -> None:
+        """Verify the key without doing real citation work. Override per vendor."""
+        raise NotImplementedError(
+            f"{self.name} needs a connection check before it can be saved"
+        )
