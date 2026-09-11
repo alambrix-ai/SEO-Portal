@@ -194,7 +194,13 @@ export function LoginPage() {
             </div>
 
             <div className="auth-stage-willy" aria-hidden="true">
-              <WillyBot mode="hero" className="auth-willy" />
+              <div className="auth-willy-stack">
+                <WillyBot mode="hero" className="auth-willy" />
+                <div className="auth-willy-pad">
+                  <span className="auth-willy-pad-disc" />
+                  <span className="auth-willy-pad-shadow" />
+                </div>
+              </div>
             </div>
           </div>
         </aside>
