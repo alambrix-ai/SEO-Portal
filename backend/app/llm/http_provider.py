@@ -151,11 +151,16 @@ class HttpLLMProvider(LLMProvider):
             or self.default_max_tokens
             or settings.llm_max_tokens
         )
+        return self._complete_payload(
+            self._payload(prompt, system=system, max_tokens=resolved_max)
+        )
+
+    def _complete_payload(self, payload: dict[str, Any]) -> LLMResponse:
         client = self._http()
         request = client.build_request(
             "POST",
             self._endpoint(),
-            json=self._payload(prompt, system=system, max_tokens=resolved_max),
+            json=payload,
             headers=self._headers(),
             params=self._params(),
         )
@@ -200,8 +205,8 @@ class HttpLLMProvider(LLMProvider):
             # "adaptive thinking is not supported on this model".
             vendor_message = ""
             try:
-                payload = response.json()
-                err = payload.get("error") if isinstance(payload, dict) else None
+                payload_err = response.json()
+                err = payload_err.get("error") if isinstance(payload_err, dict) else None
                 if isinstance(err, dict):
                     vendor_message = str(err.get("message") or "").strip()
                 elif isinstance(err, str):

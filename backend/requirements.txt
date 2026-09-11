@@ -1,7 +1,7 @@
 # ── Core API ───────────────────────────────────────────────────────────────
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
-pydantic==2.10.4
+pydantic==2.11.7
 pydantic-settings==2.7.1
 email-validator==2.2.0
 python-multipart==0.0.20
@@ -26,3 +26,6 @@ redis==5.2.1
 
 # ── LLM orchestration (optional; MockProvider is used when unset) ──────────
 anthropic==0.42.0
+
+# ── Willy assistant chat memory (LlamaIndex ChatMemoryBuffer / SimpleChatEngine)
+llama-index-core==0.13.6

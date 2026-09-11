@@ -1,7 +1,8 @@
 /**
  * Floating Willy — compact animated bot bottom-right on every page.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { Link } from 'react-router-dom'
 
 import { api } from '@/api/client'
@@ -47,6 +48,7 @@ export function AssistantDock() {
   const [stepIndex, setStepIndex] = useState(0)
   const [stepValues, setStepValues] = useState<Record<string, string>>({})
   const [stepBusy, setStepBusy] = useState(false)
+  const chatLogRef = useRef<HTMLDivElement>(null)
 
   // Always show the bot when signed in; lock the panel when the workspace /
   // role cannot use Onboarding (the module that gates the assistant).
@@ -82,16 +84,14 @@ export function AssistantDock() {
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
 
+  useEffect(() => {
+    const el = chatLogRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }, [messages, busy, open])
+
   const writableConnectors = canWrite('connectors')
   const writableAgents = canWrite('agents')
-
-  const history = useMemo(
-    () =>
-      messages
-        .filter((m) => m.id !== 'welcome')
-        .map((m) => ({ role: m.role, content: m.content })),
-    [messages],
-  )
 
   if (!session) return null
 
@@ -107,6 +107,10 @@ export function AssistantDock() {
     const text = draft.trim()
     if (!text || busy) return
     setDraft('')
+    const priorHistory = messages
+      .filter((m) => m.id !== 'welcome')
+      .slice(-40)
+      .map((m) => ({ role: m.role, content: m.content }))
     const userMsg: ChatMessage = { id: newId(), role: 'user', content: text }
     setMessages((current) => [...current, userMsg])
     setBusy(true)
@@ -117,7 +121,7 @@ export function AssistantDock() {
       const response = await api.assistantChat({
         message: text,
         mode,
-        history,
+        history: priorHistory,
       })
       setMessages((current) => [
         ...current,
@@ -242,7 +246,12 @@ export function AssistantDock() {
             </div>
           ) : (
             <>
-              <div className="assistant-chat-log" role="log" aria-live="polite">
+              <div
+                ref={chatLogRef}
+                className="assistant-chat-log"
+                role="log"
+                aria-live="polite"
+              >
                 {messages.map((message) => (
                   <div
                     key={message.id}
@@ -251,7 +260,15 @@ export function AssistantDock() {
                     <div className="assistant-bubble-role">
                       {message.role === 'user' ? 'You' : 'Willy'}
                     </div>
-                    <div className="assistant-bubble-body">{message.content}</div>
+                    <div className="assistant-bubble-body">
+                      {message.role === 'assistant' ? (
+                        <div className="assistant-md">
+                          <ReactMarkdown>{message.content}</ReactMarkdown>
+                        </div>
+                      ) : (
+                        message.content
+                      )}
+                    </div>
                     {message.payload?.recommendations ? (
                       <RecommendationsBlock payload={message.payload} />
                     ) : null}

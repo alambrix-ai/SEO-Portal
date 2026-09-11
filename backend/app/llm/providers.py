@@ -57,10 +57,23 @@ class AnthropicProvider(HttpLLMProvider):
         )
 
     def _payload(self, prompt: str, *, system: str, max_tokens: int) -> dict[str, Any]:
+        return self._payload_messages(
+            [{"role": "user", "content": prompt}],
+            system=system,
+            max_tokens=max_tokens,
+        )
+
+    def _payload_messages(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        system: str,
+        max_tokens: int,
+    ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
         }
         if self._adaptive_thinking_supported(self.model):
             effort = (self.effort or settings.llm_effort or "high").lower()
@@ -69,6 +82,23 @@ class AnthropicProvider(HttpLLMProvider):
         if system:
             body["system"] = system
         return body
+
+    def complete_messages(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        system: str = "",
+        max_tokens: int | None = None,
+    ) -> LLMResponse:
+        """Multi-turn Messages API call (used by the LlamaIndex chat engine)."""
+        resolved_max = (
+            max_tokens
+            or self.default_max_tokens
+            or settings.llm_max_tokens
+        )
+        return self._complete_payload(
+            self._payload_messages(messages, system=system, max_tokens=resolved_max)
+        )
 
     def _parse(self, data: dict[str, Any]) -> tuple[str, LLMUsage, str]:
         if data.get("stop_reason") == "refusal":

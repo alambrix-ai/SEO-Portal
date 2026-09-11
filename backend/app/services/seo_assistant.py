@@ -106,20 +106,37 @@ def _system_prompt(catalogue: dict[str, Any], mode: AssistantMode) -> str:
         "they cover the need. Order steps: connectors first, then agent configs, "
         "then optional resume."
     )
-    return f"""You are the AutoMarket AI SEO Assistant inside the customer console.
+    return f"""You are Willy, the AutoMarket AI assistant inside THIS customer console.
 
-Your job: deeply analyse the operator's marketing/SEO use case, then guide them
-on how to use THIS platform — which connectors to connect and which AI agents
-to configure — using only the catalogue below.
+Scope (hard guardrail):
+- You ONLY help with this portal: SEO, AEO, technical SEO, off-page/PR, ads,
+  connectors, AI agents, onboarding, approvals, and workspace setup.
+- Refuse anything outside that scope: maths, general trivia, coding homework,
+  news, personal advice, other products, or role-play unrelated to AutoMarket.
+- When refusing, say briefly that you only help with this portal, give 1–2
+  example questions that ARE in scope, and return empty recommendations and
+  null action_plan. Do not answer the off-topic question itself.
+
+Your job for in-scope requests: analyse the operator's marketing/SEO use case,
+then guide them on THIS platform — which connectors to connect and which AI
+agents to configure — using only the catalogue below.
+
+Memory (LlamaIndex chat engine):
+- Prior turns are in conversation memory. Treat follow-ups as the same thread
+  ("that agent", "yes", "connect it", pronouns, shortened asks).
+- Do not re-ask for facts the operator already gave unless they conflict.
+- If this turn is a clarification of the previous use case, refine
+  recommendations / action_plan accordingly instead of starting over.
 
 {mode_rules}
 
 Catalogue (JSON):
 {json.dumps(catalogue, indent=2)}
 
-Respond with a single JSON object (no markdown fences) shaped as:
+Respond with a single JSON object (no markdown fences around the whole object)
+shaped as:
 {{
-  "reply": "Clear, helpful markdown for the chat bubble. Be concrete.",
+  "reply": "Helpful markdown for the chat bubble (short paragraphs, **bold**, lists).",
   "recommendations": {{
     "connectors": [{{"slug": "...", "name": "...", "reason": "..."}}],
     "agents": [{{"slug": "...", "name": "...", "reason": "...", "depends_on": ["connector_slug"]}}]
@@ -166,9 +183,100 @@ Rules:
 - For LLM-writing agents, llm_connector must be a connected AI model connector
   slug from the catalogue (openai, anthropic_claude, google_gemini, perplexity).
 - Keep reply under ~350 words unless the operator asks for more depth.
-- If the use case is unclear, ask 1–3 focused clarifying questions in reply
-  and return empty recommendations / null action_plan.
+- If the use case is unclear but still about this portal, ask 1–3 focused
+  clarifying questions and return empty recommendations / null action_plan.
 """
+
+
+_OFF_TOPIC_REPLY = (
+    "I only help with **this AutoMarket portal** — SEO, AEO, connectors, and "
+    "agents.\n\n"
+    "Try something like:\n"
+    "- *How do I improve on-page SEO for our product pages?*\n"
+    "- *Which connectors do I need for technical SEO audits?*\n"
+    "- *Help me set up agents for backlinks and AEO.*"
+)
+
+
+def _looks_off_topic(message: str) -> bool:
+    """Cheap pre-filter so obvious off-topic prompts never hit the LLM."""
+    text = (message or "").strip()
+    if not text:
+        return False
+    lowered = text.lower()
+
+    # Pure arithmetic / equations (e.g. "2+2", "what is 5*7").
+    compact = re.sub(r"\s+", "", lowered)
+    if re.fullmatch(r"(whatis|whats|calculate|solve)?[\d\+\-\*/×÷\(\)\.=x]+", compact):
+        return True
+    if re.fullmatch(r"[\d\s\+\-\*/×÷\(\)\.=x\?]+", text) and any(ch.isdigit() for ch in text):
+        return True
+
+    portal_tokens = (
+        "seo",
+        "aeo",
+        "agent",
+        "connector",
+        "wordpress",
+        "shopify",
+        "backlink",
+        "audit",
+        "ranking",
+        "keyword",
+        "content",
+        "ads",
+        "campaign",
+        "onboarding",
+        "workspace",
+        "portal",
+        "automarket",
+        "willy",
+        "site",
+        "page",
+        "crawl",
+        "sitemap",
+        "gsc",
+        "analytics",
+        "pr ",
+        "outreach",
+        "technical",
+        "organic",
+        "traffic",
+        "conversion",
+        "schema",
+        "citation",
+    )
+    if any(token in lowered for token in portal_tokens):
+        return False
+
+    off_starters = (
+        "tell me a joke",
+        "who is",
+        "what is the capital",
+        "write a poem",
+        "write code",
+        "translate ",
+        "weather",
+        "stock price",
+    )
+    if any(lowered.startswith(s) or s in lowered for s in off_starters):
+        return True
+
+    # Short messages with digits and operators, no portal vocabulary.
+    if len(text) <= 32 and re.search(r"\d", text) and re.search(r"[\+\-\*/×÷=]", text):
+        return True
+
+    return False
+
+
+def _refusal_payload(mode: AssistantMode) -> dict[str, Any]:
+    return {
+        "reply": _OFF_TOPIC_REPLY,
+        "mode": mode,
+        "recommendations": {"connectors": [], "agents": []},
+        "action_plan": None,
+        "model": _env_model() or "guardrail",
+    }
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -232,24 +340,22 @@ def chat(
     if not text:
         raise InvalidInputError("Describe your use case so the assistant can help.")
 
+    if _looks_off_topic(text):
+        log.info("Willy guardrail refused off-topic prompt")
+        return _refusal_payload(mode)
+
     catalogue = _catalogue(db, tenant_id)
     provider = _provider()
 
-    transcript: list[str] = []
-    for turn in (history or [])[-8:]:
-        role = (turn.get("role") or "").strip().lower()
-        content = (turn.get("content") or "").strip()
-        if role in {"user", "assistant"} and content:
-            transcript.append(f"{role.upper()}: {content}")
-    transcript.append(f"USER: {text}")
-    prompt = (
-        "Conversation so far:\n"
-        + "\n\n".join(transcript)
-        + "\n\nReply with the JSON object described in the system instructions."
-    )
-
     try:
-        result = provider.complete(prompt, system=_system_prompt(catalogue, mode))
+        from app.llm.willy_chat_engine import run_chat_engine
+
+        result = run_chat_engine(
+            provider=provider,
+            system_prompt=_system_prompt(catalogue, mode),
+            message=text,
+            history=history,
+        )
     except AssistantConfigError:
         raise
     except LLMError as exc:
@@ -259,9 +365,9 @@ def chat(
             "Check ANTHROPIC_API_KEY and ASSISTANT_MODEL (or LLM_MODEL)."
         )) from exc
     except Exception as exc:  # noqa: BLE001 — surface as operator-facing error
-        log.exception("SEO Assistant env-LLM call failed")
+        log.exception("SEO Assistant LlamaIndex chat engine failed")
         raise AssistantUpstreamError(
-            "The assistant could not reach the LLM configured in the server .env. "
+            "The assistant could not complete this turn. "
             "Check ANTHROPIC_API_KEY and ASSISTANT_MODEL (or LLM_MODEL).",
         ) from exc
 

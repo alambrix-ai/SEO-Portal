@@ -23,7 +23,7 @@ class ChatTurn(ApiModel):
 class AssistantChatRequest(ApiModel):
     message: str = Field(min_length=1, max_length=8000)
     mode: Literal["ask", "action"] = "ask"
-    history: list[ChatTurn] = Field(default_factory=list)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=40)
 
 
 class RecommendedItem(ApiModel):
