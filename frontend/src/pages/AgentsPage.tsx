@@ -5,6 +5,7 @@
  * is shown is the agent's real state rather than an optimistic guess.
  */
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { api } from '@/api/client'
 import type { AgentOut, LlmConnectorOut, NotifyChannelOut } from '@/api/types'
@@ -88,11 +89,14 @@ export function AgentsPage() {
 
   const writable = canWrite('agents')
 
-  const openConfigure = (agent: AgentOut) => {
+  const openConfigure = async (agent: AgentOut) => {
     if (!writable) {
       push('View-only access for your role', 'warning')
       return
     }
+    // Refresh connector availability so the LLM list matches Connectors now,
+    // not when the page first loaded.
+    await options.reload()
     setConfiguring(agent)
   }
 
@@ -159,9 +163,10 @@ export function AgentsPage() {
     <>
       <p className="page-intro">
         {data.length} agents run the SEO/AEO and programmatic ad pipeline end to end.
-        Configure an agent, then start it — nothing runs against your site until you
-        have set its schedule and daily cap. Once running, toggle it between autonomous
-        execution and human-in-the-loop review.
+        Configure an agent (including which LLM connector it should write with), then
+        start it — nothing runs against your site until you have set its schedule and
+        daily cap. Once running, toggle it between autonomous execution and
+        human-in-the-loop review.
       </p>
 
       {AGENT_SECTIONS.map(({ key, title, description, tone }) => {
@@ -313,7 +318,7 @@ export function AgentsPage() {
                           type="button"
                           className="btn btn-primary"
                           disabled={disabled}
-                          onClick={() => openConfigure(agent)}
+                          onClick={() => void openConfigure(agent)}
                         >
                           Configure
                         </button>
@@ -328,7 +333,7 @@ export function AgentsPage() {
                         // reason teaches the rule once.
                         title={
                           paused && !agent.configured
-                            ? 'Configure it first — schedule, scope and daily cap'
+                            ? 'Configure it first — schedule, LLM connector (when needed) and daily cap'
                             : undefined
                         }
                         onClick={() =>
@@ -348,7 +353,7 @@ export function AgentsPage() {
                             type="button"
                             className="btn btn-secondary"
                             disabled={disabled}
-                            onClick={() => openConfigure(agent)}
+                            onClick={() => void openConfigure(agent)}
                           >
                             Configure
                           </button>
@@ -523,7 +528,14 @@ function ConfigureDialog({
           <button
             type="button"
             className="btn btn-primary"
-            disabled={busy}
+            disabled={
+              busy ||
+              (agent.requires_llm &&
+                (!llmConnector ||
+                  !llmConnectors.some(
+                    (option) => option.slug === llmConnector && option.available,
+                  )))
+            }
             onClick={() => void save()}
           >
             {busy ? 'Saving…' : 'Save configuration'}
@@ -546,6 +558,58 @@ function ConfigureDialog({
         </select>
       </Field>
 
+      {agent.requires_llm ? (
+        <>
+          <Field
+            label="LLM connector"
+            htmlFor="cfg-llm"
+            required
+            hint={
+              llmConnectors.find((option) => option.slug === llmConnector)?.reason ||
+              (llmConnectors.some((option) => option.available)
+                ? 'Pick the connected AI model this agent should write with. Connect more under Connectors.'
+                : undefined)
+            }
+          >
+            <select
+              id="cfg-llm"
+              className="input"
+              value={llmConnector}
+              onChange={(event) => setLlmConnector(event.target.value)}
+            >
+              <option value="" disabled>
+                Select an LLM connector
+              </option>
+              {llmConnectors.map((option) => (
+                <option
+                  key={option.slug}
+                  value={option.slug}
+                  disabled={!option.available}
+                >
+                  {option.name}
+                  {option.available ? '' : ' — not connected'}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {!llmConnectors.some((option) => option.available) ? (
+            <div className="notice">
+              No AI model is connected yet. Open{' '}
+              <Link to="/connectors">Connectors</Link>, connect OpenAI, Anthropic
+              Claude, Google Gemini, or Perplexity, then choose it here.
+            </div>
+          ) : null}
+
+          {deadModel ? (
+            <div className="notice">
+              This agent was set to use {deadModel.name}, but that connector is no
+              longer connected — so it could not write. {deadModel.reason}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
       {/* Not required, and deliberately so: blank means the whole site,
           which is the right default. The placeholder comes from the agent
           itself — scope means a path here, a list of domains there, and a
@@ -563,48 +627,6 @@ function ConfigureDialog({
           onChange={(event) => setScope(event.target.value)}
         />
       </Field>
-
-      {agent.requires_llm ? (
-        <Field
-          label="AI model"
-          htmlFor="cfg-llm"
-          required
-          hint={
-            llmConnectors.find((option) => option.slug === llmConnector)?.reason ||
-            (llmConnectors.some((option) => option.available)
-              ? 'This agent writes with the model you connect and choose here.'
-              : 'Connect OpenAI, Anthropic Claude, Google Gemini, or Perplexity under Connectors first.')
-          }
-        >
-          <select
-            id="cfg-llm"
-            className="input"
-            value={llmConnector}
-            onChange={(event) => setLlmConnector(event.target.value)}
-          >
-            <option value="" disabled>
-              Choose a connected model
-            </option>
-            {llmConnectors.map((option) => (
-              <option
-                key={option.slug}
-                value={option.slug}
-                disabled={!option.available}
-              >
-                {option.name}
-                {option.available ? '' : ' — connect first'}
-              </option>
-            ))}
-          </select>
-        </Field>
-      ) : null}
-
-      {deadModel ? (
-        <div className="notice">
-          This agent was set to use {deadModel.name}, but that connector is no
-          longer connected — so it could not write. {deadModel.reason}
-        </div>
-      ) : null}
 
       <Field
         label="Notify channel on action"
