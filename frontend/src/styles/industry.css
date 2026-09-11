@@ -1,45 +1,52 @@
 /* Industry — design-system tokens and component classes. This file is the source of truth for the system's look; retune it here and see readme.md. */
+/* Brand palette tuned to the public seo-agent site: cream ground, warm brown
+   actions, plum secondary, sage success accents. */
 @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;700&family=Barlow+Condensed:wght@400;600&display=swap');
 
 :root {
-  --color-bg: #f2f2f3;
-  --color-surface: #e9e9ea;
-  --color-text: #1d1f20;
-  --color-accent: #5980a6;
-  --color-accent-2: #728fab;
-  --color-divider: color-mix(in srgb, #1d1f20 16%, transparent);
+  --color-bg: #f8f6f1;
+  --color-surface: #efe8dc;
+  --color-text: #1a1a1a;
+  --color-accent: #966b3f;
+  --color-accent-2: #5b3e58;
+  --color-divider: color-mix(in srgb, #1a1a1a 14%, transparent);
 
-  /* Tonal ramps — generated in OKLCH on one shared lightness scale, so the
-     same step of any role matches the others in visual value. */
-  --color-neutral-100: #f5f5f8;
-  --color-neutral-200: #e7e7ea;
-  --color-neutral-300: #d4d4d7;
-  --color-neutral-400: #b7b7ba;
-  --color-neutral-500: #98989b;
-  --color-neutral-600: #7a7a7d;
-  --color-neutral-700: #5d5d60;
-  --color-neutral-800: #424244;
-  --color-neutral-900: #2b2b2d;
+  /* Tonal ramps — warm neutrals on the cream ground. */
+  --color-neutral-100: #faf8f4;
+  --color-neutral-200: #efe8dc;
+  --color-neutral-300: #e0d5c4;
+  --color-neutral-400: #c4b5a0;
+  --color-neutral-500: #9a8b78;
+  --color-neutral-600: #7a6c5c;
+  --color-neutral-700: #5a5046;
+  --color-neutral-800: #3a342e;
+  --color-neutral-900: #1a1a1a;
 
-  --color-accent-100: #eef6ff;
-  --color-accent-200: #d6ebff;
-  --color-accent-300: #b5d9fd;
-  --color-accent-400: #94bce3;
-  --color-accent-500: #749dc4;
-  --color-accent-600: #597ea3;
-  --color-accent-700: #416180;
-  --color-accent-800: #2c455d;
-  --color-accent-900: #1d2d3d;
+  /* Warm brown — primary actions / active chrome (CTA on the marketing site). */
+  --color-accent-100: #f6efe6;
+  --color-accent-200: #ead9c4;
+  --color-accent-300: #d8b894;
+  --color-accent-400: #c09060;
+  --color-accent-500: #a87848;
+  --color-accent-600: #966b3f;
+  --color-accent-700: #7a5632;
+  --color-accent-800: #5c4026;
+  --color-accent-900: #3d2a18;
 
-  --color-accent-2-100: #eef6ff;
-  --color-accent-2-200: #d6ebff;
-  --color-accent-2-300: #bdd8f2;
-  --color-accent-2-400: #9ebbd8;
-  --color-accent-2-500: #7e9cb8;
-  --color-accent-2-600: #627d98;
-  --color-accent-2-700: #486077;
-  --color-accent-2-800: #314457;
-  --color-accent-2-900: #1f2d3a;
+  /* Plum — secondary brand (headline emphasis / ticker). */
+  --color-accent-2-100: #f3eef2;
+  --color-accent-2-200: #e2d5df;
+  --color-accent-2-300: #c7a9bf;
+  --color-accent-2-400: #a57a98;
+  --color-accent-2-500: #865a78;
+  --color-accent-2-600: #5b3e58;
+  --color-accent-2-700: #4a3247;
+  --color-accent-2-800: #352334;
+  --color-accent-2-900: #221622;
+
+  /* Sage — positive / success accents from the site illustrations. */
+  --color-success: #7d9a83;
+  --color-success-soft: color-mix(in srgb, #7d9a83 16%, transparent);
 
   --font-heading: "Barlow Condensed", system-ui, sans-serif;
   --font-heading-weight: 600;
@@ -56,11 +63,10 @@
   --radius-md: 4px;
   --radius-lg: 7px;
 
-  /* Elevation — derived from the ground: soft ink-tinted shadows on a
-     light theme, a hairline edge + ambient darkness on a dark one. */
-  --shadow-sm: 0 1px 2px color-mix(in srgb, #2b2b2d 14%, transparent);
-  --shadow-md: 0 3px 10px color-mix(in srgb, #2b2b2d 16%, transparent);
-  --shadow-lg: 0 12px 32px color-mix(in srgb, #2b2b2d 22%, transparent);
+  /* Elevation — soft warm ink, not cool steel. */
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #1a1a1a 12%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #1a1a1a 14%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #1a1a1a 18%, transparent);
 }
 
 body {
@@ -149,9 +155,9 @@ figcaption {
 }
 .btn svg { display: block; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn-primary { background: var(--color-accent); color: var(--color-bg); }
-.btn-primary:hover { background: var(--color-accent-600); }
-.btn-primary:active { background: var(--color-accent-700); }
+.btn-primary { background: var(--color-accent); color: #fff; }
+.btn-primary:hover { background: var(--color-accent-700); }
+.btn-primary:active { background: var(--color-accent-800); }
 .btn-secondary { border-color: var(--color-divider); }
 .btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 .btn-secondary:active { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
