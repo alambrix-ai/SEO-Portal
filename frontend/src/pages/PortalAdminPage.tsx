@@ -10,27 +10,38 @@ import { Navigate } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { PortalFeature, PortalOrganization } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
+import { CardSection } from '@/components/CardSection'
 import { useToasts } from '@/components/Toasts'
 import {
   Blueprint,
+  Dialog,
+  EmptyState,
   ErrorState,
   Loading,
   SectionHeading,
   Segmented,
+  StatTile,
   Tag,
 } from '@/components/ui'
 import { useResource } from '@/hooks/useResource'
 
 type Tab = 'workspaces' | 'features'
+type FeatureKindFilter = 'all' | 'connector' | 'agent' | 'module'
+
+const KIND_LABEL: Record<string, string> = {
+  connector: 'Connector',
+  agent: 'Agent',
+  module: 'Module',
+}
 
 export function PortalAdminPage() {
   const { session, refresh } = useAuth()
-  const { push, fromResult, fromError } = useToasts()
+  const { fromResult, fromError } = useToasts()
   const [tab, setTab] = useState<Tab>('workspaces')
   const [selectedOrg, setSelectedOrg] = useState<PortalOrganization | null>(null)
-  const [featureFilter, setFeatureFilter] = useState<'all' | 'connector' | 'agent' | 'module'>(
-    'all',
-  )
+  const [featureFilter, setFeatureFilter] = useState<FeatureKindFilter>('all')
+  const [workspaceQuery, setWorkspaceQuery] = useState('')
+  const [featureQuery, setFeatureQuery] = useState('')
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const isPortalAdmin = Boolean(session?.is_portal_admin)
 
@@ -54,11 +65,49 @@ export function PortalAdminPage() {
     [isPortalAdmin, selectedOrg?.id],
   )
 
+  const filteredOrgs = useMemo(() => {
+    const rows = orgs.data ?? []
+    const q = workspaceQuery.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter(
+      (org) =>
+        org.name.toLowerCase().includes(q) ||
+        org.slug.toLowerCase().includes(q) ||
+        org.plan_name.toLowerCase().includes(q),
+    )
+  }, [orgs.data, workspaceQuery])
+
   const filteredFeatures = useMemo(() => {
     const rows = features.data ?? []
-    if (featureFilter === 'all') return rows
-    return rows.filter((row) => row.kind === featureFilter)
-  }, [features.data, featureFilter])
+    const q = featureQuery.trim().toLowerCase()
+    return rows.filter((row) => {
+      if (featureFilter !== 'all' && row.kind !== featureFilter) return false
+      if (!q) return true
+      return (
+        row.name.toLowerCase().includes(q) ||
+        row.slug.toLowerCase().includes(q) ||
+        row.kind.toLowerCase().includes(q)
+      )
+    })
+  }, [features.data, featureFilter, featureQuery])
+
+  const featuresByKind = useMemo(() => {
+    const groups: { kind: string; rows: PortalFeature[] }[] = []
+    const order = ['module', 'connector', 'agent'] as const
+    for (const kind of order) {
+      const rows = filteredFeatures.filter((row) => row.kind === kind)
+      if (rows.length) groups.push({ kind, rows })
+    }
+    const known = new Set<string>(order)
+    const other = filteredFeatures.filter((row) => !known.has(row.kind))
+    if (other.length) groups.push({ kind: 'other', rows: other })
+    return groups
+  }, [filteredFeatures])
+
+  const disabledCount = useMemo(
+    () => (features.data ?? []).filter((row) => !row.enabled).length,
+    [features.data],
+  )
 
   if (!isPortalAdmin) {
     return <Navigate to="/dashboard" replace />
@@ -86,210 +135,287 @@ export function PortalAdminPage() {
     return <ErrorState message={overview.error} onRetry={overview.reload} />
   }
 
-  return (
-    <>
-      <p className="page-intro">
-        Platform control for every workspace. Turn connectors, agents and modules off
-        here and they disappear from the customer console until you turn them back on.
-      </p>
+  const featuresTotal = overview.data?.features_total ?? features.data?.length ?? 0
+  const featuresOff = overview.data?.features_disabled ?? disabledCount
 
-      <div className="grid-cards" style={{ marginBottom: 24 }}>
-        <Blueprint className="card elev-sm">
-          <div className="card-kicker">Workspaces</div>
-          <div className="card-title">{overview.data?.organizations ?? '—'}</div>
-        </Blueprint>
-        <Blueprint className="card elev-sm">
-          <div className="card-kicker">Users</div>
-          <div className="card-title">{overview.data?.users ?? '—'}</div>
-        </Blueprint>
-        <Blueprint className="card elev-sm">
-          <div className="card-kicker">Features off</div>
-          <div className="card-title">
-            {overview.data
-              ? `${overview.data.features_disabled} / ${overview.data.features_total}`
-              : '—'}
+  return (
+    <div className="portal-page">
+      <Blueprint className="portal-masthead elev-sm">
+        <div className="portal-masthead-copy">
+          <div className="portal-eyebrow">Platform control</div>
+          <h2 className="portal-masthead-title">Portal Admin</h2>
+          <p className="portal-masthead-lede">
+            Govern every workspace from one console. Disable a connector, agent, or
+            module here and it disappears from the customer product until you
+            restore it.
+          </p>
+        </div>
+        <div className="portal-masthead-aside">
+          <Tag tone="accent">Operator access</Tag>
+          <div className="portal-masthead-meta">
+            Signed in as
+            <strong> {session?.user.email}</strong>
           </div>
-        </Blueprint>
+        </div>
+      </Blueprint>
+
+      <div className="grid-tiles portal-kpis">
+        <StatTile
+          kicker="Workspaces"
+          value={overview.data?.organizations ?? '—'}
+          meta="Customer organizations"
+        />
+        <StatTile
+          kicker="Users"
+          value={overview.data?.users ?? '—'}
+          meta="Across all workspaces"
+        />
+        <StatTile
+          kicker="Catalogue live"
+          value={featuresTotal ? Math.max(0, featuresTotal - featuresOff) : '—'}
+          meta={`${featuresOff} currently off`}
+        />
+        <StatTile
+          kicker="Features off"
+          value={featuresTotal ? `${featuresOff} / ${featuresTotal}` : '—'}
+          meta="Hidden from customers"
+        />
       </div>
 
-      <Segmented
-        name="portal-tab"
-        value={tab}
-        options={[
-          { value: 'workspaces', label: 'Workspaces' },
-          { value: 'features', label: 'Features' },
-        ]}
-        onChange={(next) => {
-          setTab(next as Tab)
-          setSelectedOrg(null)
-        }}
-      />
+      <div className="portal-toolbar">
+        <div className="portal-tabs" role="tablist" aria-label="Portal sections">
+          {(
+            [
+              { value: 'workspaces' as const, label: 'Workspaces', hint: 'Tenants & members' },
+              { value: 'features' as const, label: 'Catalogue', hint: 'Connectors · agents · modules' },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              role="tab"
+              aria-selected={tab === item.value}
+              className={`portal-tab${tab === item.value ? ' is-active' : ''}`}
+              onClick={() => {
+                setTab(item.value)
+                setSelectedOrg(null)
+              }}
+            >
+              <span className="portal-tab-label">{item.label}</span>
+              <span className="portal-tab-hint">{item.hint}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {tab === 'workspaces' ? (
-        <div style={{ marginTop: 20 }}>
-          <SectionHeading title="Workspaces" description={`${orgs.data?.length ?? 0} total`} />
+        <section className="portal-panel" aria-label="Workspaces">
+          <SectionHeading
+            title="Customer workspaces"
+            description="Open any tenant to review members, plan, and seat usage."
+            action={
+              <div className="portal-search">
+                <input
+                  className="input"
+                  type="search"
+                  placeholder="Search name, slug, or plan…"
+                  value={workspaceQuery}
+                  onChange={(event) => setWorkspaceQuery(event.target.value)}
+                  aria-label="Search workspaces"
+                />
+              </div>
+            }
+          />
+
           {orgs.loading && !orgs.data ? <Loading label="Loading workspaces…" /> : null}
           {orgs.error ? <ErrorState message={orgs.error} onRetry={orgs.reload} /> : null}
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Plan</th>
-                  <th>Members</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {(orgs.data ?? []).map((org) => (
-                  <tr key={org.id}>
-                    <td>
-                      <strong>{org.name}</strong>
-                      <div className="small muted">{org.slug}</div>
-                    </td>
-                    <td>
-                      {org.plan_name}
-                      <div className="small muted">{org.plan_tier}</div>
-                    </td>
-                    <td>
-                      {org.member_count} / {org.seats_total}
-                    </td>
-                    <td>
-                      <Tag tone={org.is_active ? 'accent' : 'outline'}>
-                        {org.is_active ? 'Active' : 'Inactive'}
-                      </Tag>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        onClick={() => setSelectedOrg(org)}
-                      >
-                        Users
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
 
-          {selectedOrg ? (
-            <div style={{ marginTop: 28 }}>
-              <SectionHeading
-                title={`Users — ${selectedOrg.name}`}
-                description={`${users.data?.length ?? 0} members`}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ marginBottom: 12 }}
-                onClick={() => setSelectedOrg(null)}
-              >
-                Close
-              </button>
-              {users.loading && !users.data ? <Loading label="Loading users…" /> : null}
-              {users.error ? (
-                <ErrorState message={users.error} onRetry={users.reload} />
-              ) : null}
-              <div className="table-wrap">
-                <table className="data-table">
+          {!orgs.loading && filteredOrgs.length === 0 ? (
+            <EmptyState
+              title={workspaceQuery ? 'No matching workspaces' : 'No workspaces yet'}
+              description={
+                workspaceQuery
+                  ? 'Try a different name, slug, or plan.'
+                  : 'Organizations will appear here as customers sign up.'
+              }
+            />
+          ) : (
+            <Blueprint className="card elev-sm portal-surface">
+              <div className="table-scroll">
+                <table className="table">
                   <thead>
                     <tr>
-                      <th>Name</th>
-                      <th>Email</th>
-                      <th>Role</th>
+                      <th>Workspace</th>
+                      <th>Plan</th>
+                      <th>Seats</th>
                       <th>Status</th>
+                      <th />
                     </tr>
                   </thead>
                   <tbody>
-                    {(users.data ?? []).map((member) => (
-                      <tr key={member.id}>
-                        <td>
-                          {member.name}
-                          {member.is_owner ? (
-                            <span className="small muted"> · owner</span>
-                          ) : null}
-                        </td>
-                        <td>{member.email}</td>
-                        <td>{member.role_label}</td>
-                        <td>
-                          <Tag tone={member.is_active ? 'accent' : 'outline'}>
-                            {member.is_active ? 'Active' : 'Inactive'}
-                          </Tag>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredOrgs.map((org) => {
+                      const seatPct =
+                        org.seats_total > 0
+                          ? Math.round((org.member_count / org.seats_total) * 100)
+                          : 0
+                      return (
+                        <tr key={org.id}>
+                          <td>
+                            <div className="cell-title">{org.name}</div>
+                            <div className="small muted">{org.slug}</div>
+                          </td>
+                          <td>
+                            <div className="cell-title" style={{ fontSize: 13 }}>
+                              {org.plan_name}
+                            </div>
+                            <div className="small muted">{org.plan_tier}</div>
+                          </td>
+                          <td>
+                            <div className="portal-seat">
+                              <span>
+                                {org.member_count}
+                                <span className="muted"> / {org.seats_total}</span>
+                              </span>
+                              <div
+                                className="portal-seat-meter"
+                                role="meter"
+                                aria-valuenow={seatPct}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-label={`${seatPct}% of seats used`}
+                              >
+                                <span style={{ width: `${Math.min(100, seatPct)}%` }} />
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <Tag tone={org.is_active ? 'accent-2' : 'outline'}>
+                              {org.is_active ? 'Active' : 'Inactive'}
+                            </Tag>
+                          </td>
+                          <td className="table-actions">
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              onClick={() => setSelectedOrg(org)}
+                            >
+                              View members
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
-            </div>
-          ) : null}
-        </div>
+            </Blueprint>
+          )}
+        </section>
       ) : (
-        <div style={{ marginTop: 20 }}>
+        <section className="portal-panel" aria-label="Catalogue">
           <SectionHeading
-            title="Catalogue & modules"
-            description={`${filteredFeatures.length} shown`}
-          />
-          <p className="muted" style={{ marginBottom: 12 }}>
-            Off items are hidden from every workspace. Already-connected data stays in
-            the database but customers cannot see or use them until you enable again.
-          </p>
-          <Segmented
-            name="feature-kind"
-            value={featureFilter}
-            options={[
-              { value: 'all', label: 'All' },
-              { value: 'connector', label: 'Connectors' },
-              { value: 'agent', label: 'Agents' },
-              { value: 'module', label: 'Modules' },
-            ]}
-            onChange={(next) =>
-              setFeatureFilter(next as 'all' | 'connector' | 'agent' | 'module')
+            title="Product catalogue"
+            description="Off items stay in the database but are hidden from every customer console."
+            action={
+              <div className="portal-search">
+                <input
+                  className="input"
+                  type="search"
+                  placeholder="Search catalogue…"
+                  value={featureQuery}
+                  onChange={(event) => setFeatureQuery(event.target.value)}
+                  aria-label="Search catalogue"
+                />
+              </div>
             }
           />
+
+          <div className="portal-filter-bar">
+            <Segmented
+              name="feature-kind"
+              value={featureFilter}
+              options={[
+                { value: 'all', label: 'All' },
+                { value: 'connector', label: 'Connectors' },
+                { value: 'agent', label: 'Agents' },
+                { value: 'module', label: 'Modules' },
+              ]}
+              onChange={(next) => setFeatureFilter(next as FeatureKindFilter)}
+            />
+            <div className="portal-filter-summary muted small">
+              Showing {filteredFeatures.length}
+              {features.data ? ` of ${features.data.length}` : ''}
+            </div>
+          </div>
+
           {features.loading && !features.data ? (
-            <Loading label="Loading features…" />
+            <Loading label="Loading catalogue…" />
           ) : null}
           {features.error ? (
             <ErrorState message={features.error} onRetry={features.reload} />
           ) : null}
-          <div className="table-wrap" style={{ marginTop: 16 }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Kind</th>
-                  <th>Name</th>
-                  <th>Slug</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {filteredFeatures.map((feature) => {
-                  const key = `${feature.kind}/${feature.slug}`
-                  return (
-                    <tr key={key}>
-                      <td>{feature.kind}</td>
-                      <td>
-                        <strong>{feature.name}</strong>
-                      </td>
-                      <td className="muted">{feature.slug}</td>
-                      <td>
-                        <Tag tone={feature.enabled ? 'accent' : 'outline'}>
-                          {feature.enabled ? 'On' : 'Off'}
-                        </Tag>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className={`btn ${feature.enabled ? 'btn-secondary' : 'btn-primary'}`}
-                          disabled={busyKey === key}
-                          onClick={() => {
+
+          {!features.loading && filteredFeatures.length === 0 ? (
+            <EmptyState
+              title="Nothing in this view"
+              description="Change the filter or search to find connectors, agents, or modules."
+            />
+          ) : null}
+
+          {featuresByKind.map((group) => (
+            <CardSection
+              key={group.kind}
+              title={
+                group.kind === 'other'
+                  ? 'Other'
+                  : `${KIND_LABEL[group.kind] ?? group.kind}s`
+              }
+              count={group.rows.length}
+              description={
+                group.kind === 'module'
+                  ? 'Console modules customers can open from the sidebar.'
+                  : group.kind === 'connector'
+                    ? 'Integrations offered on the Connectors screen.'
+                    : group.kind === 'agent'
+                      ? 'Agents available to configure and run.'
+                      : undefined
+              }
+            >
+              <Blueprint className="card elev-sm portal-surface">
+                <ul className="portal-feature-list">
+                  {group.rows.map((feature) => {
+                    const key = `${feature.kind}/${feature.slug}`
+                    const busy = busyKey === key
+                    return (
+                      <li key={key} className="portal-feature-row">
+                        <div className="portal-feature-mark" aria-hidden="true">
+                          {(feature.name || feature.slug).slice(0, 1).toUpperCase()}
+                        </div>
+                        <div className="portal-feature-copy">
+                          <div className="portal-feature-title">{feature.name}</div>
+                          <div className="portal-feature-meta">
+                            <Tag tone="outline">{KIND_LABEL[feature.kind] ?? feature.kind}</Tag>
+                            <span className="mono-sub">{feature.slug}</span>
+                          </div>
+                        </div>
+                        <div className="portal-feature-status">
+                          <Tag tone={feature.enabled ? 'accent-2' : 'neutral'}>
+                            {feature.enabled ? 'Visible' : 'Hidden'}
+                          </Tag>
+                        </div>
+                        <Segmented
+                          name={`feature-${key}`}
+                          value={feature.enabled ? 'on' : 'off'}
+                          disabled={busy}
+                          options={[
+                            { value: 'on', label: busy ? '…' : 'On' },
+                            { value: 'off', label: busy ? '…' : 'Off' },
+                          ]}
+                          onChange={(next) => {
+                            const turnOn = next === 'on'
+                            if (turnOn === feature.enabled) return
                             if (
-                              feature.enabled &&
+                              !turnOn &&
                               !window.confirm(
                                 `Turn off ${feature.name}? Customers will no longer see it.`,
                               )
@@ -298,34 +424,104 @@ export function PortalAdminPage() {
                             }
                             void toggle(feature)
                           }}
-                        >
-                          {busyKey === key
-                            ? 'Saving…'
-                            : feature.enabled
-                              ? 'Disable'
-                              : 'Enable'}
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          {!filteredFeatures.length && features.data ? (
-            <p className="muted">No features in this filter.</p>
-          ) : null}
-          {!features.data?.length && !features.loading ? (
+                        />
+                      </li>
+                    )
+                  })}
+                </ul>
+              </Blueprint>
+            </CardSection>
+          ))}
+        </section>
+      )}
+
+      {selectedOrg ? (
+        <Dialog
+          title={`Members — ${selectedOrg.name}`}
+          width={720}
+          onClose={() => setSelectedOrg(null)}
+          actions={
             <button
               type="button"
-              className="btn btn-ghost"
-              onClick={() => push('Nothing to toggle yet', 'info')}
+              className="btn btn-secondary"
+              onClick={() => setSelectedOrg(null)}
             >
-              Refresh
+              Close
             </button>
+          }
+        >
+          <div className="portal-dialog-summary">
+            <div>
+              <div className="card-kicker">Plan</div>
+              <div className="cell-title">
+                {selectedOrg.plan_name}
+                <span className="muted"> · {selectedOrg.plan_tier}</span>
+              </div>
+            </div>
+            <div>
+              <div className="card-kicker">Seats</div>
+              <div className="cell-title">
+                {selectedOrg.member_count} / {selectedOrg.seats_total}
+              </div>
+            </div>
+            <div>
+              <div className="card-kicker">Status</div>
+              <Tag tone={selectedOrg.is_active ? 'accent-2' : 'outline'}>
+                {selectedOrg.is_active ? 'Active' : 'Inactive'}
+              </Tag>
+            </div>
+          </div>
+
+          {users.loading && !users.data ? <Loading label="Loading members…" /> : null}
+          {users.error ? <ErrorState message={users.error} onRetry={users.reload} /> : null}
+
+          {users.data?.length ? (
+            <div className="table-scroll">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Last sign-in</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.data.map((member) => (
+                    <tr key={member.id}>
+                      <td>
+                        <span className="cell-title">{member.name}</span>
+                        {member.is_owner ? (
+                          <div className="row" style={{ marginTop: 4 }}>
+                            <Tag tone="outline">Owner</Tag>
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="small muted">{member.email}</td>
+                      <td>{member.role_label}</td>
+                      <td className="small muted">
+                        {member.last_login_at
+                          ? new Date(member.last_login_at).toLocaleString()
+                          : 'Never'}
+                      </td>
+                      <td>
+                        <Tag tone={member.is_active ? 'accent-2' : 'outline'}>
+                          {member.is_active ? 'Active' : 'Inactive'}
+                        </Tag>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : null}
-        </div>
-      )}
-    </>
+
+          {!users.loading && users.data && users.data.length === 0 ? (
+            <p className="muted">No members in this workspace.</p>
+          ) : null}
+        </Dialog>
+      ) : null}
+    </div>
   )
 }
