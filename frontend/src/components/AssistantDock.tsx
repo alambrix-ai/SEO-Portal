@@ -217,10 +217,13 @@ export function AssistantDock() {
           <header className="assistant-dock-header">
             <div className="assistant-dock-brand">
               <div className="assistant-dock-heading">
-                <span className="assistant-eyebrow">Smart setup</span>
+                <div className="assistant-dock-kicker-row">
+                  <span className="assistant-eyebrow">Smart setup</span>
+                  <span className="assistant-dock-live">Online</span>
+                </div>
                 <strong>SEO Assistant</strong>
                 <span className="assistant-dock-sub">
-                  Maps your use case to connectors and agents
+                  Describe a goal — Willy maps connectors and agents for your workspace.
                 </span>
               </div>
             </div>
@@ -249,15 +252,17 @@ export function AssistantDock() {
           ) : (
             <>
               <div className="assistant-dock-toolbar">
-                <Segmented
-                  name="assistant-dock-mode"
-                  value={mode}
-                  options={[
-                    { value: 'ask', label: 'Ask' },
-                    { value: 'action', label: 'Action' },
-                  ]}
-                  onChange={(next) => setMode(next as AssistantMode)}
-                />
+                <div className="assistant-dock-modes">
+                  <Segmented
+                    name="assistant-dock-mode"
+                    value={mode}
+                    options={[
+                      { value: 'ask', label: 'Ask' },
+                      { value: 'action', label: 'Action' },
+                    ]}
+                    onChange={(next) => setMode(next as AssistantMode)}
+                  />
+                </div>
                 <span className="assistant-dock-mode-hint">
                   {mode === 'ask'
                     ? 'Guidance only — nothing is changed in your workspace.'
@@ -429,15 +434,29 @@ export function AssistantDock() {
         </section>
       ) : null}
 
-      <button
-        type="button"
-        className="assistant-dock-launcher"
-        aria-label={open ? 'Hide SEO Assistant' : 'Open SEO Assistant'}
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <WillyBot compact />
-      </button>
+      <div className="assistant-dock-anchor">
+        {!open ? (
+          <button
+            type="button"
+            className="assistant-ask-me"
+            onClick={() => setOpen(true)}
+            aria-label="Ask Willy, the SEO Assistant"
+          >
+            <span className="assistant-ask-me-dot" aria-hidden="true" />
+            <span className="assistant-ask-me-text">Ask me</span>
+            <span className="assistant-ask-me-sub">SEO · AEO · setup</span>
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="assistant-dock-launcher"
+          aria-label={open ? 'Hide SEO Assistant' : 'Open SEO Assistant'}
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <WillyBot compact />
+        </button>
+      </div>
     </div>
   )
 }

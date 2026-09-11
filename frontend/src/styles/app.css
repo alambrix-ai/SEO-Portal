@@ -2421,14 +2421,14 @@ input[type='range']:disabled::-webkit-slider-thumb {
 /* ── SEO Assistant dock (floating bottom-right) ─────────────────────────── */
 .assistant-dock {
   position: fixed;
-  right: 20px;
+  right: 18px;
   left: auto;
-  bottom: 16px;
+  bottom: 14px;
   z-index: 80;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 10px;
+  gap: 12px;
   pointer-events: none;
 }
 
@@ -2436,12 +2436,86 @@ input[type='range']:disabled::-webkit-slider-thumb {
   pointer-events: auto;
 }
 
-/* Bare Willy — no circle, pulse, pill, or chrome around the robot. */
+.assistant-dock-anchor {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+/* “Ask me” speech chip — sits left of Willy, no circular chrome on the bot. */
+.assistant-ask-me {
+  position: absolute;
+  right: calc(100% + 6px);
+  bottom: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 118px;
+  padding: 10px 14px 11px;
+  border: 1px solid color-mix(in srgb, var(--color-accent-700) 35%, var(--color-divider));
+  background: #fff;
+  color: var(--color-text);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  text-align: left;
+  animation: assistant-ask-bob 2.8s ease-in-out infinite;
+}
+
+.assistant-ask-me::after {
+  content: "";
+  position: absolute;
+  right: -7px;
+  bottom: 14px;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-right: 1px solid color-mix(in srgb, var(--color-accent-700) 35%, var(--color-divider));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-accent-700) 35%, var(--color-divider));
+  transform: rotate(-45deg);
+}
+
+.assistant-ask-me:hover,
+.assistant-ask-me:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  animation-play-state: paused;
+}
+
+.assistant-ask-me-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 7px;
+  height: 7px;
+  background: #20a789;
+  box-shadow: 0 0 0 0 color-mix(in srgb, #20a789 55%, transparent);
+  animation: assistant-ask-pulse 1.8s ease-out infinite;
+}
+
+.assistant-ask-me-text {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent-900);
+}
+
+.assistant-ask-me-sub {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+/* Bare Willy — transparent hit target only. */
 .assistant-dock-launcher {
   position: relative;
   display: block;
-  width: 108px;
-  height: 120px;
+  width: 112px;
+  height: 124px;
   padding: 0;
   margin: 0;
   border: 0;
@@ -2451,6 +2525,7 @@ input[type='range']:disabled::-webkit-slider-thumb {
   cursor: pointer;
   overflow: visible;
   animation: assistant-dock-float 3.8s ease-in-out infinite;
+  z-index: 1;
 }
 
 .assistant-dock-launcher:hover,
@@ -2514,15 +2589,28 @@ input[type='range']:disabled::-webkit-slider-thumb {
 }
 
 .assistant-dock-panel {
-  width: min(440px, calc(100vw - 32px));
-  max-height: min(74vh, 680px);
+  width: min(460px, calc(100vw - 28px));
+  max-height: min(76vh, 700px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #fbfbfc;
+  background: #fff;
   border: 1px solid color-mix(in srgb, var(--color-text) 14%, transparent);
-  box-shadow: var(--shadow-lg), 0 0 0 1px color-mix(in srgb, #fff 70%, transparent) inset;
+  box-shadow: var(--shadow-lg);
   animation: assistant-dock-rise 220ms ease-out;
+}
+
+.assistant-dock-panel::before {
+  content: "";
+  display: block;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--color-accent-900) 0%,
+    var(--color-accent) 55%,
+    var(--color-accent-400) 100%
+  );
+  flex: none;
 }
 
 .assistant-dock-header {
@@ -2530,14 +2618,8 @@ input[type='range']:disabled::-webkit-slider-thumb {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px 12px;
-  background:
-    linear-gradient(
-      120deg,
-      color-mix(in srgb, var(--color-accent-100) 88%, #fff) 0%,
-      #fbfbfc 55%,
-      color-mix(in srgb, var(--color-surface) 70%, #fff) 100%
-    );
+  padding: 16px 18px 14px;
+  background: color-mix(in srgb, var(--color-accent-100) 55%, #fff);
   border-bottom: 1px solid var(--color-divider);
 }
 
@@ -2551,23 +2633,54 @@ input[type='range']:disabled::-webkit-slider-thumb {
 .assistant-dock-heading {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+}
+
+.assistant-dock-kicker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.assistant-dock-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #0f6b58;
+  background: color-mix(in srgb, #20a789 14%, #fff);
+  border: 1px solid color-mix(in srgb, #20a789 32%, transparent);
+}
+
+.assistant-dock-live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  background: #20a789;
 }
 
 .assistant-dock-heading strong {
   font-family: var(--font-heading);
   font-weight: var(--font-heading-weight);
-  font-size: 18px;
-  letter-spacing: 0.05em;
+  font-size: 20px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  line-height: 1.15;
+  line-height: 1.1;
+  color: var(--color-accent-900);
 }
 
 .assistant-dock-sub {
   font-size: 12.5px;
-  line-height: 1.4;
+  line-height: 1.45;
   color: color-mix(in srgb, var(--color-text) 62%, transparent);
+  max-width: 34ch;
 }
 
 .assistant-dock-close {
@@ -2577,7 +2690,7 @@ input[type='range']:disabled::-webkit-slider-thumb {
   display: grid;
   place-items: center;
   border: 1px solid var(--color-divider);
-  background: color-mix(in srgb, #fff 70%, var(--color-bg));
+  background: #fff;
   color: var(--color-text);
   cursor: pointer;
   font-size: 22px;
@@ -2589,14 +2702,24 @@ input[type='range']:disabled::-webkit-slider-thumb {
 .assistant-dock-close:focus-visible {
   outline: none;
   border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-divider));
-  background: #fff;
+  color: var(--color-accent-900);
 }
 
 .assistant-dock-toolbar {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px 16px 0;
+  padding: 14px 18px 0;
+}
+
+.assistant-dock-modes {
+  padding: 3px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+}
+
+.assistant-dock-modes .seg {
+  width: 100%;
 }
 
 .assistant-dock-mode-hint {
@@ -2642,23 +2765,18 @@ input[type='range']:disabled::-webkit-slider-thumb {
 
 .assistant-dock-panel .assistant-chat-log {
   flex: 1;
-  min-height: 180px;
+  min-height: 190px;
   max-height: none;
   overflow-y: auto;
-  padding: 14px 16px;
+  padding: 14px 18px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  background:
-    linear-gradient(
-      180deg,
-      transparent 0%,
-      color-mix(in srgb, var(--color-surface) 35%, transparent) 100%
-    );
+  gap: 12px;
+  background: color-mix(in srgb, var(--color-surface) 45%, #fff);
 }
 
 .assistant-dock-step {
-  margin: 0 16px 10px;
+  margin: 0 18px 10px;
   padding: 12px 14px;
   border: 1px solid var(--color-divider);
   background: #fff;
@@ -2668,7 +2786,7 @@ input[type='range']:disabled::-webkit-slider-thumb {
 }
 
 .assistant-dock-panel .assistant-composer {
-  padding: 12px 16px 16px;
+  padding: 14px 18px 16px;
   background: #fff;
   border-top: 1px solid var(--color-divider);
 }
@@ -2685,17 +2803,20 @@ input[type='range']:disabled::-webkit-slider-thumb {
 }
 
 .assistant-dock-panel .assistant-input {
-  min-height: 72px;
+  min-height: 78px;
   resize: none;
-  background: var(--color-neutral-100);
-  border-color: color-mix(in srgb, var(--color-text) 14%, transparent);
+  background: #fff;
+  border-color: color-mix(in srgb, var(--color-text) 16%, transparent);
 }
 
 .assistant-dock-panel .assistant-input:focus {
-  background: #fff;
-  border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  border-color: var(--color-accent);
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+
+.assistant-dock-panel .assistant-composer-actions .btn-primary {
+  min-width: 132px;
 }
 
 .assistant-eyebrow {
@@ -2708,7 +2829,7 @@ input[type='range']:disabled::-webkit-slider-thumb {
 }
 
 .assistant-bubble {
-  max-width: 92%;
+  max-width: 94%;
   padding: 12px 14px;
   border: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
   background: #fff;
@@ -2717,12 +2838,13 @@ input[type='range']:disabled::-webkit-slider-thumb {
 
 .assistant-bubble-user {
   align-self: flex-end;
-  background: color-mix(in srgb, var(--color-accent-100) 80%, #fff);
-  border-color: color-mix(in srgb, var(--color-accent) 28%, transparent);
+  background: color-mix(in srgb, var(--color-accent-100) 70%, #fff);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 
 .assistant-bubble-assistant {
   align-self: flex-start;
+  border-left: 3px solid var(--color-accent);
 }
 
 .assistant-bubble-role {
@@ -2840,6 +2962,18 @@ input[type='range']:disabled::-webkit-slider-thumb {
   50% { transform: translateY(-6px); }
 }
 
+@keyframes assistant-ask-bob {
+  0%,
+  100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes assistant-ask-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, #20a789 45%, transparent); }
+  70% { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
 @keyframes assistant-dock-rise {
   from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: translateY(0); }
@@ -2853,18 +2987,27 @@ input[type='range']:disabled::-webkit-slider-thumb {
   }
 
   .assistant-dock-launcher {
-    width: 88px;
-    height: 98px;
+    width: 92px;
+    height: 102px;
+  }
+
+  .assistant-ask-me {
+    right: calc(100% - 4px);
+    bottom: 88px;
+    min-width: 102px;
+    padding: 8px 12px 9px;
   }
 
   .assistant-dock-panel {
-    width: min(100vw - 24px, 440px);
-    max-height: min(70vh, 620px);
+    width: min(100vw - 20px, 460px);
+    max-height: min(72vh, 640px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .assistant-dock-launcher,
+  .assistant-ask-me,
+  .assistant-ask-me-dot,
   .assistant-dock-panel {
     animation: none;
   }
