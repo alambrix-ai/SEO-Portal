@@ -189,12 +189,27 @@ class HttpLLMProvider(LLMProvider):
                 "Check the model setting and try again."
             )
         if response.status_code >= 400:
+            detail = (response.text or "")[:300]
             log.warning(
                 "%s rejected request with HTTP %s: %s",
                 self.name,
                 response.status_code,
-                response.text[:300],
+                detail,
             )
+            # Prefer the vendor's own error text when present — e.g. Anthropic
+            # "adaptive thinking is not supported on this model".
+            vendor_message = ""
+            try:
+                payload = response.json()
+                err = payload.get("error") if isinstance(payload, dict) else None
+                if isinstance(err, dict):
+                    vendor_message = str(err.get("message") or "").strip()
+                elif isinstance(err, str):
+                    vendor_message = err.strip()
+            except ValueError:
+                vendor_message = ""
+            if vendor_message:
+                raise LLMError(f"{self.name}: {vendor_message}")
             from app.core.user_messages import message_for_http_status
 
             raise LLMError(message_for_http_status(response.status_code, service=self.name))

@@ -21,6 +21,7 @@ from app.connectors.base import all_specs
 from app.core.config import settings
 from app.core.exceptions import InvalidInputError
 from app.core.logging import get_logger
+from app.llm.base import LLMError
 from app.llm.providers import AnthropicProvider
 from app.services import connectors as connector_service
 from app.services import portal_features
@@ -251,6 +252,12 @@ def chat(
         result = provider.complete(prompt, system=_system_prompt(catalogue, mode))
     except AssistantConfigError:
         raise
+    except LLMError as exc:
+        log.exception("SEO Assistant env-LLM call failed")
+        raise AssistantUpstreamError(str(exc) or (
+            "The assistant could not reach the LLM configured in the server .env. "
+            "Check ANTHROPIC_API_KEY and ASSISTANT_MODEL (or LLM_MODEL)."
+        )) from exc
     except Exception as exc:  # noqa: BLE001 — surface as operator-facing error
         log.exception("SEO Assistant env-LLM call failed")
         raise AssistantUpstreamError(

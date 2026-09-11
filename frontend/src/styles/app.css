@@ -2421,8 +2421,8 @@ input[type='range']:disabled::-webkit-slider-thumb {
 /* ── SEO Assistant dock (floating bottom-left on every page) ─────────────── */
 .assistant-dock {
   position: fixed;
-  /* Sit in the main content area, not under the sticky sidebar. */
-  left: calc(224px + 20px);
+  left: 20px;
+  right: auto;
   bottom: 20px;
   z-index: 80;
   display: flex;

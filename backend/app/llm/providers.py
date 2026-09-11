@@ -10,6 +10,7 @@ and Gemini each have their own request and response shape.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.core.config import settings
@@ -23,10 +24,12 @@ log = get_logger(__name__)
 class AnthropicProvider(HttpLLMProvider):
     """Claude, over the Messages API.
 
-    Adaptive thinking is on with ``LLM_EFFORT`` as the cost dial. Refusal
-    fallbacks are **not** used: they re-run a declined request on a different
-    model server-side, which means the copy on a customer's page could come
-    from a model nobody configured, and the reply would not say so.
+    Claude 5-generation models use adaptive thinking with ``effort`` as the
+    cost dial. Older models (e.g. Sonnet 4.5) do not support adaptive
+    thinking — those requests omit the thinking block. Refusal fallbacks are
+    **not** used: they re-run a declined request on a different model
+    server-side, which means the copy on a customer's page could come from a
+    model nobody configured, and the reply would not say so.
     """
 
     name = "Anthropic"
@@ -42,15 +45,27 @@ class AnthropicProvider(HttpLLMProvider):
     def _endpoint(self) -> str:
         return "/v1/messages"
 
+    @staticmethod
+    def _adaptive_thinking_supported(model: str) -> bool:
+        """True for Claude 5 / Fable 5 IDs that accept thinking.type=adaptive."""
+        m = (model or "").strip().lower()
+        # claude-sonnet-5, claude-opus-5, claude-fable-5, claude-fable-5-1, …
+        # Must not match claude-sonnet-4-5 (Adaptive is unsupported there).
+        return bool(
+            re.search(r"claude-(?:sonnet|opus|fable)-5(?:-|\b|$)", m)
+            or re.search(r"claude-(?:sonnet|opus)-4-[6-9]", m)
+        )
+
     def _payload(self, prompt: str, *, system: str, max_tokens: int) -> dict[str, Any]:
-        effort = (self.effort or settings.llm_effort or "high").lower()
         body: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens,
             "messages": [{"role": "user", "content": prompt}],
-            "thinking": {"type": "adaptive"},
-            "output_config": {"effort": effort},
         }
+        if self._adaptive_thinking_supported(self.model):
+            effort = (self.effort or settings.llm_effort or "high").lower()
+            body["thinking"] = {"type": "adaptive"}
+            body["output_config"] = {"effort": effort}
         if system:
             body["system"] = system
         return body
