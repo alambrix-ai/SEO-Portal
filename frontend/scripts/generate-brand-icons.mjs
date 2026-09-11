@@ -12,9 +12,8 @@
  *
  * The marks are the vendors' own, published under CC0 by simple-icons. Brands
  * simple-icons has *removed* on trademark grounds — LinkedIn, Slack,
- * Microsoft, Adobe, Salesforce, Magento, OpenAI, Bing — are deliberately not
- * reinstated from an older version: the removal is the signal. Those get
- * lettermarks in brand-icons-manual.ts instead.
+ * Microsoft, Adobe, Salesforce, Magento, OpenAI, Bing — are not reinstated
+ * here. Those load the brand's own favicon via official-logos.ts instead.
  */
 import { writeFileSync } from 'node:fs'
 import * as si from 'simple-icons'
