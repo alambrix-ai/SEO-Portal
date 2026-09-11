@@ -37,7 +37,10 @@ class AnthropicClaudeConnector(BaseAeoConnector):
         docs_url="https://docs.anthropic.com/en/api/messages",
     )
 
-    def _client(self):  # noqa: ANN202 - the SDK's client type
+    def _anthropic(self):  # noqa: ANN202 - the SDK's client type
+        # Named deliberately not `_client`: BaseConnector stores an httpx
+        # client on `self._client`, which would shadow a method of that name
+        # and make `self._client()` raise "'NoneType' object is not callable".
         try:
             import anthropic
         except ImportError as exc:  # pragma: no cover
@@ -47,7 +50,7 @@ class AnthropicClaudeConnector(BaseAeoConnector):
         return anthropic.Anthropic(api_key=self.credentials.require("apiKey")), anthropic
 
     def _ask_with_search(self, query: str) -> list[str]:
-        client, anthropic = self._client()
+        client, anthropic = self._anthropic()
         model = self.credentials.get("model", DEFAULT_MODEL)
 
         try:
@@ -95,7 +98,7 @@ class AnthropicClaudeConnector(BaseAeoConnector):
 
     def check_health(self) -> HealthReport:
         try:
-            client, _ = self._client()
+            client, _ = self._anthropic()
             client.models.retrieve(self.credentials.get("model", DEFAULT_MODEL))
         except ConnectorError as exc:
             return HealthReport(ok=False, detail=str(exc), checked_at=utcnow())
