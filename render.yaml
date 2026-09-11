@@ -86,6 +86,9 @@ services:
       # Prefer this on Render free — SMTP ports are blocked.
       - key: RESEND_API_KEY
         sync: false
+      # Platform Portal Admin — comma-separated operator emails.
+      - key: PORTAL_ADMIN_EMAILS
+        sync: false
 
   - type: web
     name: automarket-console

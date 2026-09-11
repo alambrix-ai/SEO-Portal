@@ -163,6 +163,9 @@ class Settings(BaseSettings):
     allow_public_signup: bool = True
     # Blocks free-mail domains from creating organisations.
     block_public_email_domains: bool = False
+    # Platform operators who can open /portal and toggle catalogue features.
+    # Comma-separated emails; empty means nobody is a portal admin.
+    portal_admin_emails: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     # ── Rate limiting (per client IP) ──────────────────────────────────────
     rate_limit_enabled: bool = True
@@ -252,6 +255,7 @@ class Settings(BaseSettings):
         "master_encryption_key_retired",
         "content_extensions_extra",
         "route_dirs_extra",
+        "portal_admin_emails",
         mode="before",
     )
     @classmethod
@@ -259,6 +263,11 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [item.strip() for item in v.split(",") if item.strip()]
         return v
+
+    @field_validator("portal_admin_emails")
+    @classmethod
+    def _lower_portal_emails(cls, v: list[str]) -> list[str]:
+        return [item.lower() for item in v]
 
     @field_validator("content_extensions_extra", "route_dirs_extra")
     @classmethod
@@ -380,6 +389,13 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    def is_portal_admin_email(self, email: str) -> bool:
+        """True when this address is on PORTAL_ADMIN_EMAILS."""
+        address = (email or "").strip().lower()
+        if not address or not self.portal_admin_emails:
+            return False
+        return address in self.portal_admin_emails
 
 
 @lru_cache(maxsize=1)

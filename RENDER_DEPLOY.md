@@ -79,6 +79,8 @@ You also need:
   (SMTP ports are blocked), plus `EMAIL_FROM`
 - AI model keys are **not** set in Render env — connect OpenAI / Claude /
   Gemini / Perplexity in the console, then pick one when configuring each agent
+- Optional: `PORTAL_ADMIN_EMAILS=you@company.com` (comma-separated) for the
+  platform Portal Admin screen at `/portal` (enable/disable connectors & agents)
 
 Production refuses to start without mail delivery and encryption keys.
 

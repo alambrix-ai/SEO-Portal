@@ -91,14 +91,27 @@ def build_session(db: DbSession, user: User, org: Organization) -> SessionOut:
     agents = list(
         db.execute(select(AgentRecord).where(AgentRecord.tenant_id == org.id)).scalars()
     )
+    from app.services import portal_features
+
+    allowed_agents = portal_features.enabled_agent_slugs(db)
+    agents = [a for a in agents if a.slug in allowed_agents]
     running = sum(1 for a in agents if a.status == AgentStatus.RUNNING.value)
     total_agents = len(agents)
     connected, total_connectors = connector_service.counts(db, tenant_id=org.id)
     counts = views.nav_counts(db, tenant_id=org.id, role=user.role)
+    access = access_map(user.role)
+    enabled = portal_features.enabled_modules(db)
+    # Hide modules the portal has turned off (access stays for audit/API checks).
+    gated_access = {
+        module: level if module in enabled else "none"
+        for module, level in access.items()
+    }
     return SessionOut(
         user=_user_out(user),
         organization=_org_out(db, org),
-        access=access_map(user.role),
+        access=gated_access,
+        enabled_modules=sorted(enabled),
+        is_portal_admin=settings.is_portal_admin_email(user.email),
         onboarding_complete=bool(state and state.completed),
         pending_approvals=approvals.pending_count(db, tenant_id=org.id),
         running_agents=running,

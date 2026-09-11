@@ -16,6 +16,7 @@ from app.models.connector import ConnectorCategory, ConnectorHealth, ConnectorRe
 from app.models.identity import AuthIdentity, CodePurpose, LoginCode
 from app.models.metrics import DailyMetric
 from app.models.offpage import BacklinkStatus, BacklinkTarget, CompetitorAlert, OutreachPitch
+from app.models.portal import FeatureKind, PortalFeatureFlag
 from app.models.seo import (
     AeoQaPair,
     PageStatus,
@@ -64,6 +65,8 @@ __all__ = [
     "OutreachPitch",
     "PageStatus",
     "PlanTier",
+    "PortalFeatureFlag",
+    "FeatureKind",
     "RefreshToken",
     "ReferralSpamEvent",
     "RunStatus",

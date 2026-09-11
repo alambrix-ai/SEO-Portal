@@ -30,6 +30,12 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 
 
 def _record(db: DbSession, tenant_id: str, slug: str) -> AgentRecord:
+    from app.models.portal import FeatureKind
+    from app.services import portal_features
+
+    if not portal_features.is_enabled(db, FeatureKind.AGENT, slug):
+        raise NotFoundError(f"Agent {slug!r} is not available in this workspace")
+
     record = db.execute(
         select(AgentRecord).where(
             AgentRecord.tenant_id == tenant_id, AgentRecord.slug == slug
@@ -93,10 +99,14 @@ def _llm_options(db: DbSession, org) -> list[LlmConnectorOut]:  # noqa: ANN001
     """AI model connectors agents can write with, and whether each is connected."""
     from app.connectors.base.connector import Capability
     from app.llm.from_connector import supports_agent_llm
+    from app.models.portal import FeatureKind
+    from app.services import portal_features
 
     bundle = connector_service.build_connector_bundle(db, org)
     out: list[LlmConnectorOut] = []
     for spec in connector_registry.all_specs():
+        if not portal_features.is_enabled(db, FeatureKind.CONNECTOR, spec.slug):
+            continue
         if not supports_agent_llm(spec.slug):
             continue
         if Capability.COMPLETE not in spec.capabilities:

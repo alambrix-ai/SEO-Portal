@@ -65,6 +65,11 @@ def install_agents(db: Session, org: Organization) -> int:
     for agent in all_agents():
         if agent.spec.slug in existing:
             continue
+        from app.models.portal import FeatureKind
+        from app.services import portal_features
+
+        if not portal_features.is_enabled(db, FeatureKind.AGENT, agent.spec.slug):
+            continue
         spec = agent.spec
         db.add(
             AgentRecord(
@@ -109,6 +114,11 @@ def install_connectors(db: Session, org: Organization) -> int:
 
     for spec in connector_registry.all_specs():
         if spec.slug in existing:
+            continue
+        from app.models.portal import FeatureKind
+        from app.services import portal_features
+
+        if not portal_features.is_enabled(db, FeatureKind.CONNECTOR, spec.slug):
             continue
         db.add(
             ConnectorRecord(

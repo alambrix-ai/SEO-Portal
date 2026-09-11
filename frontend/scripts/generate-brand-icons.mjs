@@ -5,20 +5,15 @@
  *
  *     node scripts/generate-brand-icons.mjs
  *
- * The paths are baked into a generated file rather than imported at run time
- * so the bundle carries the seventeen marks this product uses instead of the
- * three and a half thousand in the package. simple-icons is a devDependency
- * for that reason — nothing imports it from src/.
- *
- * The marks are the vendors' own, published under CC0 by simple-icons. Brands
- * simple-icons has *removed* on trademark grounds — LinkedIn, Slack,
- * Microsoft, Adobe, Salesforce, Magento, OpenAI, Bing — are not reinstated
- * here. Those load the brand's own favicon via official-logos.ts instead.
+ * Product-specific marks that remain in simple-icons (CC0). Generic or
+ * trademark-removed brands (Google Business Profile, LinkedIn, Slack,
+ * Microsoft, Adobe, Salesforce, Magento, OpenAI, Bing, …) are NOT listed
+ * here — ConnectorIcon loads those from official-logos.ts (product favicon).
  */
 import { writeFileSync } from 'node:fs'
 import * as si from 'simple-icons'
 
-/** connector slug → simple-icons export name. */
+/** connector slug → simple-icons export name (product-specific marks only). */
 const MARKS = {
   wordpress: 'siWordpress',
   shopify: 'siShopify',
@@ -30,7 +25,6 @@ const MARKS = {
   tiktok_ads: 'siTiktok',
   google_analytics_4: 'siGoogleanalytics',
   search_console: 'siGooglesearchconsole',
-  google_business_profile: 'siGoogle',
   hubspot: 'siHubspot',
   perplexity: 'siPerplexity',
   google_gemini: 'siGooglegemini',
@@ -42,7 +36,11 @@ const MARKS = {
 const entries = []
 for (const [slug, key] of Object.entries(MARKS)) {
   const icon = si[key]
-  if (!icon) throw new Error(`simple-icons has no ${key} (for ${slug}) — the export was renamed or the brand was removed`)
+  if (!icon) {
+    throw new Error(
+      `simple-icons has no ${key} (for ${slug}) — the export was renamed or the brand was removed`,
+    )
+  }
   entries.push(
     `  ${slug}: {\n` +
       `    title: ${JSON.stringify(icon.title)},\n` +
@@ -62,9 +60,8 @@ writeFileSync(
  * GENERATED — do not edit. Run \`node scripts/generate-brand-icons.mjs\`.
  *
  * Official brand marks from simple-icons ${version} (CC0 1.0). Each path is a
- * single 24x24 filled shape, which is why these render as solid marks rather
- * than in the thin-stroke style of the interface's own icons: a brand mark
- * redrawn is no longer the brand's mark.
+ * single 24x24 filled shape. Mis-mapped brands (e.g. Google Business Profile)
+ * use official-logos.ts instead.
  */
 export type BrandMark = { title: string; hex: string; path: string }
 

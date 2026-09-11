@@ -26,6 +26,7 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { OffPagePage } from '@/pages/OffPagePage'
 import { OnboardingPage } from '@/pages/OnboardingPage'
+import { PortalAdminPage } from '@/pages/PortalAdminPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { ReportsPage } from '@/pages/ReportsPage'
 import { SeoPage } from '@/pages/SeoPage'
@@ -172,6 +173,7 @@ export function App() {
             </RequireModule>
           }
         />
+        <Route path="/portal" element={<PortalAdminPage />} />
         <Route path="/account" element={<AccountPage />} />
       </Route>
 

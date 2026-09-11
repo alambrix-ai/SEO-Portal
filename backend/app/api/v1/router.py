@@ -13,6 +13,7 @@ from app.api.v1 import (
     dashboard,
     offpage,
     onboarding,
+    portal,
     seo,
 )
 
@@ -30,5 +31,6 @@ api_router.include_router(ads.router)
 api_router.include_router(connectors.router)
 api_router.include_router(approvals.router)
 api_router.include_router(admin.router)
+api_router.include_router(portal.router)
 
 __all__ = ["api_router"]

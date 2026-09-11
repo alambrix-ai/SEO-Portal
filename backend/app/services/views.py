@@ -248,10 +248,13 @@ AGENT_GROUPS: dict[int, str] = {
 
 def list_agents(db: Session, *, tenant_id: str, can_write: bool) -> list[AgentOut]:
     from app.agents.base.registry import FLEET_ORDER
+    from app.services import portal_features
 
     records = list(
         db.execute(select(AgentRecord).where(AgentRecord.tenant_id == tenant_id)).scalars()
     )
+    allowed = portal_features.enabled_agent_slugs(db)
+    records = [r for r in records if r.slug in allowed]
     order = {slug: i for i, slug in enumerate(FLEET_ORDER)}
     records.sort(key=lambda r: (agent_rank(r), order.get(r.slug, len(order)), r.name))
 

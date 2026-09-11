@@ -51,6 +51,12 @@ class ConnectorBundle:
 
 # ── Reads ──────────────────────────────────────────────────────────────────
 def get_record(db: Session, *, tenant_id: str, slug: str) -> ConnectorRecord:
+    from app.models.portal import FeatureKind
+    from app.services import portal_features
+
+    if not portal_features.is_enabled(db, FeatureKind.CONNECTOR, slug):
+        raise NotFoundError(f"Connector {slug!r} is not available in this workspace")
+
     record = db.execute(
         select(ConnectorRecord).where(
             ConnectorRecord.tenant_id == tenant_id, ConnectorRecord.slug == slug
@@ -78,17 +84,22 @@ def connector_rank(record: ConnectorRecord) -> int:
 
 
 def list_records(db: Session, *, tenant_id: str) -> list[ConnectorRecord]:
-    """Every installation, ordered for display: connected first.
+    """Every enabled installation, ordered for display: connected first.
 
     The ordering is harmless to the callers that do not care about it — the
     connector bundle builds a dict — and saves the two that do from sorting
     the same list two different ways.
     """
-    records = list(
-        db.execute(
+    from app.services import portal_features
+
+    allowed = portal_features.enabled_connector_slugs(db)
+    records = [
+        r
+        for r in db.execute(
             select(ConnectorRecord).where(ConnectorRecord.tenant_id == tenant_id)
         ).scalars()
-    )
+        if r.slug in allowed
+    ]
     order = {slug: i for i, slug in enumerate(registry.connector_slugs())}
     records.sort(
         key=lambda r: (connector_rank(r), order.get(r.slug, len(order)), r.name)

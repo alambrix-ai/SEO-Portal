@@ -432,6 +432,19 @@ export const api = {
   revokeInvitation: (id: string) =>
     request<ActionResult>(`/admin/invitations/${id}`, { method: 'DELETE' }),
 
+  // Portal Admin (platform operators)
+  portalOverview: () => request<import('./types').PortalOverview>('/portal/overview'),
+  portalOrganizations: () =>
+    request<import('./types').PortalOrganization[]>('/portal/organizations'),
+  portalOrganizationUsers: (orgId: string) =>
+    request<import('./types').PortalUser[]>(`/portal/organizations/${orgId}/users`),
+  portalFeatures: () => request<import('./types').PortalFeature[]>('/portal/features'),
+  setPortalFeature: (kind: string, slug: string, enabled: boolean) =>
+    request<ActionResult>(`/portal/features/${encodeURIComponent(kind)}/${encodeURIComponent(slug)}`, {
+      method: 'PUT',
+      body: { enabled },
+    }),
+
   // Meta
   health: () => fetch('/health').then((r) => r.json() as Promise<HealthStatus>),
 }

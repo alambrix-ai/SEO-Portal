@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import AuthError, ForbiddenError
 from app.core.rbac import ROLE_LABELS, Access, Module, Role, access_for
 from app.core.security import decode_access_token
+from app.core.config import settings
 from app.db.session import bind_tenant, get_db
 from app.models.workspace import Organization, User
 from app.services.encryption import OrgCipher
@@ -49,13 +50,22 @@ ClientIp = Annotated[str, Depends(client_ip)]
 class CurrentUser:
     """The authenticated caller, their organisation, and its cipher."""
 
-    __slots__ = ("user", "organization", "_cipher", "claims")
+    __slots__ = ("user", "organization", "_cipher", "claims", "_enabled_modules")
 
-    def __init__(self, user: User, organization: Organization, claims: dict) -> None:
+    def __init__(
+        self,
+        user: User,
+        organization: Organization,
+        claims: dict,
+        *,
+        enabled_modules: frozenset[str] | None = None,
+    ) -> None:
         self.user = user
         self.organization = organization
         self.claims = claims
         self._cipher: OrgCipher | None = None
+        # Portal feature flags for modules; None means "not loaded, allow RBAC only".
+        self._enabled_modules = enabled_modules
 
     @property
     def tenant_id(self) -> str:
@@ -78,6 +88,9 @@ class CurrentUser:
 
     # ── Access helpers ─────────────────────────────────────────────────────
     def access(self, module: Module | str) -> Access:
+        key = module.value if isinstance(module, Module) else str(module)
+        if self._enabled_modules is not None and key not in self._enabled_modules:
+            return Access.NONE
         return access_for(self.role, module)
 
     def can_view(self, module: Module | str) -> bool:
@@ -96,6 +109,14 @@ class CurrentUser:
         if not self.can_write(module):
             # The exact wording the console shows as a toast.
             raise ForbiddenError("View-only access for your role")
+
+    @property
+    def is_portal_admin(self) -> bool:
+        return settings.is_portal_admin_email(self.user.email)
+
+    def require_portal_admin(self) -> None:
+        if not self.is_portal_admin:
+            raise ForbiddenError("Portal administration is restricted")
 
 
 def get_current_user(
@@ -128,10 +149,26 @@ def get_current_user(
     if organization is None or not organization.is_active:
         raise AuthError("This workspace is no longer active")
 
-    return CurrentUser(user=user, organization=organization, claims=claims)
+    from app.services import portal_features
+
+    return CurrentUser(
+        user=user,
+        organization=organization,
+        claims=claims,
+        enabled_modules=portal_features.enabled_modules(db),
+    )
 
 
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
+
+
+def require_portal_admin(current: CurrentUserDep) -> CurrentUser:
+    """Platform operators listed in PORTAL_ADMIN_EMAILS only."""
+    current.require_portal_admin()
+    return current
+
+
+PortalAdminDep = Annotated[CurrentUser, Depends(require_portal_admin)]
 
 
 def require_module(module: Module, *, write: bool = False) -> Callable[..., CurrentUser]:

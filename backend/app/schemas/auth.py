@@ -117,6 +117,10 @@ class SessionOut(ApiModel):
     organization: OrganizationOut
     # module -> full | view | none, straight from the RBAC matrix.
     access: dict[str, str]
+    #: Modules still on after Portal Admin feature flags (intersection with access).
+    enabled_modules: list[str] = []
+    #: True when the caller's email is on PORTAL_ADMIN_EMAILS.
+    is_portal_admin: bool = False
     onboarding_complete: bool
     pending_approvals: int
     # Counts for the navigation badges. Carried on the session rather than

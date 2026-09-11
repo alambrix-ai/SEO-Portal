@@ -28,8 +28,10 @@ import {
 interface NavEntry {
   to: string
   label: string
-  module: ModuleKey
+  module: ModuleKey | null
   icon: typeof DashboardIcon
+  /** Only shown to PLATFORM portal admins (PORTAL_ADMIN_EMAILS). */
+  portalAdminOnly?: boolean
 }
 
 // Order matches the design's sidebar exactly.
@@ -45,6 +47,13 @@ const NAV: NavEntry[] = [
   { to: '/approvals', label: 'Approvals', module: 'approvals', icon: ApprovalsIcon },
   { to: '/reports', label: 'Reports', module: 'reports', icon: ReportsIcon },
   { to: '/admin', label: 'Admin', module: 'admin', icon: AdminIcon },
+  {
+    to: '/portal',
+    label: 'Portal',
+    module: null,
+    icon: AdminIcon,
+    portalAdminOnly: true,
+  },
 ]
 
 const TITLES: Record<string, string> = {
@@ -59,6 +68,7 @@ const TITLES: Record<string, string> = {
   '/approvals': 'Approvals',
   '/reports': 'Reports',
   '/admin': 'Admin',
+  '/portal': 'Portal Admin',
   '/account': 'Account',
 }
 
@@ -116,8 +126,11 @@ export function AppShell() {
         </NavLink>
 
         <div className="sidebar-nav">
-          {NAV.map(({ to, label, module, icon: Icon }) => {
-            const locked = !canView(module)
+          {NAV.map(({ to, label, module, icon: Icon, portalAdminOnly }) => {
+            if (portalAdminOnly && !session.is_portal_admin) {
+              return null
+            }
+            const locked = module ? !canView(module) : false
             if (locked) {
               return (
                 <span

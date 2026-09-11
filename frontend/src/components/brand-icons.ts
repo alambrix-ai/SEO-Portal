@@ -2,9 +2,8 @@
  * GENERATED — do not edit. Run `node scripts/generate-brand-icons.mjs`.
  *
  * Official brand marks from simple-icons 16.30.0 (CC0 1.0). Each path is a
- * single 24x24 filled shape, which is why these render as solid marks rather
- * than in the thin-stroke style of the interface's own icons: a brand mark
- * redrawn is no longer the brand's mark.
+ * single 24x24 filled shape. Mis-mapped brands (e.g. Google Business Profile)
+ * use official-logos.ts instead.
  */
 export type BrandMark = { title: string; hex: string; path: string }
 
@@ -58,11 +57,6 @@ export const BRAND_MARKS: Record<string, BrandMark> = {
     title: "Google Search Console",
     hex: '#458CF5',
     path: 'M8.548 1.156L6.832 2.872v1.682h1.716zm0 3.398v.035H6.832v-.035H3.386L0 7.844v3.577h2.826V8.94c0-.525.429-.954.954-.954h16.476c.525 0 .954.43.954.954v2.48h2.754V7.844l-3.386-3.29H17.3v.035h-1.717v-.035zm7.035 0H17.3V2.872l-1.717-1.716zM8.679 1.188V2.84h6.773V1.188zm11.471 7.07a.834.834 0 00-.132.01l-.543.002c-5.216.014-10.432-.008-15.648.01-.435-.063-.794.436-.716.883v2.264h17.812c-.016-.888.045-1.782-.034-2.666-.104-.342-.427-.502-.739-.502zm-15.422.634a.689.698 0 01.689.698.689.698 0 01-.689.697.689.698 0 01-.688-.697.689.698 0 01.688-.698zm2.134 0a.689.698 0 01.689.698.689.698 0 01-.689.697.689.698 0 01-.688-.697.689.698 0 01.688-.698zM.036 11.645v9.156c0 1.05.858 1.908 1.907 1.908h.883V11.645zm21.174 0v11.064h.882c1.05 0 1.908-.858 1.908-1.908v-9.156zM4.057 13.133v6.85h6.137v-6.85zm13.243.021v3.777l-1.708.977-1.708-.977v-3.758a4.006 4.006 0 000 7.23v2.441h3.457v-2.442a4.006 4.006 0 00-.041-7.248zm-13.243 8.26v1.43h7.925v-1.43z',
-  },
-  google_business_profile: {
-    title: "Google",
-    hex: '#4285F4',
-    path: 'M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z',
   },
   hubspot: {
     title: "HubSpot",

@@ -60,6 +60,10 @@ export interface SessionOut {
   user: UserOut
   organization: OrganizationOut
   access: AccessMap
+  /** Modules still on after portal feature flags. */
+  enabled_modules: string[]
+  /** True when the caller's email is on PORTAL_ADMIN_EMAILS. */
+  is_portal_admin: boolean
   onboarding_complete: boolean
   pending_approvals: number
   running_agents: number
@@ -68,7 +72,6 @@ export interface SessionOut {
   total_connectors: number
   /** route -> how much is waiting there. Zeroes are omitted. */
   nav_counts: Record<string, number>
-
 }
 
 export interface AuthResponse {
@@ -544,6 +547,44 @@ export interface AdminOut {
   billing: BillingOut
   role_options: { value: Role; label: string }[]
   read_only: boolean
+}
+
+// ── Portal Admin (platform) ────────────────────────────────────────────────
+export interface PortalOverview {
+  organizations: number
+  users: number
+  features_total: number
+  features_disabled: number
+}
+
+export interface PortalOrganization {
+  id: string
+  name: string
+  slug: string
+  plan_name: string
+  plan_tier: string
+  seats_total: number
+  member_count: number
+  is_active: boolean
+  created_at: string
+}
+
+export interface PortalUser {
+  id: string
+  name: string
+  email: string
+  role: string
+  role_label: string
+  is_owner: boolean
+  is_active: boolean
+  last_login_at: string | null
+}
+
+export interface PortalFeature {
+  kind: 'connector' | 'agent' | 'module' | string
+  slug: string
+  name: string
+  enabled: boolean
 }
 
 // ── Health ─────────────────────────────────────────────────────────────────

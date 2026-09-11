@@ -1,18 +1,9 @@
 /**
  * The mark on a connector card.
  *
- * Sources, in order — none of them invent a vendor logo:
- *
- * 1. **simple-icons** (CC0) — the vendor's published mark, for brands still in
- *    that set. Solid 24×24 paths, used as-is.
- *
- * 2. **The brand's own favicon** — for LinkedIn, Slack, Microsoft, Adobe,
- *    Salesforce, Magento, OpenAI and Bing, which simple-icons removed on
- *    trademark grounds. We load the favicon from that product's official
- *    domain rather than a lettermark or a redrawn path.
- *
- * 3. **A drawn glyph** — only for connectors that are not a branded product
- *    (custom API, site crawler, DSP exchange, SMTP). There is no logo to use.
+ * Prefer the brand's own product favicon (official-logos.ts). Fall back to a
+ * product-specific simple-icons SVG when we ship one. Drawn glyphs only for
+ * non-brand connectors (custom API, crawler, DSP, SMTP).
  */
 import { useState, type SVGProps } from 'react'
 
@@ -23,8 +14,8 @@ import {
   officialLogoUrl,
 } from './official-logos'
 
-/** Neutral tile when the mark brings its own colours (favicon / photo). */
-const NEUTRAL_TILE = 'var(--color-surface-2, color-mix(in srgb, var(--color-text) 8%, transparent))'
+const NEUTRAL_TILE =
+  'var(--color-surface-2, color-mix(in srgb, var(--color-text) 8%, transparent))'
 const GENERIC_HEX = 'var(--color-text)'
 
 type GlyphProps = SVGProps<SVGSVGElement>
@@ -125,13 +116,14 @@ function OfficialLogo({
 type Props = { slug: string; name: string; size?: number }
 
 export function ConnectorIcon({ slug, name, size = 34 }: Props) {
-  const brand = BRAND_MARKS[slug]
+  // Prefer the product's own favicon whenever we know its domain.
   const official = OFFICIAL_LOGO_DOMAINS[slug]
+  const brand = official ? undefined : BRAND_MARKS[slug]
   const glyph = GLYPHS[slug]
   const hex = brand?.hex ?? GENERIC_HEX
-  const label = brand?.title ?? official?.title ?? name
+  const label = official?.title ?? brand?.title ?? name
   const inner = Math.round(size * 0.56)
-  const usesPhoto = Boolean(official) && !brand
+  const usesPhoto = Boolean(official)
 
   return (
     <span
@@ -146,7 +138,14 @@ export function ConnectorIcon({ slug, name, size = 34 }: Props) {
       }}
       title={label}
     >
-      {brand ? (
+      {official ? (
+        <OfficialLogo
+          domain={official.domain}
+          title={official.title}
+          size={inner}
+          fallback={name.slice(0, 1).toUpperCase()}
+        />
+      ) : brand ? (
         <svg
           width={inner}
           height={inner}
@@ -157,13 +156,6 @@ export function ConnectorIcon({ slug, name, size = 34 }: Props) {
         >
           <path d={brand.path} />
         </svg>
-      ) : official ? (
-        <OfficialLogo
-          domain={official.domain}
-          title={official.title}
-          size={inner}
-          fallback={name.slice(0, 1).toUpperCase()}
-        />
       ) : glyph ? (
         <span style={{ width: inner, height: inner, display: 'block' }}>{glyph()}</span>
       ) : (

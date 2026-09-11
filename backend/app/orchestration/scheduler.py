@@ -183,7 +183,12 @@ class AgentScheduler:
             ).scalars()
 
             batch: list[tuple[str, str]] = []
+            from app.models.portal import FeatureKind
+            from app.services import portal_features
+
             for record in rows:
+                if not portal_features.is_enabled(db, FeatureKind.AGENT, record.slug):
+                    continue
                 # Hold the lease so a crash mid-run does not leave the agent
                 # permanently due and looping.
                 record.next_run_at = now + timedelta(minutes=settings.scheduler_claim_lease_minutes)
