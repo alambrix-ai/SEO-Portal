@@ -374,7 +374,7 @@ export function AssistantDock() {
                 <div
                   className="assistant-query-modes"
                   role="radiogroup"
-                  aria-label="Assistant mode"
+                  aria-label="Willy mode"
                 >
                   <button
                     type="button"
@@ -394,36 +394,30 @@ export function AssistantDock() {
                   >
                     Action
                   </button>
-                  <span className="assistant-query-hint">
-                    {mode === 'ask' ? 'Guidance only' : 'Connect & configure'}
-                  </span>
                 </div>
-                <textarea
+                <input
                   id="assistant-dock-input"
                   className="assistant-query-input"
-                  rows={2}
+                  type="text"
                   placeholder="Ask Willy…"
                   value={draft}
                   disabled={busy}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                    if (event.key === 'Enter') {
                       event.preventDefault()
                       void send()
                     }
                   }}
                 />
-                <div className="assistant-query-footer">
-                  <span className="small muted">Ctrl / ⌘ + Enter</span>
-                  <button
-                    type="button"
-                    className="btn btn-primary assistant-query-send"
-                    disabled={busy || !draft.trim()}
-                    onClick={() => void send()}
-                  >
-                    {busy ? 'Thinking…' : mode === 'action' ? 'Plan' : 'Ask'}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary assistant-query-send"
+                  disabled={busy || !draft.trim()}
+                  onClick={() => void send()}
+                >
+                  {busy ? '…' : mode === 'action' ? 'Plan' : 'Ask'}
+                </button>
               </div>
             </>
           )}
