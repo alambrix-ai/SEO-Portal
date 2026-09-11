@@ -201,8 +201,14 @@ class BaseConnector(ABC):
         try:
             response = self._send(request)
         except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status == 429:
+                raise ConnectorError(
+                    f"{self.name} rate limit or quota exceeded (429) after "
+                    f"{settings.connector_max_attempts} attempts — wait and retry"
+                ) from exc
             raise ConnectorError(
-                f"{self.name} returned {exc.response.status_code} after "
+                f"{self.name} returned {status} after "
                 f"{settings.connector_max_attempts} attempts"
             ) from exc
         except httpx.TransportError as exc:

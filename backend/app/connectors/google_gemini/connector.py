@@ -6,9 +6,11 @@ what makes AI Overviews-style visibility measurable.
 from __future__ import annotations
 
 from app.connectors.base.aeo_base import AEO_CAPABILITIES, BaseAeoConnector, urls_in_text
-from app.connectors.base.connector import ConnectorSpec
+from app.connectors.base.connector import ConnectorSpec, HealthReport
 from app.connectors.base.credentials import secret, text
+from app.core.exceptions import ConnectorError
 from app.core.logging import get_logger
+from app.db.base import utcnow
 
 log = get_logger(__name__)
 
@@ -39,6 +41,27 @@ class GoogleGeminiConnector(BaseAeoConnector):
             "x-goog-api-key": self.credentials.require("apiKey"),
             "Content-Type": "application/json",
         }
+
+    def check_health(self) -> HealthReport:
+        """Cheap key/model probe — not a grounded search.
+
+        Connect used to call ``_ask_with_search``, which burns free-tier quota
+        and often returns 429 before the key is even saved.
+        """
+        model = self.credentials.get("model", DEFAULT_MODEL) or DEFAULT_MODEL
+        try:
+            self.request("GET", f"/models/{model}")
+        except ConnectorError as exc:
+            detail = str(exc)
+            if "429" in detail:
+                detail = (
+                    "Google Gemini rate limit or free-tier quota exceeded. "
+                    "Wait a minute and try again, or use a key with available quota."
+                )
+            return HealthReport(ok=False, detail=detail, checked_at=utcnow())
+        except Exception as exc:  # noqa: BLE001 - a probe must not raise
+            return HealthReport(ok=False, detail=str(exc), checked_at=utcnow())
+        return HealthReport(ok=True, detail="API key valid", checked_at=utcnow())
 
     def _ask_with_search(self, query: str) -> list[str]:
         model = self.credentials.get("model", DEFAULT_MODEL)
