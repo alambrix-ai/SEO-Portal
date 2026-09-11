@@ -2,7 +2,7 @@
  * App-wide confirm dialog.
  *
  * Replaces `window.confirm` so every destructive or consequential question
- * uses the same Industry panel — not the browser chrome that reads as
+ * uses the same Industry panel - not the browser chrome that reads as
  * "automarket-console.onrender.com says".
  */
 import {
@@ -23,7 +23,7 @@ export type ConfirmTone = 'danger' | 'neutral'
 export interface ConfirmOptions {
   title: string
   message: string
-  /** Extra line under the message — consequence, kept quieter. */
+  /** Extra line under the message - consequence, kept quieter. */
   detail?: string
   confirmLabel?: string
   cancelLabel?: string

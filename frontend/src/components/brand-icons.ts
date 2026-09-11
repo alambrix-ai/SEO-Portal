@@ -1,5 +1,5 @@
 /**
- * GENERATED — do not edit. Run `node scripts/generate-brand-icons.mjs`.
+ * GENERATED - do not edit. Run `node scripts/generate-brand-icons.mjs`.
  *
  * Official brand marks from simple-icons 16.30.0 (CC0 1.0). Each path is a
  * single 24x24 filled shape. Mis-mapped brands (e.g. Google Business Profile)

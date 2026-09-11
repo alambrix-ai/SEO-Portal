@@ -10,7 +10,7 @@
  *
  * So the payload is presented, not printed:
  *
- * * **Prose** — the rewrite, the pitch, the headline — gets room and its own
+ * * **Prose** - the rewrite, the pitch, the headline - gets room and its own
  *   line breaks. It is the substance of the decision, so it is the biggest
  *   thing on screen.
  * * **Figures** get a label in words and, where the unit is known, a unit.
@@ -20,7 +20,7 @@
  *   finds the row; it is not information about the change.
  *
  * Nothing here invents meaning. An unrecognised key still appears, with its
- * name humanised — the alternative is hiding data from somebody who is
+ * name humanised - the alternative is hiding data from somebody who is
  * accountable for the decision.
  */
 import type { ReactNode } from 'react'
@@ -54,7 +54,7 @@ const CHIPS = new Set([
 /** Amounts, rendered in the workspace's currency rather than as a bare float. */
 const MONEY = new Set(['spend_saved', 'spend', 'budget', 'monthly_budget', 'cost'])
 
-/** Figures that are a 0–100 score. */
+/** Figures that are a 0-100 score. */
 const SCORES = new Set(['gap_score', 'authority', 'relevance', 'confidence', 'cohesion'])
 
 /**

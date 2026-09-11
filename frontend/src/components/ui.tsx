@@ -1,11 +1,9 @@
 /**
  * UI primitives for the Industry design system.
  *
- * Industry draws components as wireframe objects: square-cornered, hairline
- * borders, and four `+` registration marks at the corners. `Blueprint` is that
- * frame, and it is the one thing every card, figure and primary surface wears
- * — so it exists once here rather than as four `<i>` tags repeated in every
- * screen.
+ * Surfaces use rounded ink-bordered cards with hard offset shadows. `Blueprint`
+ * is an optional craft frame (quiet registration marks) for hero panels  - 
+ * dense tiles and catalogues use plain `.card` so screens stay scannable.
  */
 import { useEffect } from 'react'
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from 'react'
@@ -15,24 +13,27 @@ export function Blueprint({
   children,
   className = '',
   style,
+  marks = false,
   as: Tag = 'div',
   ...rest
 }: {
   children?: ReactNode
   className?: string
   style?: CSSProperties
+  /** Quiet corner marks - off by default for denser catalogues. */
+  marks?: boolean
   as?: 'div' | 'section' | 'article' | 'aside'
 } & Omit<ComponentPropsWithoutRef<'div'>, 'className' | 'style' | 'children'>) {
   return (
-    // Remaining props are forwarded so a caller can be a landmark, a dialog or
-    // anything else that needs its own ARIA and handlers without a second
-    // component hand-writing these four marks — which is the one rule of this
-    // frame: it is defined here and nowhere else.
     <Tag className={`blueprint ${className}`.trim()} style={style} {...rest}>
-      <i className="corner tl" />
-      <i className="corner tr" />
-      <i className="corner bl" />
-      <i className="corner br" />
+      {marks ? (
+        <>
+          <i className="corner tl" />
+          <i className="corner tr" />
+          <i className="corner bl" />
+          <i className="corner br" />
+        </>
+      ) : null}
       {children}
     </Tag>
   )
@@ -51,13 +52,13 @@ export function StatTile({
   size?: number
 }) {
   return (
-    <Blueprint className="card elev-sm">
+    <div className="card elev-sm stat-tile">
       <div className="card-kicker">{kicker}</div>
       <div className="stat-value" style={{ fontSize: size }}>
         {value}
       </div>
       {meta ? <div className="card-meta">{meta}</div> : null}
-    </Blueprint>
+    </div>
   )
 }
 
@@ -257,7 +258,7 @@ export function Dialog({
 }) {
   // Escape is bound to the document, not to the backdrop. A keydown handler on
   // a div only fires when focus is already inside it, so pressing Escape after
-  // clicking the page did nothing — the dialog looked stuck.
+  // clicking the page did nothing - the dialog looked stuck.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()

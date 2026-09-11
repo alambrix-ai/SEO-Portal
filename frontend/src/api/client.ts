@@ -6,7 +6,7 @@
  * - **Token refresh.** Access tokens are short-lived. On a 401 the client
  *   redeems the refresh token once, then replays the original request. All
  *   concurrent 401s wait on the same refresh, so a screen that loads six
- *   endpoints at once does not burn six refresh tokens — which would trip the
+ *   endpoints at once does not burn six refresh tokens - which would trip the
  *   backend's reuse detection and sign the user out.
  *
  * - **Error shape.** The API returns `{code, detail, fields}`; that becomes an
@@ -306,7 +306,7 @@ export const api = {
       skipAuth: true,
     }),
 
-  /** Recent workspace activity — what the header's bell shows. */
+  /** Recent workspace activity - what the header's bell shows. */
   notifications: () => request<NotificationsOut>('/notifications'),
 
   /** Clear the unseen count. A write, so a prefetch cannot clear it. */

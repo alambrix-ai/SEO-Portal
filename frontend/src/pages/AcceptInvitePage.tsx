@@ -16,6 +16,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, api } from '@/api/client'
 import type { InvitationPreview } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
+import { BrandLogo } from '@/components/BrandLogo'
 import { Loading } from '@/components/ui'
 
 export function AcceptInvitePage() {
@@ -78,10 +79,12 @@ export function AcceptInvitePage() {
     return (
       <div className="auth-screen">
         <div className="auth-card">
-          <i className="auth-mark" />
           <div className="auth-header">
-            <div className="auth-brand">Invitation unavailable</div>
-            <div className="auth-tagline">{loadError}</div>
+            <div className="auth-brand">
+              <BrandLogo height={44} />
+            </div>
+            <h1 className="auth-headline">Invitation unavailable</h1>
+            <p className="auth-tagline">{loadError}</p>
           </div>
           <Link to="/login" className="btn btn-secondary btn-block">
             Back to sign in
@@ -94,12 +97,14 @@ export function AcceptInvitePage() {
   return (
     <div className="auth-screen">
       <div className="auth-card">
-        <i className="auth-mark" />
         <div className="auth-header">
-          <div className="auth-brand">Join {preview.organization_name}</div>
-          <div className="auth-tagline">
-            Invited as {preview.role_label} — {preview.email}
+          <div className="auth-brand">
+            <BrandLogo height={44} />
           </div>
+          <h1 className="auth-headline">Join {preview.organization_name}</h1>
+          <p className="auth-tagline">
+            Invited as {preview.role_label} - {preview.email}
+          </p>
         </div>
 
         <form
@@ -122,7 +127,7 @@ export function AcceptInvitePage() {
 
           <div className="field-hint">
             No password to set. Each time you sign in, {preview.organization_name}{' '}
-            emails a one-time code to {preview.email} — so keep access to that
+            emails a one-time code to {preview.email} - so keep access to that
             mailbox.
           </div>
 

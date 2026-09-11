@@ -3,7 +3,7 @@
  *
  * Deliberately small: every screen loads one endpoint that returns everything
  * it renders, so there is no cache to invalidate and no query library to
- * configure. What it does handle is the two things that actually bite —
+ * configure. What it does handle is the two things that actually bite  - 
  * cancelling a request whose screen has unmounted, and reloading after a
  * mutation without a full navigation.
  */
@@ -71,7 +71,7 @@ export function useResource<T>(
 }
 
 /**
- * Debounce a value — used by the search inputs so typing does not fire a
+ * Debounce a value - used by the search inputs so typing does not fire a
  * request per keystroke.
  */
 export function useDebounced<T>(value: T, delay = 300): T {

@@ -1,5 +1,5 @@
 /**
- * Connectors marketplace — the catalogue, filters, and the connect dialog.
+ * Connectors marketplace - the catalogue, filters, and the connect dialog.
  *
  * The dialog's fields come from the connector's own declaration on the server,
  * so a new integration needs no frontend change. Secrets are write-only: the
@@ -80,7 +80,7 @@ export function ConnectorsPage() {
 
   const guard = (): boolean => {
     if (!writable) {
-      push('View-only access — ask an admin to manage connectors', 'warning')
+      push('View-only access - ask an admin to manage connectors', 'warning')
       return false
     }
     return true
@@ -116,13 +116,15 @@ export function ConnectorsPage() {
 
   return (
     <>
-      <div className="row-between" style={{ marginBottom: 12 }}>
-        <div className="row">
+      <div className="row-between filter-tabs-bar">
+        <div className="filter-tabs" role="tablist" aria-label="Connector categories">
           {(categories.data ?? ['All']).map((name) => (
             <button
               key={name}
               type="button"
-              className={`btn ${category === name ? 'btn-primary' : 'btn-secondary'}`}
+              role="tab"
+              aria-selected={category === name}
+              className={`filter-tab${category === name ? ' is-active' : ''}`}
               onClick={() => setCategory(name)}
             >
               {name}
@@ -167,7 +169,7 @@ export function ConnectorsPage() {
 
                 Nothing in this block exists until the integration does. An
                 unconnected connector has no health, no sync time and no error
-                — a "Not connected" tag next to a button that says Connect is
+                - a "Not connected" tag next to a button that says Connect is
                 the same fact stated twice. */}
                   <div className="agent-state">
                     {connector.connected ? (
@@ -205,8 +207,8 @@ export function ConnectorsPage() {
                     </button>
 
                     {/* No Test button. Credentials are verified when they are
-                  submitted — a connector cannot reach this state without
-                  having worked — and the scheduler re-probes them on its own,
+                  submitted - a connector cannot reach this state without
+                  having worked - and the scheduler re-probes them on its own,
                   so the health tag is current without anybody pressing
                   anything. A button whose answer is almost always "yes" only
                   teaches people to stop reading it. */}
@@ -349,7 +351,7 @@ function ConnectDialog({
       }
     >
       <p className="small" style={{ marginTop: 0 }}>
-        These are checked against {connector.name} when you save — nothing is stored
+        These are checked against {connector.name} when you save - nothing is stored
         unless they work. They are encrypted under this workspace&rsquo;s own key before
         they reach the database, and are never returned by the API.
       </p>
@@ -357,7 +359,7 @@ function ConnectDialog({
       {/* Shown before the attempt, not after it. A plan that does not include
           the API is not something a failed request can be relied on to
           explain, and not something the operator can fix by retyping a
-          token — so the requirements are stated up front. */}
+          token - so the requirements are stated up front. */}
       {connector.requirements.length > 0 ? (
         <div className="requirements">
           <div className="requirements-title">What {connector.name} needs</div>

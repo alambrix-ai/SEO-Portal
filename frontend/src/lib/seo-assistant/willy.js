@@ -1,13 +1,20 @@
 import * as THREE from 'three';
 
-export function mountWilly(canvas) {
+/**
+ * @param {HTMLCanvasElement} canvas
+ * @param {{ mode?: 'dock' | 'hero' }} [options]
+ *   hero = login stage: larger framing, neck + face follow the pointer
+ *   dock = floating launcher (wave + eye follow)
+ */
+export function mountWilly(canvas, options = {}) {
 const container = canvas.parentElement;
 const toggle = container.querySelector('.motion-toggle');
 const checklist = false;
 const admirer = false;
 const pricing = false;
 const faq = false;
-const farewell = true;
+const hero = options.mode === 'hero';
+const farewell = !hero;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 try {
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
@@ -113,7 +120,8 @@ try {
   const rightArm = roundedBox(0.28, 0.55, 0.3, shell, 0.68, -0.13, 0.04, 0.1);
   rightArm.rotation.z = 0.55;
   // The checklist scene needs an empty hand so its seven-job board is clear.
-  if (!checklist && !admirer && !pricing && !faq && !farewell) {
+  // Hero / farewell keep a free waving / pointing arm — no clipboard prop.
+  if (!checklist && !admirer && !pricing && !faq && !farewell && !hero) {
     roundedBox(0.67, 0.86, 0.13, cream, 0.95, -0.23, 0.38, 0.045);
     [0.18, 0.3, 0.44].forEach((height, i) => {
       roundedBox(0.1, height, 0.045, i === 2 ? clay : shell, 0.76 + i * 0.18, -0.49 + height / 2, 0.47, 0.016);
@@ -190,19 +198,22 @@ try {
     prints.forEach(draw => draw());
   }
   let wavingArm = null;
-  if (farewell) {
-    agent.position.set(-0.12,-0.1,0.2);
-    agent.scale.setScalar(0.92);
+  if (farewell || hero) {
+    // Hero: full figure stays inside the canvas (no arm clipped by the login
+    // divider). Wave upward like the dock pose instead of pointing sideways.
+    agent.position.set(hero ? -0.05 : -0.12, hero ? -0.02 : -0.1, hero ? 0.15 : 0.2);
+    agent.scale.setScalar(hero ? 1.02 : 0.92);
+    if (hero) agent.rotation.y = -0.06;
     // Pivot the entire forearm and hand at the shoulder, so they stay attached.
     wavingArm = new THREE.Group();
-    wavingArm.position.set(0.67,0.05,0.12);
+    wavingArm.position.set(0.67, 0.05, 0.12);
     agent.add(wavingArm);
-    rightArm.position.set(0.1,-0.25,0);
-    rightArm.rotation.z=0;
-    rightHand.position.set(0.1,-0.57,0);
-    wavingArm.add(rightArm,rightHand);
-    wavingArm.rotation.z=2.05;
-    head.rotation.z=-0.06;
+    rightArm.position.set(0.1, -0.25, 0);
+    rightArm.rotation.z = 0;
+    rightHand.position.set(0.1, -0.57, 0);
+    wavingArm.add(rightArm, rightHand);
+    wavingArm.rotation.z = hero ? 1.95 : 2.05;
+    head.rotation.z = hero ? -0.04 : -0.06;
   }
   world.rotation.set(0, 0, 0);
 
@@ -239,13 +250,22 @@ try {
     if (!paused) {
       elapsed += delta;
       if (wavingArm) {
-        // A continuous, gentle wave with no pause between cycles.
-        wavingArm.rotation.z=2.05+Math.sin(elapsed*Math.PI*2/1.2)*0.24;
+        if (hero) {
+          // Gentle upward wave - keeps the hand inside the canvas.
+          wavingArm.rotation.z = 1.95 + Math.sin(elapsed * Math.PI * 2 / 1.4) * 0.18;
+          wavingArm.rotation.y = 0;
+        } else {
+          // A continuous, gentle wave with no pause between cycles.
+          wavingArm.rotation.z = 2.05 + Math.sin(elapsed * Math.PI * 2 / 1.2) * 0.24;
+        }
       }
       updateGaze();
       // Time-based damping keeps the response consistent at any refresh rate.
       const follow = 1 - Math.exp(-14 * delta);
-      if (admirer || pricing || faq || farewell) {
+      // Hero (login) and the default agent always turn the neck toward the
+      // pointer. Marketing modes (pricing / faq / …) keep the torso fixed and
+      // only slide the eyes on the screen.
+      if ((admirer || pricing || faq || farewell) && !hero) {
         // Heart-shaped eyes slide inside the screen; head and body stay fixed.
         eyes.forEach((eye, i) => {
           const x = (i === 0 ? -0.28 : 0.28) + Math.sin(targetX) * 0.085;
@@ -256,9 +276,19 @@ try {
       } else {
         head.rotation.y += (targetX - head.rotation.y) * follow;
         head.rotation.x += (targetY - head.rotation.x) * follow;
-        head.rotation.z = Math.sin(elapsed * 1.3) * 0.015;
+        head.rotation.z = (hero ? -0.04 : 0) + Math.sin(elapsed * 1.3) * 0.015;
         const blink = elapsed % 5.2;
         eyes.forEach(eye => { eye.scale.y = blink > 4.95 ? 0.15 : 1; });
+        // Pupils drift slightly inside the face toward the pointer too.
+        if (hero) {
+          eyes.forEach((eye, i) => {
+            const baseX = i === 0 ? -0.28 : 0.28;
+            const x = baseX + Math.sin(targetX) * 0.06;
+            const y = 0.05 - Math.sin(targetY) * 0.05;
+            eye.position.x += (x - eye.position.x) * follow;
+            eye.position.y += (y - eye.position.y) * follow;
+          });
+        }
       }
     }
     if (pricing) {
@@ -293,11 +323,12 @@ try {
     const { width, height } = entry.contentRect;
     renderer.setSize(width, height, false);
     const aspect = width / Math.max(height, 1);
-    const viewHeight = farewell ? Math.max(3.1, 2.7 / aspect) : faq ? Math.max(3.55, 2.8 / aspect) : pricing ? Math.max(1.78, 2.35 / aspect) : admirer ? Math.max(1.6, 3.4 / aspect) : checklist ? Math.max(3.15, 3.25 / aspect) : Math.max(4.8, 3.55 / aspect);
+    const viewHeight = farewell ? Math.max(3.1, 2.7 / aspect) : faq ? Math.max(3.55, 2.8 / aspect) : pricing ? Math.max(1.78, 2.35 / aspect) : admirer ? Math.max(1.6, 3.4 / aspect) : checklist ? Math.max(3.15, 3.25 / aspect) : hero ? Math.max(3.7, 3.2 / aspect) : Math.max(4.8, 3.55 / aspect);
     camera.left = -viewHeight * aspect / 2;
     camera.right = viewHeight * aspect / 2;
-    camera.top = faq ? -1.5 + viewHeight : pricing ? -0.04 + viewHeight : admirer ? 0.08 + viewHeight : (farewell ? 0.15 : faq ? 0.15 : checklist ? 0.1 : 0.28) + viewHeight / 2;
-    camera.bottom = faq ? -1.5 : pricing ? -0.04 : admirer ? 0.08 : (farewell ? 0.15 : faq ? 0.15 : checklist ? 0.1 : 0.28) - viewHeight / 2;
+    // Hero framing: keep the full figure (feet to antenna) inside the canvas.
+    camera.top = faq ? -1.5 + viewHeight : pricing ? -0.04 + viewHeight : admirer ? 0.08 + viewHeight : hero ? (0.05 + viewHeight / 2) : (farewell ? 0.15 : faq ? 0.15 : checklist ? 0.1 : 0.28) + viewHeight / 2;
+    camera.bottom = faq ? -1.5 : pricing ? -0.04 : admirer ? 0.08 : hero ? (0.05 - viewHeight / 2) : (farewell ? 0.15 : faq ? 0.15 : checklist ? 0.1 : 0.28) - viewHeight / 2;
     camera.updateProjectionMatrix();
     // Device pixels the console is actually drawn across, per world unit.
     retexture((width * renderer.getPixelRatio()) / (camera.right - camera.left));

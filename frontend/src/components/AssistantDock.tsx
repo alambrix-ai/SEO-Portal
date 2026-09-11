@@ -1,5 +1,5 @@
 /**
- * Floating Willy — compact animated bot bottom-right on every page.
+ * Floating Willy - compact animated bot bottom-right on every page.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -41,7 +41,7 @@ export function AssistantDock() {
     {
       id: 'welcome',
       role: 'assistant',
-      content: 'Hi — I’m Willy. What do you want to get done?',
+      content: 'Hi - I’m Willy. What do you want to get done?',
     },
   ])
   const [plan, setPlan] = useState<ActionPlan | null>(null)
@@ -171,7 +171,7 @@ export function AssistantDock() {
         setStepValues({})
       } else if (mode === 'action') {
         push(
-          'No actionable steps yet — try naming the connectors or agents you want set up.',
+          'No actionable steps yet - try naming the connectors or agents you want set up.',
           'info',
         )
       }
@@ -204,7 +204,7 @@ export function AssistantDock() {
       setStepValues({})
     } else {
       push('Action plan complete', 'success')
-      appendAssistantNote('All set — the planned connections and agent steps are done.')
+      appendAssistantNote('All set - the planned connections and agent steps are done.')
       setPlan(null)
       setStepIndex(0)
       setStepValues({})
@@ -214,19 +214,19 @@ export function AssistantDock() {
   const runStep = async () => {
     if (!currentStep) return
     if (currentStep.type === 'connect_connector' && !writableConnectors) {
-      push('View-only access — ask an admin to connect integrations', 'warning')
+      push('View-only access - ask an admin to connect integrations', 'warning')
       return
     }
     if (
       (currentStep.type === 'configure_agent' || currentStep.type === 'resume_agent') &&
       !writableAgents
     ) {
-      push('View-only access — ask an admin to configure agents', 'warning')
+      push('View-only access - ask an admin to configure agents', 'warning')
       return
     }
 
     if (isOauthOnly) {
-      push('This connector needs OAuth — finish it under Connectors, then continue.', 'warning')
+      push('This connector needs OAuth - finish it under Connectors, then continue.', 'warning')
       return
     }
 
@@ -285,7 +285,7 @@ export function AssistantDock() {
                 {plan ? (
                   <span className="assistant-dock-sub">
                     Action {stepIndex + 1}/{plan.steps.length}
-                    {plan.summary ? ` — ${plan.summary}` : ''}
+                    {plan.summary ? ` - ${plan.summary}` : ''}
                   </span>
                 ) : null}
               </div>
@@ -370,7 +370,7 @@ export function AssistantDock() {
               {plan && currentStep ? (
                 <>
                   <div className="assistant-plan-banner" role="status">
-                    Enter credentials below — Willy will connect and configure each step
+                    Enter credentials below - Willy will connect and configure each step
                     for you.
                   </div>
                   <div ref={stepPanelRef} className="assistant-dock-step">
@@ -429,7 +429,7 @@ export function AssistantDock() {
                         ))}
                         {isOauthOnly ? (
                           <p className="muted small">
-                            This connector uses OAuth — finish signing in under{' '}
+                            This connector uses OAuth - finish signing in under{' '}
                             <Link to="/connectors" onClick={() => setOpen(false)}>
                               Connectors
                             </Link>
@@ -439,7 +439,7 @@ export function AssistantDock() {
                         {(currentStep.fields || []).some((field) => field.is_oauth) &&
                         credentialFields.length > 0 ? (
                           <p className="muted small">
-                            Also needs OAuth — complete that in{' '}
+                            Also needs OAuth - complete that in{' '}
                             <Link to="/connectors" onClick={() => setOpen(false)}>
                               Connectors
                             </Link>{' '}

@@ -1,5 +1,5 @@
 /**
- * Ads & Programmatic workspace — budgets, creatives, audiences, fraud log.
+ * Ads & Programmatic workspace - budgets, creatives, audiences, fraud log.
  *
  * Moving a slider locks that channel, because a human's number should not be
  * silently undone by the predictive engine's next pass. The lock is visible
@@ -28,7 +28,7 @@ export function AdsPage() {
   const { data, loading, error, reload, set } = useResource(() => api.ads())
 
   // Slider positions are held locally while dragging, then committed on
-  // release — otherwise every pixel of movement would be a request.
+  // release - otherwise every pixel of movement would be a request.
   const [draft, setDraft] = useState<Record<string, number>>({})
   const [busy, setBusy] = useState(false)
 
@@ -141,7 +141,7 @@ export function AdsPage() {
                         void run(() => api.unlockChannel(channel.channel))
                       }
                     >
-                      Locked — unlock
+                      Locked - unlock
                     </button>
                   ) : null}
                   {!channel.connected ? (
@@ -257,7 +257,7 @@ export function AdsPage() {
                 <tr key={`${event.source}-${index}`}>
                   <td>{event.time}</td>
                   <td>{event.source}</td>
-                  <td className="small">{event.channel || '—'}</td>
+                  <td className="small">{event.channel || '-'}</td>
                   <td>{event.reason}</td>
                   <td>{money(event.spend_saved)}</td>
                   <td>

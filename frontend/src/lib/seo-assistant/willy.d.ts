@@ -1,2 +1,6 @@
-/** Willy robot sculpture — loaded dynamically by the assistant dock. */
-export function mountWilly(canvas: HTMLCanvasElement): void
+export type WillyMode = 'dock' | 'hero'
+
+export function mountWilly(
+  canvas: HTMLCanvasElement,
+  options?: { mode?: WillyMode },
+): void

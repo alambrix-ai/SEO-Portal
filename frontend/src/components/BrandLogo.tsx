@@ -1,7 +1,7 @@
 /**
  * The Alambrix wordmark.
  *
- * The supplied file is a white monochrome wordmark on transparency — 86%
+ * The supplied file is a white monochrome wordmark on transparency - 86%
  * transparent, 12% white, no other ink. Dropped in as an `<img>` it would be
  * invisible against this interface's off-white background, which is the
  * default theme, so something has to give.
@@ -14,7 +14,7 @@
  *
  * That treatment is right *because* the mark is monochrome. If the brand ever
  * ships a two-colour version this has to become a plain `<img>` and the
- * surfaces behind it have to be dark enough for it — a mask would flatten the
+ * surfaces behind it have to be dark enough for it - a mask would flatten the
  * second colour away.
  */
 import logoUrl from '@/assets/logo.png'

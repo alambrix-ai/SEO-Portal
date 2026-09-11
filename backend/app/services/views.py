@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.agents.base.policy import GUARDRAIL_LABELS, autonomy_label
@@ -636,9 +636,26 @@ def nav_counts(db: Session, *, tenant_id: str, role: str) -> dict[str, int]:
     out: dict[str, int] = {}
 
     if Module.AGENTS.value in allowed:
-        out["/agents"] = count(
-            AgentRecord, AgentRecord.status == AgentStatus.RUNNING.value
-        )
+        # Non-idle fleet: running, errored, or configured-and-ready. Idle
+        # catalogue rows stay off the badge so a fresh workspace stays clean,
+        # but a workspace with agents set up still shows a number even when
+        # none are running yet (same idea as Connectors showing connected).
+        from app.services import portal_features
+
+        allowed_slugs = portal_features.enabled_agent_slugs(db)
+        out["/agents"] = db.execute(
+            select(func.count())
+            .select_from(AgentRecord)
+            .where(
+                AgentRecord.tenant_id == tenant_id,
+                AgentRecord.slug.in_(allowed_slugs),
+                or_(
+                    AgentRecord.status == AgentStatus.RUNNING.value,
+                    AgentRecord.status == AgentStatus.ERROR.value,
+                    AgentRecord.configured.is_(True),
+                ),
+            )
+        ).scalar_one()
 
     if Module.CONNECTORS.value in allowed:
         connected, _total = connector_service.counts(db, tenant_id=tenant_id)

@@ -1,5 +1,5 @@
 /**
- * Dashboard — four KPI tiles, what is actually running, and the approval queue.
+ * Dashboard - four KPI tiles, what is actually running, and the approval queue.
  *
  * "What is actually running" rather than "the fleet": the panels list the
  * agents that are working and the systems that are connected. A workspace
@@ -28,8 +28,8 @@ import {
 /**
  * One agent on the dashboard.
  *
- * Extracted because two panels render it now — working, and configured but
- * stopped — and a second copy would drift.
+ * Extracted because two panels render it now - working, and configured but
+ * stopped - and a second copy would drift.
  *
  * It shows the last run's outcome, which the dashboard never did: a card
  * saying only "Paused" hid the fact that this agent had synced pages or
@@ -121,7 +121,7 @@ export function DashboardPage() {
             title={agents.length > 0 ? 'Running agents' : 'Your agents'}
             /* The autonomy split, said once here rather than read off twelve
                tags. It is the answer to "how much of this is acting on its
-               own?", which is the thing somebody wants from a dashboard —
+               own?", which is the thing somebody wants from a dashboard  - 
                and it used to require counting cards. */
             description={
               agents.length > 0
@@ -152,7 +152,7 @@ export function DashboardPage() {
             </div>
           ) : ready.length > 0 ? (
             /* Set up, and stopped. The panel used to show nothing here and
-               then advise configuring an agent — advice for a step already
+               then advise configuring an agent - advice for a step already
                finished, with the results these agents had produced hidden
                behind it. */
             <>
@@ -233,7 +233,7 @@ export function DashboardPage() {
               <p>Nothing is connected yet.</p>
               {canView('connectors') ? (
                 <p className="small muted">
-                  The agents work on whatever you connect — a CMS, an ad account,
+                  The agents work on whatever you connect - a CMS, an ad account,
                   analytics. Until then they run and report that they are waiting.
                   Start on the <Link to="/connectors">Connectors</Link> screen.
                 </p>

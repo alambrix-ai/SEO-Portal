@@ -1,5 +1,5 @@
 /**
- * Technical SEO — the site's health as a working list.
+ * Technical SEO - the site's health as a working list.
  *
  * Ordered worst-first and grouped by kind, because the point is not to admire
  * the total but to work through it. Every row carries what to do, not just
@@ -113,10 +113,12 @@ export function TechnicalSeoPage() {
       {data.by_kind.length > 0 ? (
         <>
           <SectionHeading title="By type" spaced />
-          <div className="row" style={{ flexWrap: 'wrap' }}>
+          <div className="filter-tabs" role="tablist" aria-label="Issue types">
             <button
               type="button"
-              className={`btn ${kind === '' ? 'btn-primary' : 'btn-secondary'}`}
+              role="tab"
+              aria-selected={kind === ''}
+              className={`filter-tab${kind === '' ? ' is-active' : ''}`}
               onClick={() => setKind('')}
             >
               All ({data.open_count})
@@ -125,7 +127,9 @@ export function TechnicalSeoPage() {
               <button
                 key={group.kind}
                 type="button"
-                className={`btn ${kind === group.kind ? 'btn-primary' : 'btn-secondary'}`}
+                role="tab"
+                aria-selected={kind === group.kind}
+                className={`filter-tab${kind === group.kind ? ' is-active' : ''}`}
                 onClick={() => setKind(group.kind)}
               >
                 {group.label} ({group.count})
@@ -276,7 +280,7 @@ function IgnoreDialog({
       }
     >
       <p className="small" style={{ marginTop: 0 }}>
-        {issue.url} — {issue.summary}
+        {issue.url} - {issue.summary}
       </p>
       <Field
         label="Why are you accepting this?"
@@ -288,7 +292,7 @@ function IgnoreDialog({
           id="ignore-note"
           className="input"
           autoFocus
-          placeholder="Deliberate — this is a landing page with no body copy"
+          placeholder="Deliberate - this is a landing page with no body copy"
           value={note}
           onChange={(event) => setNote(event.target.value)}
         />

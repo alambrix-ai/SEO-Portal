@@ -1,5 +1,5 @@
 /**
- * SEO & AEO workspace — the page table and the traffic-quality guard.
+ * SEO & AEO workspace - the page table and the traffic-quality guard.
  *
  * The table shows what each page needs; opening one shows the rewrite the
  * agent proposed, decrypted server-side, before anyone sends it for approval.
@@ -114,7 +114,7 @@ export function SeoPage() {
                   </td>
                   <td>{page.gap_score}%</td>
                   <td>{page.aeo_pairs}</td>
-                  <td className="small">{page.schema_text || '—'}</td>
+                  <td className="small">{page.schema_text || '-'}</td>
                   <td>
                     <Tag tone={statusTone(page.status)}>{page.status_label}</Tag>
                   </td>
@@ -273,7 +273,7 @@ function PageDetailDialog({
           </div>
         ) : null}
 
-        {/* The knowledge-graph agent's output, with the JSON-LD readable —
+        {/* The knowledge-graph agent's output, with the JSON-LD readable  - 
             approving structured data for your own site without seeing it is
             not something anyone can do responsibly. */}
         {page.schema_patches.length > 0 ? (

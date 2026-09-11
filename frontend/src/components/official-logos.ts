@@ -2,11 +2,11 @@
  * Official product websites for branded connectors.
  *
  * Preference order in ConnectorIcon:
- * 1. Product-domain favicon (this map) — the brand's own published icon.
+ * 1. Product-domain favicon (this map) - the brand's own published icon.
  * 2. simple-icons SVG when we keep a product-specific path in brand-icons.ts.
  * 3. Drawn glyphs only for non-brand connectors (custom API, crawler, DSP, SMTP).
  *
- * Domains are the product's public site — not invented colours or lettermarks.
+ * Domains are the product's public site - not invented colours or lettermarks.
  * Google Business Profile uses business.google.com, not the generic Google mark.
  */
 export const OFFICIAL_LOGO_DOMAINS: Record<string, { domain: string; title: string }> = {

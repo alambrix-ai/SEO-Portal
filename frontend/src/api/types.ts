@@ -105,7 +105,7 @@ export interface RegistrationPolicy {
   auth_method: 'email_code'
   /** How many boxes the code input should draw. */
   code_length: number
-  /** Seconds a code stays valid — the screen counts it down. */
+  /** Seconds a code stays valid - the screen counts it down. */
   code_expires_in: number
   /** Seconds before "Send another" becomes available. */
   resend_in: number
@@ -159,12 +159,12 @@ export interface AgentOut {
   max_actions_per_day: number
   configured: boolean
   config_summary: string
-  /** "Saved, but…" — valid, and will not do everything you probably expect. */
+  /** "Saved, but…" - valid, and will not do everything you probably expect. */
   warnings: string[]
   last_error: string
   actions_today: number
   read_only: boolean
-  /** attention | running | ready | idle — which section this card sits in. */
+  /** attention | running | ready | idle - which section this card sits in. */
   group: string
   /** A pass is open right now. */
   busy: boolean
@@ -251,7 +251,7 @@ export interface ConnectorOut {
   last_error: string
   connected_at: string | null
   last_sync_at: string | null
-  /** "Last sync 12m ago" — rendered by the API, empty when there is none. */
+  /** "Last sync 12m ago" - rendered by the API, empty when there is none. */
   activity_label: string
   hints: Record<string, string>
   fields: CredentialField[]
@@ -269,7 +269,7 @@ export interface SeoIssueOut {
   id: string
   url: string
   kind: string
-  /** Human wording, from the API — the console keeps no second copy. */
+  /** Human wording, from the API - the console keeps no second copy. */
   kind_label: string
   severity: 'high' | 'medium' | 'low'
   summary: string
@@ -326,7 +326,7 @@ export interface SeoPageDetail extends SeoPageOut {
   proposed_body: string
   rewrite_rationale: string
   target_keywords: string[]
-  /** The AEO injector's pairs for this page — previously stored and shown nowhere. */
+  /** The AEO injector's pairs for this page - previously stored and shown nowhere. */
   qa_pairs: QaPairOut[]
   schema_patches: SchemaPatchOut[]
 
@@ -451,7 +451,7 @@ export interface OnboardingOut {
   completed: boolean
   /** Each CMS with its connector slug, so the mark can be shown beside it. */
   cms_options: { slug: string; name: string }[]
-  /** The short name and the consequence, kept apart — the label is both. */
+  /** The short name and the consequence, kept apart - the label is both. */
   guardrail_options: { value: string; name: string; label: string; detail: string }[]
   /** What is actually connected, replacing three checkboxes nothing read. */
   ad_platforms: { slug: string; name: string; connected: boolean }[]
@@ -474,7 +474,7 @@ export interface DashboardOut {
   agents: AgentOut[]
   /** How many there are in total, so the panel can say "showing 6 of 9". */
   active_agents: number
-  /** Configured and stopped — the state the panel could not see. */
+  /** Configured and stopped - the state the panel could not see. */
   ready: AgentOut[]
   ready_agents: number
   /** The connected integrations. Empty for a role that cannot see them. */

@@ -3,7 +3,7 @@
  *
  * The access map comes from the API, which reads it from the same RBAC table
  * the endpoints enforce. So the navigation a user sees and the requests they
- * are allowed to make cannot drift apart — the console never decides
+ * are allowed to make cannot drift apart - the console never decides
  * permissions for itself.
  */
 import {

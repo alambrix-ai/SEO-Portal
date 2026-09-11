@@ -6,7 +6,7 @@
  * component must not disagree about how it is written.
  *
  * `Intl.NumberFormat` with the `en-IN` locale already does lakh/crore
- * grouping — ₹12,34,567 rather than ₹1,234,567 — so this is a thin wrapper
+ * grouping - ₹12,34,567 rather than ₹1,234,567 - so this is a thin wrapper
  * over the platform's own implementation rather than hand-rolled arithmetic.
  * That grouping is not cosmetic: a figure grouped in thousands is genuinely
  * misread by someone who expects lakhs.
@@ -29,13 +29,13 @@ const precise = new Intl.NumberFormat(LOCALE, {
   maximumFractionDigits: 2,
 })
 
-/** `₹12,34,567` — for totals, where paise are noise. */
+/** `₹12,34,567` - for totals, where paise are noise. */
 export function money(amount: number): string {
   return whole.format(amount)
 }
 
 /**
- * `₹1,234.50` — for a cost per acquisition, where the paise are the point:
+ * `₹1,234.50` - for a cost per acquisition, where the paise are the point:
  * the whole job of the budget engine is moving spend between channels a few
  * rupees apart.
  */
@@ -43,7 +43,7 @@ export function moneyExact(amount: number): string {
   return precise.format(amount)
 }
 
-/** `₹4.57Cr`, `₹1.23L` — for tiles, in the units an Indian team reads in. */
+/** `₹4.57Cr`, `₹1.23L` - for tiles, in the units an Indian team reads in. */
 export function moneyCompact(amount: number): string {
   const abs = Math.abs(amount)
   if (abs >= 10_000_000) return `${trim(amount / 10_000_000)}Cr`

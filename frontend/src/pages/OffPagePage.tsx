@@ -1,5 +1,5 @@
 /**
- * Off-Page & PR workspace — discovered placements and competitor alerts.
+ * Off-Page & PR workspace - discovered placements and competitor alerts.
  */
 import { useState } from 'react'
 
@@ -49,7 +49,7 @@ export function OffPagePage() {
     <>
       <SectionHeading
         title="Backlink node discovery"
-        description="Scored on authority and topical fit together — a well-matched mid-authority placement beats a mismatched large one."
+        description="Scored on authority and topical fit together - a well-matched mid-authority placement beats a mismatched large one."
       />
 
       {data.backlinks.length === 0 ? (
@@ -103,7 +103,7 @@ export function OffPagePage() {
 
       <SectionHeading
         title="Competitor link-poaching monitor"
-        description="A publisher that just linked to a competitor has proven it covers this subject and will link out — the best moment to approach it."
+        description="A publisher that just linked to a competitor has proven it covers this subject and will link out - the best moment to approach it."
         spaced
       />
 

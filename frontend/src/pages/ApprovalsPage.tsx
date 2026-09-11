@@ -1,5 +1,5 @@
 /**
- * Approvals queue — reviewing what agents produced under a guardrail.
+ * Approvals queue - reviewing what agents produced under a guardrail.
  *
  * A reviewer can open an item to see the exact change before deciding, which
  * matters because approving applies that stored payload verbatim rather than
@@ -75,7 +75,7 @@ export function ApprovalsPage() {
         <CardSection
           title="Waiting on you"
           count={data.length}
-          description="Approving applies exactly what the agent proposed, from the payload stored at the time — no second model call."
+          description="Approving applies exactly what the agent proposed, from the payload stored at the time - no second model call."
         >
         <div className="stack">
           {data.map((item) => (

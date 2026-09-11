@@ -1,5 +1,5 @@
 /**
- * Admin — team and role-based access, invitations, billing, audit log.
+ * Admin - team and role-based access, invitations, billing, audit log.
  *
  * The role select is disabled where the server would refuse the change (the
  * owner, and yourself), so the UI does not offer an action that cannot succeed.
@@ -68,7 +68,7 @@ export function AdminPage() {
     setBusyId(id)
     try {
       await api.changeMemberRole(id, role)
-      push('Role updated — their other sessions were signed out', 'success')
+      push('Role updated - their other sessions were signed out', 'success')
       await reload()
     } catch (caught) {
       fromError(caught)
@@ -111,7 +111,7 @@ export function AdminPage() {
   return (
     <>
       {/* Moved here from the topbar, where it appeared on every screen next
-          to controls it had nothing to do with — and, on the Agents screen,
+          to controls it had nothing to do with - and, on the Agents screen,
           directly above twelve cards each carrying the same two words, which
           made it read as a filter for them. It is not a filter. It is the
           ceiling: an agent set to Autonomous only acts on its own while this
@@ -224,7 +224,7 @@ export function AdminPage() {
         <>
           <SectionHeading
             title="Pending invitations"
-            description="The link proves their address — there is nothing for them to set."
+            description="The link proves their address - there is nothing for them to set."
             spaced
           />
           <div className="stack-sm">
@@ -265,7 +265,7 @@ export function AdminPage() {
         <Blueprint className="card elev-sm">
           <div className="card-kicker">Billing</div>
           <div className="card-title">
-            {data.billing.plan_name} — {data.billing.seats_total} seats
+            {data.billing.plan_name} - {data.billing.seats_total} seats
           </div>
           <Meter percent={data.billing.seats_percent} label="Seats used" />
           <div className="card-meta">
@@ -292,7 +292,8 @@ export function AdminPage() {
           <div className="audit-list">
             {data.audit.map((entry, index) => (
               <div className="audit-entry" key={`${entry.time}-${index}`}>
-                <span className="audit-time">{entry.time}</span> —{' '}
+                <span className="audit-time">{entry.time}</span>
+                {' - '}
                 <span
                   className={entry.actor_type === 'agent' ? 'audit-actor-agent' : undefined}
                 >
@@ -371,7 +372,7 @@ function InviteDialog({
     >
       <p className="small" style={{ marginTop: 0 }}>
         They will receive a link, give their name, and they are in. After that they
-        sign in the same way you do — a one-time code emailed to this address. No
+        sign in the same way you do - a one-time code emailed to this address. No
         password is ever set, generated, or sent.
       </p>
 

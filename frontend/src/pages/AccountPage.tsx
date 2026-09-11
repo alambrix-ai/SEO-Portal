@@ -1,5 +1,5 @@
 /**
- * Account — your own details, and the one security control you own.
+ * Account - your own details, and the one security control you own.
  *
  * There is no password to change here, because there is no password. What
  * replaces it is "sign out everywhere": if you think somebody has been in your
@@ -79,7 +79,7 @@ export function AccountPage() {
           {minutes} minutes.
         </p>
         <p className="small muted">
-          Nothing that could be stolen and reused is stored — there is no password
+          Nothing that could be stolen and reused is stored - there is no password
           hash to leak, and no reset link to intercept. The trade is that your
           mailbox is the key to this workspace, so it is worth protecting as well
           as you would protect a password.

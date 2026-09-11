@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 interface CodeEntryProps {
-  /** Where the code went — shown back to the user so a typo is obvious. */
+  /** Where the code went - shown back to the user so a typo is obvious. */
   email: string
   /** Digits expected, from the API policy. */
   length: number

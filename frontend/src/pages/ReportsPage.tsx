@@ -1,12 +1,12 @@
 /**
- * Reports — the numbers, grouped, and the trend behind them.
+ * Reports - the numbers, grouped, and the trend behind them.
  *
  * Every figure is an aggregate over the same daily metric rows, so the tiles
  * and the chart cannot disagree with each other or with the audit log.
  *
  * The previous version was six tiles in one undifferentiated row, a bare
- * `<h3>`, and a bare polyline: no scale, no dates, no gridlines, and — when
- * a workspace had no data yet — a flat line along the bottom that looked
+ * `<h3>`, and a bare polyline: no scale, no dates, no gridlines, and - when
+ * a workspace had no data yet - a flat line along the bottom that looked
  * exactly like a measurement of zero rather than an absence of measurement.
  * That last one is the reason this was worth rewriting rather than restyling:
  * a chart that cannot tell "no data" from "zero" is a chart that misreports.
@@ -159,7 +159,7 @@ export function ReportsPage() {
             <div className="panel-empty">
               <p>No organic sessions recorded in this period.</p>
               <p className="small muted">
-                This is an absence of data rather than a measurement of zero —
+                This is an absence of data rather than a measurement of zero  - 
                 the trend appears once an analytics connector has reported a
                 day of traffic.
               </p>

@@ -1,23 +1,23 @@
 /**
- * Onboarding — four steps, and a reason to finish each one.
+ * Onboarding - four steps, and a reason to finish each one.
  *
  * The previous version was four text buttons, two dropdowns, three
  * checkboxes and a three-line summary. It was dull for a structural reason
  * rather than a cosmetic one: **step two did nothing at all.** It wrote three
- * hard-coded flags — google, meta, linkedin — to a field no code in the
+ * hard-coded flags - google, meta, linkedin - to a field no code in the
  * platform ever read, out of six ad connectors that exist. A step that
  * cannot affect anything cannot be made interesting by restyling it.
  *
  * So the shape changed with the paint:
  *
- * 1. **Your site** — the domain, and where its content lives, chosen from
+ * 1. **Your site** - the domain, and where its content lives, chosen from
  *    the real connector catalogue with each vendor's own mark.
- * 2. **Ad platforms** — what is actually connected, and a way to connect
+ * 2. **Ad platforms** - what is actually connected, and a way to connect
  *    more. It reports rather than pretends.
- * 3. **Guardrails** — three cards that each say what will happen to the
+ * 3. **Guardrails** - three cards that each say what will happen to the
  *    customer's site, instead of three radio buttons carrying half a
  *    sentence each.
- * 4. **Review** — what was chosen, and precisely what Launch does.
+ * 4. **Review** - what was chosen, and precisely what Launch does.
  *
  * Progress still saves on every advance, so a reload resumes where the
  * workspace left off.
@@ -86,7 +86,7 @@ export function OnboardingPage() {
 
   const next = async () => {
     if (step === 0 && !state.domain.trim()) {
-      push('Enter your website domain — everything else is scoped to it', 'warning')
+      push('Enter your website domain - everything else is scoped to it', 'warning')
       return
     }
     const target = Math.min(STEPS.length - 1, step + 1)
@@ -128,7 +128,7 @@ export function OnboardingPage() {
         <h1 className="onboard-title">Set up your workspace</h1>
         <p className="onboard-sub">
           Four steps, about two minutes. Nothing touches your site until you
-          launch — and after that, only within the guardrail you pick in step
+          launch - and after that, only within the guardrail you pick in step
           three.
         </p>
       </header>
@@ -170,7 +170,7 @@ export function OnboardingPage() {
           <>
             <h2 className="onboard-h">Where does your content live?</h2>
             <p className="onboard-lede">
-              The domain scopes everything — audits, keywords, the pages agents
+              The domain scopes everything - audits, keywords, the pages agents
               read. Pick the system it is published from and the right
               connector is waiting for you afterwards.
             </p>
@@ -192,7 +192,7 @@ export function OnboardingPage() {
                 onBlur={(event) => void save({ domain: event.target.value })}
               />
               <div className="field-hint">
-                Just the domain — no https:// and no trailing path.
+                Just the domain - no https:// and no trailing path.
               </div>
             </div>
 
@@ -227,7 +227,7 @@ export function OnboardingPage() {
                 ))}
               </div>
               <div className="field-hint">
-                Not sure, or it is something bespoke? Pick “Other” — the Site
+                Not sure, or it is something bespoke? Pick “Other” - the Site
                 Crawler reads any site by fetching its pages, whatever built
                 them.
               </div>
@@ -240,7 +240,7 @@ export function OnboardingPage() {
             <h2 className="onboard-h">Ad platforms</h2>
             <p className="onboard-lede">
               These are the platforms this workspace can buy and report on.
-              Anything connected is shown as connected — there is nothing to
+              Anything connected is shown as connected - there is nothing to
               tick here, because what matters is the account being wired up
               rather than an intention being recorded.
             </p>
@@ -268,7 +268,7 @@ export function OnboardingPage() {
 
             <p className="onboard-note">
               {connectedAds.length === 0
-                ? 'None connected yet. The SEO and content agents do not need any of these — connect them when you want the ad side working too.'
+                ? 'None connected yet. The SEO and content agents do not need any of these - connect them when you want the ad side working too.'
                 : `${connectedAds.length} connected. You can add the rest at any time.`}{' '}
               <Link to="/connectors">Open Connectors →</Link>
             </p>
@@ -319,7 +319,7 @@ export function OnboardingPage() {
             <h2 className="onboard-h">Ready to launch</h2>
             <p className="onboard-lede">
               Launching applies the guardrail and schedules every configured
-              agent. Agents you have not configured stay paused — nothing
+              agent. Agents you have not configured stay paused - nothing
               starts working on your site by surprise.
             </p>
 

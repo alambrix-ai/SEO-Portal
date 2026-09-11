@@ -2642,7 +2642,11 @@ def test_every_badge_agrees_with_the_screen_it_sits_on(client, clean_db):  # noq
     assert counts.get("/connectors", 0) == sum(1 for c in connectors if c["connected"])
 
     agents = client.get("/api/v1/agents", headers=auth(token)).json()
-    assert counts.get("/agents", 0) == sum(1 for a in agents if a["status"] == "running")
+    assert counts.get("/agents", 0) == sum(
+        1
+        for a in agents
+        if a["status"] in ("running", "error") or a["configured"]
+    )
 
     approvals = client.get("/api/v1/approvals/count", headers=auth(token)).json()
     assert counts.get("/approvals", 0) == approvals["pending"]

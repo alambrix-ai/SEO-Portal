@@ -2,7 +2,7 @@
  * The header's bell, and its unseen indicator.
  *
  * It used to be wired to `clear()` on the toast list, which meant clicking it
- * *dismissed* notifications rather than showing any — and since toasts expire
+ * *dismissed* notifications rather than showing any - and since toasts expire
  * after four and a half seconds, the count it displayed was almost always
  * zero. A bell that counts only what happened in this tab since it loaded is
  * a decoration.
@@ -13,7 +13,7 @@
  * become a way around the access map.
  *
  * The dot means "there is something you have not seen", not "there is
- * activity" — the second is true from the first minute and would leave a
+ * activity" - the second is true from the first minute and would leave a
  * badge nobody can ever clear. The marker lives on the server, so reading
  * something on a laptop does not leave it unread on a phone, and the count
  * excludes the viewer's own actions: a dot that appears because you just
@@ -44,7 +44,7 @@ export function NotificationBell({ pendingApprovals }: { pendingApprovals: numbe
     return result
   }, [])
 
-  // The badge has to be able to appear without the user doing anything —
+  // The badge has to be able to appear without the user doing anything  - 
   // agents work on a schedule, and the whole point of an indicator is to
   // notice something you were not watching for. A minute is slow enough to be
   // nothing and often enough to be useful.
@@ -66,7 +66,7 @@ export function NotificationBell({ pendingApprovals }: { pendingApprovals: numbe
   }, [load])
 
   // Opening it is what marks it read, and the dot clears immediately rather
-  // than after the round trip — the user has seen it either way.
+  // than after the round trip - the user has seen it either way.
   useEffect(() => {
     if (!open) return
     let cancelled = false
@@ -108,9 +108,9 @@ export function NotificationBell({ pendingApprovals }: { pendingApprovals: numbe
 
   const entries = data?.entries ?? []
   const label = unseen
-    ? `Notifications — ${unseen} new`
+    ? `Notifications - ${unseen} new`
     : pendingApprovals
-      ? `Notifications — ${pendingApprovals} awaiting approval`
+      ? `Notifications - ${pendingApprovals} awaiting approval`
       : 'Notifications'
 
   return (
@@ -123,7 +123,7 @@ export function NotificationBell({ pendingApprovals }: { pendingApprovals: numbe
         aria-label={label}
         aria-expanded={open}
       >
-        <BellIcon />
+        <BellIcon size={20} />
         {/* A count when it is small enough to be worth reading, a plain dot
             when it is not. "47 new" is not more actionable than "new". */}
         {unseen > 0 ? (

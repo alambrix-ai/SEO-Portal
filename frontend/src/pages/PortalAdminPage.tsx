@@ -1,5 +1,5 @@
 /**
- * Platform Portal Admin — workspaces across the product, and catalogue toggles.
+ * Platform Portal Admin - workspaces across the product, and catalogue toggles.
  *
  * Only emails listed in PORTAL_ADMIN_EMAILS see this screen. Disabling a
  * connector, agent, or module hides it from every customer workspace.
@@ -49,7 +49,7 @@ const KIND_LABEL: Record<string, string> = {
   module: 'Module',
 }
 
-/** Same marks as Connectors / Agents / sidebar — not letter placeholders. */
+/** Same marks as Connectors / Agents / sidebar - not letter placeholders. */
 const MODULE_ICONS: Record<string, typeof DashboardIcon> = {
   dashboard: DashboardIcon,
   onboarding: OnboardingIcon,
@@ -222,22 +222,22 @@ export function PortalAdminPage() {
       <div className="grid-tiles portal-kpis">
         <StatTile
           kicker="Workspaces"
-          value={overview.data?.organizations ?? '—'}
+          value={overview.data?.organizations ?? '-'}
           meta="Customer organizations"
         />
         <StatTile
           kicker="Users"
-          value={overview.data?.users ?? '—'}
+          value={overview.data?.users ?? '-'}
           meta="Across all workspaces"
         />
         <StatTile
           kicker="Catalogue live"
-          value={featuresTotal ? Math.max(0, featuresTotal - featuresOff) : '—'}
+          value={featuresTotal ? Math.max(0, featuresTotal - featuresOff) : '-'}
           meta={`${featuresOff} currently off`}
         />
         <StatTile
           kicker="Features off"
-          value={featuresTotal ? `${featuresOff} / ${featuresTotal}` : '—'}
+          value={featuresTotal ? `${featuresOff} / ${featuresTotal}` : '-'}
           meta="Hidden from customers"
         />
       </div>
@@ -549,7 +549,7 @@ export function PortalAdminPage() {
 
       {selectedOrg ? (
         <Dialog
-          title={`Members — ${selectedOrg.name}`}
+          title={`Members - ${selectedOrg.name}`}
           width={720}
           onClose={() => setSelectedOrg(null)}
           actions={

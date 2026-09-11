@@ -2,11 +2,11 @@
  * A headed group of cards.
  *
  * Both catalogue screens were one flat grid, and both were already *sorted*
- * by how much attention a row wants — errored, then working, then set up,
+ * by how much attention a row wants - errored, then working, then set up,
  * then untouched. The sections were implied by that sort and never drawn, so
  * the top row of the Connectors screen put two connected cards, each with a
  * status, a timestamp and two buttons, beside three untouched cards with a
- * single Connect button — and CSS grid stretched all five to the tallest.
+ * single Connect button - and CSS grid stretched all five to the tallest.
  * Three quarters of that row was empty space, and the eye had no way to tell
  * that the row was two different kinds of thing.
  *

@@ -3,7 +3,7 @@
  *
  * Two steps, and the order matters: the address is proven with a mailed code
  * *before* anything is created. So the form is filled in first, then the code
- * confirms it — and if the code is never entered, no organisation, no user and
+ * confirms it - and if the code is never entered, no organisation, no user and
  * no encryption key ever come into existence.
  *
  * Field-level errors from a 422 are mapped back onto their inputs.
@@ -14,6 +14,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ApiError, api } from '@/api/client'
 import type { RegistrationPolicy } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
+import { BrandLogo } from '@/components/BrandLogo'
 import { CodeEntry } from '@/components/CodeEntry'
 import { useToasts } from '@/components/Toasts'
 
@@ -106,15 +107,15 @@ export function RegisterPage() {
     return (
       <div className="auth-screen">
         <div className="auth-card">
-          <i className="auth-mark" />
           <div className="auth-header">
-            <div className="auth-brand">AutoMarket AI</div>
-            <div className="auth-tagline">Sign-up is closed on this deployment</div>
+            <div className="auth-brand">
+              <BrandLogo height={44} />
+            </div>
+            <h1 className="auth-headline">Sign-up is closed</h1>
+            <p className="auth-tagline">
+              Ask an administrator to invite you, then use the link in your invitation email.
+            </p>
           </div>
-          <p className="small muted">
-            Ask an administrator to invite you, then use the link in your invitation
-            email.
-          </p>
           <Link to="/login" className="btn btn-secondary btn-block">
             Back to sign in
           </Link>
@@ -127,12 +128,14 @@ export function RegisterPage() {
     return (
       <div className="auth-screen">
         <div className="auth-card">
-          <i className="auth-mark" />
           <div className="auth-header">
-            <div className="auth-brand">Confirm your email</div>
-            <div className="auth-tagline">
-              {form.organization_name.trim()} is created once this checks out.
+            <div className="auth-brand">
+              <BrandLogo height={44} />
             </div>
+            <h1 className="auth-headline">Confirm your email</h1>
+            <p className="auth-tagline">
+              {form.organization_name.trim()} is created once this checks out.
+            </p>
           </div>
           <CodeEntry
             email={form.email.trim()}
@@ -157,13 +160,14 @@ export function RegisterPage() {
   return (
     <div className="auth-screen">
       <div className="auth-card auth-card-wide">
-        <i className="auth-mark" />
-
         <div className="auth-header">
-          <div className="auth-brand">Create your workspace</div>
-          <div className="auth-tagline">
-            You become its Super Admin, and can invite your team afterwards.
+          <div className="auth-brand">
+            <BrandLogo height={44} />
           </div>
+          <h1 className="auth-headline">Create your workspace</h1>
+          <p className="auth-tagline">
+            You become its Super Admin, and can invite your team afterwards.
+          </p>
         </div>
 
         <form
@@ -220,7 +224,7 @@ export function RegisterPage() {
                 {policy?.work_email_required
                   ? 'A work address is required to sign up. '
                   : ''}
-                This is how you sign in — we email a code each time, so there is no
+                This is how you sign in - we email a code each time, so there is no
                 password to choose or lose.
               </div>
             )}

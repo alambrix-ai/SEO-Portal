@@ -1,11 +1,11 @@
-/* Industry — design-system tokens and component classes. This file is the source of truth for the system's look; retune it here and see readme.md. */
-/* Brand palette tuned to the public seo-agent site: cream ground, warm brown
-   actions, plum secondary, sage success accents. */
-@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;700&family=Barlow+Condensed:wght@400;600&display=swap');
+/* Industry — design-system tokens and component classes.
+   Hybrid neo-brutalist console: cream / brown / plum / sage brand palette
+   with ink borders, hard offset shadows, and sharper type. */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
 
 :root {
   --color-bg: #f8f6f1;
-  --color-surface: #efe8dc;
+  --color-surface: #fffdf8;
   --color-text: #1a1a1a;
   --color-accent: #966b3f;
   --color-accent-2: #5b3e58;
@@ -22,7 +22,7 @@
   --color-neutral-800: #3a342e;
   --color-neutral-900: #1a1a1a;
 
-  /* Warm brown — primary actions / active chrome (CTA on the marketing site). */
+  /* Warm brown — primary actions / active chrome. */
   --color-accent-100: #f6efe6;
   --color-accent-200: #ead9c4;
   --color-accent-300: #d8b894;
@@ -33,7 +33,7 @@
   --color-accent-800: #5c4026;
   --color-accent-900: #3d2a18;
 
-  /* Plum — secondary brand (headline emphasis / ticker). */
+  /* Plum — secondary brand. */
   --color-accent-2-100: #f3eef2;
   --color-accent-2-200: #e2d5df;
   --color-accent-2-300: #c7a9bf;
@@ -44,87 +44,98 @@
   --color-accent-2-800: #352334;
   --color-accent-2-900: #221622;
 
-  /* Sage — positive / success accents from the site illustrations. */
+  /* Sage — positive / success. */
   --color-success: #7d9a83;
   --color-success-soft: color-mix(in srgb, #7d9a83 16%, transparent);
 
-  --font-heading: "Barlow Condensed", system-ui, sans-serif;
-  --font-heading-weight: 600;
-  --font-body: "Barlow", system-ui, sans-serif;
+  --font-heading: "Archivo", system-ui, sans-serif;
+  --font-heading-weight: 700;
+  --font-body: "DM Sans", system-ui, sans-serif;
 
-  --space-1: 3.4px;
-  --space-2: 6.8px;
-  --space-3: 10.2px;
-  --space-4: 13.6px;
-  --space-6: 20.4px;
-  --space-8: 27.2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
 
-  --radius-sm: 2px;
-  --radius-md: 4px;
-  --radius-lg: 7px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
 
-  /* Elevation — soft warm ink, not cool steel. */
-  --shadow-sm: 0 1px 2px color-mix(in srgb, #1a1a1a 12%, transparent);
-  --shadow-md: 0 3px 10px color-mix(in srgb, #1a1a1a 14%, transparent);
-  --shadow-lg: 0 12px 32px color-mix(in srgb, #1a1a1a 18%, transparent);
+  --border-ink: 2px solid var(--color-text);
+  --border-soft: 1.5px solid color-mix(in srgb, var(--color-text) 16%, transparent);
+
+  /* Soft elevation for overlays; hard offset for brand chrome. */
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #1a1a1a 10%, transparent);
+  --shadow-md: 0 6px 18px color-mix(in srgb, #1a1a1a 12%, transparent);
+  --shadow-lg: 0 18px 40px color-mix(in srgb, #1a1a1a 16%, transparent);
+  --shadow-hard-sm: 3px 3px 0 #1a1a1a;
+  --shadow-hard: 4px 4px 0 #1a1a1a;
+  --shadow-hard-lg: 6px 6px 0 #1a1a1a;
 }
 
 body {
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-body);
+  overflow-x: hidden;
+  max-width: 100%;
+}
+html {
+  overflow-x: hidden;
+  max-width: 100%;
 }
 h1, h2, h3, h4 { font-family: var(--font-heading); font-weight: var(--font-heading-weight); }
 
 .blueprint {
   position: relative;
-  border: 1px solid var(--color-divider);
-  border-radius: 0;
+  border: var(--border-ink);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-hard-sm);
 }
-/* The overlay image treatments (halftone, duotone) clip their overlay
-   (overflow:hidden); a blueprint wrapper draws its registration marks
-   outside the box, so when both classes share a wrapper the frame must
-   win. */
 .blueprint.halftone, .blueprint.plate, .blueprint.duotone { overflow: visible; }
+/* Registration corners — quieter, optional craft detail. */
 .blueprint > .corner {
-  position: absolute; width: 11px; height: 11px;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  color: color-mix(in srgb, var(--color-text) 28%, transparent);
+  pointer-events: none;
 }
-.blueprint > .corner::before, .blueprint > .corner::after {
-  content: ""; position: absolute; background: currentColor;
+.blueprint > .corner::before,
+.blueprint > .corner::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
 }
-.blueprint > .corner::before { left: 5px; top: 0; width: 1px; height: 100%; }
-.blueprint > .corner::after  { top: 5px; left: 0; width: 100%; height: 1px; }
-.blueprint > .corner.tl { top: -6px; left: -6px; }
-.blueprint > .corner.tr { top: -6px; right: -6px; }
-.blueprint > .corner.bl { bottom: -6px; left: -6px; }
-.blueprint > .corner.br { bottom: -6px; right: -6px; }
+.blueprint > .corner::before { left: 3.5px; top: 0; width: 1px; height: 100%; }
+.blueprint > .corner::after  { top: 3.5px; left: 0; width: 100%; height: 1px; }
+.blueprint > .corner.tl { top: -5px; left: -5px; }
+.blueprint > .corner.tr { top: -5px; right: -5px; }
+.blueprint > .corner.bl { bottom: -5px; left: -5px; }
+.blueprint > .corner.br { bottom: -5px; right: -5px; }
 
 .duotone{position:relative;overflow:hidden}
 .duotone::after{content:"";position:absolute;inset:0;pointer-events:none;
   background:var(--color-accent);mix-blend-mode:color}
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Components — built with the tokens above. Plain CSS
-   on plain HTML: no JavaScript, no build step. Each class is documented in
-   readme.md and demonstrated in foundations/ and components/.
-   ══════════════════════════════════════════════════════════════════════ */
-
 *, *::before, *::after { box-sizing: border-box; }
 body { margin: 0; font-size: 15px; line-height: 1.55; font-weight: 400; }
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 var(--space-2);
+  line-height: 1.12; letter-spacing: -0.02em; margin: 0 0 var(--space-2);
 }
-h1 { font-size: 42px; }
-h2 { font-size: 32px; }
-h3 { font-size: 25px; }
-h4 { font-size: 20px; }
-h5 { font-size: 16px; }
-h6 { font-size: 13px; }
-h6 { letter-spacing: 0.08em; text-transform: uppercase; }
+h1 { font-size: 40px; }
+h2 { font-size: 30px; }
+h3 { font-size: 22px; }
+h4 { font-size: 18px; }
+h5 { font-size: 15px; }
+h6 { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
 p { margin: 0 0 var(--space-3); }
-a { color: var(--color-accent); text-underline-offset: 3px; }
+a { color: var(--color-accent-800); text-underline-offset: 3px; }
 img { display: block; max-width: 100%; }
 figure { margin: 0; }
 figcaption {
@@ -136,7 +147,6 @@ figcaption {
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 ::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
 
-/* — rules — */
 .hr {
   height: 1px; border: 0; margin: var(--space-4) 0;
   background: var(--color-divider);
@@ -146,97 +156,165 @@ figcaption {
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   cursor: pointer; text-decoration: none;
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 14px; line-height: 1.2; color: var(--color-text); /* matches the .input's 14px —
-     the pair sits side by side in sign-up rows */
-  background: transparent; border: 1px solid transparent;
-  padding: var(--space-2) calc(var(--space-3) * 1.2);
-  border-radius: var(--radius-md);
+  font-family: var(--font-heading); font-weight: 700;
+  font-size: 13px; line-height: 1.2; letter-spacing: 0.02em;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: var(--border-ink);
+  padding: 9px 16px;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-hard-sm);
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
 .btn svg { display: block; }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn-primary { background: var(--color-accent); color: #fff; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+.btn:not(:disabled):hover {
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 #1a1a1a;
+}
+.btn:not(:disabled):active {
+  transform: translate(3px, 3px);
+  box-shadow: none;
+}
+.btn-primary {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-text);
+}
 .btn-primary:hover { background: var(--color-accent-700); }
 .btn-primary:active { background: var(--color-accent-800); }
-.btn-secondary { border-color: var(--color-divider); }
-.btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
-.btn-secondary:active { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
-.btn-ghost { color: var(--color-accent); padding-inline: var(--space-1); }
-.btn-ghost:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
-.btn-ghost:active { background: color-mix(in srgb, var(--color-accent) 18%, transparent); }
-.btn-icon { width: 36px; height: 36px; padding: 0; }
+.btn-secondary {
+  background: #fff;
+  border-color: var(--color-text);
+}
+.btn-secondary:hover { background: var(--color-accent-100); }
+.btn-ghost {
+  color: var(--color-accent-800);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.btn-ghost:hover,
+.btn-ghost:active {
+  transform: none;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+.btn-icon {
+  width: 40px; height: 40px; padding: 0;
+  border-radius: var(--radius-md);
+}
 .btn-block { width: 100%; margin-top: var(--space-2); }
 
 /* — forms — */
 .field > label {
-  display: block; font-size: 12px; margin-bottom: 5px;
-  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+  display: block; font-size: 12px; margin-bottom: 6px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-text) 72%, transparent);
 }
 .input {
-  width: 100%; min-height: 36px; padding: 6px 10px; font: inherit;
+  width: 100%; min-height: 42px; padding: 8px 12px; font: inherit;
   font-size: 14px; color: var(--color-text); caret-color: var(--color-accent);
-  background: var(--color-surface);
-  border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+  background: #fff;
+  border: var(--border-ink);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 0 transparent;
 }
-.input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
-.input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
-textarea.input { min-height: 90px; resize: vertical; }
+.input:hover { border-color: var(--color-text); }
+.input:focus-visible {
+  outline: none;
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+textarea.input { min-height: 96px; resize: vertical; }
 .radio { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
 .radio input, .seg-opt input {
   position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;
 }
 .radio .dot {
   width: 16px; height: 16px; flex: none; border-radius: 50%;
-  border: 1.5px solid var(--color-divider);
+  border: 2px solid var(--color-text);
 }
 .radio:hover .dot { border-color: var(--color-accent); }
 .radio input:checked + .dot {
   border-color: var(--color-accent); background: var(--color-accent);
-  box-shadow: inset 0 0 0 4px var(--color-bg);
+  box-shadow: inset 0 0 0 3px #fff;
 }
 .radio input:focus-visible + .dot { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .seg {
   display: inline-flex; overflow: hidden;
-  border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+  border: var(--border-ink);
+  border-radius: var(--radius-pill);
+  background: #fff;
+  box-shadow: var(--shadow-hard-sm);
 }
 .seg-opt {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 12px; font-size: 13px; cursor: pointer;
+  padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
 }
-.seg-opt + .seg-opt { border-left: 1px solid var(--color-divider); }
-.seg-opt:has(input:checked) { background: var(--color-accent); color: var(--color-bg); }
-.seg-opt:not(:has(input:checked)):hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.seg-opt + .seg-opt { border-left: 2px solid var(--color-text); }
+.seg-opt:has(input:checked) { background: var(--color-accent); color: #fff; }
+.seg-opt:not(:has(input:checked)):hover { background: var(--color-accent-100); }
 .seg-opt:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 
 /* — cards — */
 .card {
   display: flex; flex-direction: column; gap: var(--space-2);
-  padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: var(--border-ink);
+  box-shadow: var(--shadow-hard-sm);
 }
-.card-kicker { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-accent); }
+.card-kicker {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: color-mix(in srgb, var(--color-text) 58%, transparent);
+}
 .card-title {
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 17px; line-height: 1.2;
+  font-family: var(--font-heading); font-weight: 700;
+  font-size: 17px; line-height: 1.2; letter-spacing: -0.02em;
 }
-.card-body { margin: 0; font-size: 13px; opacity: 0.8; flex: 1; }
+.card-body { margin: 0; font-size: 13.5px; opacity: 0.82; flex: 1; line-height: 1.5; }
 .card-meta {
-  display: flex; align-items: center; gap: 6px; font-size: 11px;
-  color: color-mix(in srgb, var(--color-text) 50%, transparent);
+  display: flex; align-items: center; gap: 6px; font-size: 12px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
 }
-.elev-sm { box-shadow: var(--shadow-sm); }
-.elev-md { box-shadow: var(--shadow-md); }
-.elev-lg { box-shadow: var(--shadow-lg); }
+.elev-sm { box-shadow: var(--shadow-hard-sm); }
+.elev-md { box-shadow: var(--shadow-hard); }
+.elev-lg { box-shadow: var(--shadow-hard-lg); }
 
 /* — tags — */
 .tag {
-  display: inline-flex; align-items: center; font-size: 11px;
-  letter-spacing: 0.02em; padding: 3px 10px;
-  border-radius: calc(var(--radius-md) * 0.75);
+  display: inline-flex; align-items: center; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.02em; padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid transparent;
 }
-.tag-accent { background: var(--color-accent-100); color: var(--color-accent-800); }
-.tag-accent-2 { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
-.tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
-.tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent); }
+.tag-accent {
+  background: var(--color-accent-100);
+  color: var(--color-accent-800);
+  border-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+.tag-accent-2 {
+  background: var(--color-accent-2-100);
+  color: var(--color-accent-2-800);
+  border-color: color-mix(in srgb, var(--color-accent-2) 30%, transparent);
+}
+.tag-neutral {
+  background: var(--color-neutral-100);
+  color: var(--color-neutral-800);
+  border-color: color-mix(in srgb, var(--color-text) 12%, transparent);
+}
+.tag-outline {
+  border-color: var(--color-text);
+  color: var(--color-text);
+  background: #fff;
+}
 
 /* — navigation — */
 .nav {
@@ -245,48 +323,44 @@ textarea.input { min-height: 90px; resize: vertical; }
   border-bottom: none;
 }
 .nav-brand {
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 18px; margin-right: auto;
+  font-family: var(--font-heading); font-weight: 800;
+  font-size: 18px; margin-right: auto; letter-spacing: -0.03em;
 }
 .nav a { color: inherit; text-decoration: none; font-size: 14px; }
 .nav a:hover, .nav a[aria-current='page'] { color: var(--color-accent); }
 
-/* — tables — */
+/* — tables — calmer content surfaces — */
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th {
-  text-align: left; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-text) 60%, transparent);
-  padding: var(--space-2); border-bottom: 1px solid var(--color-divider);
+  text-align: left; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  padding: 10px 12px; border-bottom: 2px solid var(--color-text);
 }
 .table td {
-  padding: var(--space-2);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-text) 8%, transparent);
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
 }
-.table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+.table tbody tr:hover { background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
 
 /* — dialog — */
 .dialog-backdrop {
   position: fixed; inset: 0; display: grid; place-items: center;
   padding: var(--space-4);
-  background: color-mix(in srgb, var(--color-neutral-900) 50%, transparent);
+  background: color-mix(in srgb, var(--color-neutral-900) 55%, transparent);
+  backdrop-filter: blur(2px);
 }
 .dialog {
-  width: min(440px, 100%); display: flex; flex-direction: column; gap: var(--space-3);
-  padding: var(--space-4); border-radius: var(--radius-lg);
-  background: var(--color-surface); box-shadow: var(--shadow-lg);
+  width: min(460px, 100%); display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: var(--border-ink);
+  box-shadow: var(--shadow-hard-lg);
 }
 .dialog-title {
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 20px;
+  font-family: var(--font-heading); font-weight: 800;
+  font-size: 22px; letter-spacing: -0.03em;
 }
-.dialog-body { font-size: 14px; opacity: 0.85; }
+.dialog-body { font-size: 14px; opacity: 0.88; line-height: 1.5; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
-
-/* — blueprint frame: components are wireframe objects (see .blueprint
-     and .corner above) — square, transparent, hairline-bordered — */
-.card, .btn, .input, .tag, .seg, .dialog { border-radius: 0; }
-.card, .dialog { background: transparent; border: 1px solid var(--color-divider); }
-.btn { border: 1px solid var(--color-divider); }
-.btn-primary { border-color: var(--color-accent); }
-.btn-ghost { border-color: transparent; }
-

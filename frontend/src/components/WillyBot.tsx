@@ -1,16 +1,25 @@
 /**
- * Willy — Three.js assistant robot from the Willy asset pack.
+ * Willy - Three.js assistant robot from the Willy asset pack.
  * Transparent canvas only (no circular chrome).
+ *
+ * `mode="hero"` (login stage): larger framing; neck and eyes follow the pointer.
+ * `mode="dock"` (default): compact launcher with wave.
  */
 import { useEffect, useId, useRef } from 'react'
 
 type WillyBotProps = {
   /** Compact floating launcher size. */
   compact?: boolean
+  /** dock = assistant launcher; hero = login stage with neck tracking. */
+  mode?: 'dock' | 'hero'
   className?: string
 }
 
-export function WillyBot({ compact = false, className }: WillyBotProps) {
+export function WillyBot({
+  compact = false,
+  mode = 'dock',
+  className,
+}: WillyBotProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const canvasId = useId().replace(/:/g, '')
 
@@ -24,7 +33,7 @@ export function WillyBot({ compact = false, className }: WillyBotProps) {
         if (cancelled || !canvasRef.current) return
         if (!mod.mountWilly) return
         canvas.dataset.mounted = '1'
-        mod.mountWilly(canvas)
+        mod.mountWilly(canvas, { mode })
       })
       .catch(() => {
         const stage = canvas.parentElement
@@ -36,15 +45,15 @@ export function WillyBot({ compact = false, className }: WillyBotProps) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [mode])
 
   return (
     <div
-      className={`willy-bot${compact ? ' is-compact' : ''}${className ? ` ${className}` : ''}`}
-      aria-hidden={compact ? true : undefined}
+      className={`willy-bot${compact ? ' is-compact' : ''}${mode === 'hero' ? ' is-hero' : ''}${className ? ` ${className}` : ''}`}
+      aria-hidden={compact || mode === 'hero' ? true : undefined}
     >
       <div className="willy-fallback" hidden>
-        <span className="willy-fallback-mark">Willy</span>
+        <span className="willy-fallback-mark" />
       </div>
       <div className="willy-bot-stage">
         <canvas

@@ -1,5 +1,5 @@
 /**
- * AI Agents hub — the fleet, its switches, and the Configure dialog.
+ * AI Agents hub - the fleet, its switches, and the Configure dialog.
  *
  * Every card's status, autonomy label and countdown come from the API, so what
  * is shown is the agent's real state rather than an optimistic guess.
@@ -55,7 +55,7 @@ const AGENT_SECTIONS: {
     key: 'running',
     title: 'Active',
     description:
-      'Working on their own schedule, on the server — they keep going when ' +
+      'Working on their own schedule, on the server - they keep going when ' +
       'you close this page, until you pause them.',
   },
   {
@@ -75,7 +75,7 @@ export function AgentsPage() {
   const { push, fromResult, fromError } = useToasts()
   // Re-fetched whenever the workspace-wide autonomy switch in the header
   // changes. That control writes to the server and refreshes the session, but
-  // the cards are a separate request — without this dependency they kept
+  // the cards are a separate request - without this dependency they kept
   // showing the old autonomy labels until a navigation, which read as the
   // toggle doing nothing at all.
   const globalAutonomy = session?.organization.global_autonomy
@@ -165,7 +165,7 @@ export function AgentsPage() {
       <p className="page-intro">
         {data.length} agents run the SEO/AEO and programmatic ad pipeline end to end.
         Configure an agent (including which LLM connector it should write with), then
-        start it — nothing runs against your site until you have set its schedule and
+        start it - nothing runs against your site until you have set its schedule and
         daily cap. Once running, toggle it between autonomous execution and
         human-in-the-loop review.
       </p>
@@ -190,7 +190,7 @@ export function AgentsPage() {
                 // dash and its metric line is a placeholder. Showing all of that
                 // makes eleven identical cards of nothing and buries the one thing
                 // that matters, which is how to set it up. So the operational block
-                // appears once there is something true to say — the agent is live,
+                // appears once there is something true to say - the agent is live,
                 // it has been configured, or it has errored.
                 const live = agent.status !== 'paused' || agent.configured
                 const paused = agent.status !== 'running'
@@ -212,8 +212,8 @@ export function AgentsPage() {
                     <p className="card-body">{agent.description}</p>
 
                     {/* The state block. Everything a card says about itself lives
-                  here, so every card has the same three regions — identity,
-                  state, actions — and the action row lands at the same height
+                  here, so every card has the same three regions - identity,
+                  state, actions - and the action row lands at the same height
                   whether the agent has one line to report or four. */}
                     <div className="agent-state">
                       {live ? (
@@ -334,7 +334,7 @@ export function AgentsPage() {
                         // reason teaches the rule once.
                         title={
                           paused && !agent.configured
-                            ? 'Configure it first — schedule, LLM connector (when needed) and daily cap'
+                            ? 'Configure it first - schedule, LLM connector (when needed) and daily cap'
                             : undefined
                         }
                         onClick={() =>
@@ -358,8 +358,8 @@ export function AgentsPage() {
                           >
                             Configure
                           </button>
-                          {/* A manual run is not a preview — it publishes and spends
-                        like any other run — so it is gated on configuration
+                          {/* A manual run is not a preview - it publishes and spends
+                        like any other run - so it is gated on configuration
                         with everything else. */}
                           <button
                             type="button"
@@ -442,7 +442,7 @@ function ConfigureDialog({
   const [removing, setRemoving] = useState(false)
 
   const remove = async () => {
-    // Confirmed, because it also stops the agent — an irreversible-feeling
+    // Confirmed, because it also stops the agent - an irreversible-feeling
     // action deserves one question, and the question names the consequence.
     const ok = await confirm({
       title: `Remove ${agent.name}?`,
@@ -490,7 +490,7 @@ function ConfigureDialog({
       })
       push('Configuration saved', 'success')
       // A warning means it saved and will not do everything the operator
-      // probably expects — a notify channel with nothing behind it, say.
+      // probably expects - a notify channel with nothing behind it, say.
       // Shown after the success so the order matches what happened. Errors
       // never reach here: the API refuses those, and fromError shows why.
       for (const warning of saved.warnings ?? []) {
@@ -591,7 +591,7 @@ function ConfigureDialog({
                   disabled={!option.available}
                 >
                   {option.name}
-                  {option.available ? '' : ' — not connected'}
+                  {option.available ? '' : ' - not connected'}
                 </option>
               ))}
             </select>
@@ -608,7 +608,7 @@ function ConfigureDialog({
           {deadModel ? (
             <div className="notice">
               This agent was set to use {deadModel.name}, but that connector is no
-              longer connected — so it could not write. {deadModel.reason}
+              longer connected - so it could not write. {deadModel.reason}
             </div>
           ) : null}
         </>
@@ -616,7 +616,7 @@ function ConfigureDialog({
 
       {/* Not required, and deliberately so: blank means the whole site,
           which is the right default. The placeholder comes from the agent
-          itself — scope means a path here, a list of domains there, and a
+          itself - scope means a path here, a list of domains there, and a
           set of schema types somewhere else. */}
       <Field
         label="Scope / target"
@@ -662,7 +662,7 @@ function ConfigureDialog({
               disabled={!option.available}
             >
               {option.value}
-              {option.available ? '' : ' — needs a connector'}
+              {option.available ? '' : ' - needs a connector'}
             </option>
           ))}
         </select>
@@ -671,7 +671,7 @@ function ConfigureDialog({
       {deadChannel ? (
         <div className="notice">
           This agent was set to notify by {deadChannel.value}, but nothing is
-          connected that can send it — so those notifications were never
+          connected that can send it - so those notifications were never
           arriving. Reset to None. {deadChannel.reason}
         </div>
       ) : null}

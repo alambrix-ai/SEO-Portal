@@ -2,9 +2,10 @@
  * The authenticated shell: sidebar, header, and the page outlet.
  *
  * The navigation is built from the session's access map, so a role that cannot
- * see a module never gets a link to it — and the header's autonomy control and
+ * see a module never gets a link to it - and the header's autonomy control and
  * role switcher act on real state rather than local UI toggles.
  */
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 
 import type { ModuleKey, SessionOut } from '@/api/types'
@@ -12,6 +13,7 @@ import { useAuth } from '@/auth/AuthContext'
 import { AssistantDock } from '@/components/AssistantDock'
 import { BrandLogo } from '@/components/BrandLogo'
 import { NotificationBell } from '@/components/NotificationBell'
+import { useFitDensity } from '@/hooks/useFitDensity'
 import {
   AdminIcon,
   AdsIcon,
@@ -21,10 +23,21 @@ import {
   DashboardIcon,
   OffPageIcon,
   OnboardingIcon,
+  PortalIcon,
   ReportsIcon,
   SeoIcon,
   TechnicalIcon,
 } from '@/components/icons'
+
+const RAIL_STORAGE_KEY = 'alambrix.sidebar.rail'
+
+function readRailStowed(): boolean {
+  try {
+    return window.localStorage.getItem(RAIL_STORAGE_KEY) === 'stowed'
+  } catch {
+    return false
+  }
+}
 
 interface NavEntry {
   to: string
@@ -52,7 +65,7 @@ const NAV: NavEntry[] = [
     to: '/portal',
     label: 'Portal',
     module: null,
-    icon: AdminIcon,
+    icon: PortalIcon,
     portalAdminOnly: true,
   },
 ]
@@ -77,7 +90,7 @@ const TITLES: Record<string, string> = {
  * The number on a navigation item, or nothing.
  *
  * The counts come from the server as a route-keyed map, computed in one
- * place and filtered by the access map — so a role that cannot open a screen
+ * place and filtered by the access map - so a role that cannot open a screen
  * is not told how much is waiting on it.
  *
  * Approvals is the loud one because it is the only count that is work
@@ -88,7 +101,7 @@ const LOUD = new Set(['/approvals'])
 
 /** What each number means, for the title attribute. */
 const MEANING: Record<string, (n: number) => string> = {
-  '/agents': (n) => `${n} running`,
+  '/agents': (n) => `${n} ready or running`,
   '/connectors': (n) => `${n} connected`,
   '/approvals': (n) => `${n} awaiting your approval`,
   '/technical': (n) => `${n} open issue${n === 1 ? '' : 's'}`,
@@ -114,16 +127,43 @@ function badgeFor(to: string, session: SessionOut) {
 export function AppShell() {
   const { session, signOut, canView, patch } = useAuth()
   const location = useLocation()
+  const { ref: shellRef, fit } = useFitDensity<HTMLDivElement>()
+  const [railStowed, setRailStowed] = useState(false)
+
+  useEffect(() => {
+    setRailStowed(readRailStowed())
+  }, [])
+
+  function toggleRail() {
+    setRailStowed((current) => {
+      const next = !current
+      try {
+        window.localStorage.setItem(RAIL_STORAGE_KEY, next ? 'stowed' : 'open')
+      } catch {
+        /* ignore quota / private mode */
+      }
+      return next
+    })
+  }
 
   if (!session) return null
 
   const pageTitle = TITLES[location.pathname] ?? 'AutoMarket AI'
 
   return (
-    <div className="app-shell">
-      <nav className="sidebar" aria-label="Main navigation">
-        <NavLink to="/dashboard" className="sidebar-brand" aria-label="Alambrix — dashboard">
-          <BrandLogo height={24} />
+    <div
+      ref={shellRef}
+      className="app-shell"
+      data-fit-w={fit.widthBand}
+      data-fit-h={fit.heightBand}
+      data-rail={railStowed ? 'stowed' : 'open'}
+    >
+      <nav
+        className={`sidebar${railStowed ? ' is-stowed' : ''}`}
+        aria-label="Main navigation"
+      >
+        <NavLink to="/dashboard" className="sidebar-brand" aria-label="Alambrix - dashboard">
+          <BrandLogo height={28} />
         </NavLink>
 
         <div className="sidebar-nav">
@@ -131,7 +171,7 @@ export function AppShell() {
             if (portalAdminOnly && !session.is_portal_admin) {
               return null
             }
-            // Portal-disabled modules leave the product entirely — not a locked link.
+            // Portal-disabled modules leave the product entirely - not a locked link.
             if (module && !session.enabled_modules.includes(module)) {
               return null
             }
@@ -145,7 +185,7 @@ export function AppShell() {
                   aria-disabled="true"
                 >
                   <Icon />
-                  <span>{label}</span>
+                  <span className="nav-item-label">{label}</span>
                 </span>
               )
             }
@@ -154,9 +194,10 @@ export function AppShell() {
                 key={to}
                 to={to}
                 className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                title={railStowed ? label : undefined}
               >
                 <Icon />
-                <span>{label}</span>
+                <span className="nav-item-label">{label}</span>
                 {badgeFor(to, session)}
               </NavLink>
             )
@@ -170,6 +211,45 @@ export function AppShell() {
             {session.organization.name}
           </div>
         </div>
+
+        <button
+          type="button"
+          className="sidebar-rail-toggle"
+          onClick={toggleRail}
+          aria-pressed={railStowed}
+          aria-label={railStowed ? 'Summon rail - show navigation' : 'Stow rail - hide navigation'}
+          title={railStowed ? 'Summon rail' : 'Stow rail'}
+        >
+          <span className="sidebar-rail-toggle-mark" aria-hidden="true">
+            <svg viewBox="0 0 20 20" width="14" height="14" fill="none">
+              {railStowed ? (
+                <path
+                  d="M7.5 4.5L13 10l-5.5 5.5"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ) : (
+                <path
+                  d="M12.5 4.5L7 10l5.5 5.5"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+            </svg>
+          </span>
+          <span className="sidebar-rail-toggle-copy">
+            <span className="sidebar-rail-toggle-kicker">
+              {railStowed ? 'Nav tucked' : 'Need stage?'}
+            </span>
+            <span className="sidebar-rail-toggle-label">
+              {railStowed ? 'Summon rail' : 'Stow rail'}
+            </span>
+          </span>
+        </button>
       </nav>
 
       <div className="app-main">

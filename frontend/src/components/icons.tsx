@@ -1,7 +1,7 @@
 /**
  * Navigation and interface icons.
  *
- * Thin-stroke line icons at 1.5, per the design system — the same geometry the
+ * Thin-stroke line icons at 1.5, per the design system - the same geometry the
  * design uses for each nav item, so the sidebar reads as it was drawn.
  */
 import type { SVGProps } from 'react'
@@ -135,6 +135,18 @@ export function AdminIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M10 2.5L16.5 5V10C16.5 14 13.7 16.5 10 17.5C6.3 16.5 3.5 14 3.5 10V5L10 2.5Z" />
+    </Icon>
+  )
+}
+
+/** Platform control plane - layered panes, not the org Admin shield. */
+export function PortalIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="10" height="8" rx="1" />
+      <path d="M7 12.5h10v7H7z" />
+      <path d="M9.5 15h5M9.5 17.5h3.5" />
+      <circle cx="15.5" cy="6.5" r="2.2" />
     </Icon>
   )
 }
