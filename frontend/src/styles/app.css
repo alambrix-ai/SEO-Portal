@@ -762,6 +762,146 @@ input[type='range']:disabled::-webkit-slider-thumb {
   padding-top: var(--space-2);
   border-top: 1px solid var(--color-divider);
 }
+
+/* ── Confirm dialog (replaces window.confirm) ─────────────────────────────── */
+.confirm-backdrop {
+  z-index: 80;
+}
+
+.confirm-dialog {
+  width: min(440px, 100%);
+  padding: 0;
+  overflow: hidden;
+  animation: confirm-in 160ms ease;
+}
+
+@keyframes confirm-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.confirm-dialog.confirm-danger {
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-text));
+}
+
+.confirm-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px 22px 14px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-accent) 8%, var(--color-bg)) 0%,
+    var(--color-bg) 100%
+  );
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.confirm-danger .confirm-head {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-danger) 8%, var(--color-bg)) 0%,
+    var(--color-bg) 100%
+  );
+}
+
+.confirm-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+.confirm-glyph {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 20px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent-900);
+}
+
+.confirm-glyph-danger {
+  border-color: color-mix(in srgb, var(--color-danger) 40%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+}
+
+.confirm-eyebrow {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  margin-bottom: 4px;
+}
+
+.confirm-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 20px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.15;
+}
+
+.confirm-body {
+  padding: 16px 22px 6px;
+}
+
+.confirm-message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-text);
+}
+
+.confirm-detail {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--color-text) 62%, transparent);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px 18px;
+}
+
+.confirm-actions .btn {
+  min-width: 108px;
+}
+
+.confirm-actions .btn.confirm-primary-danger {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: #fff;
+}
+
+.confirm-actions .btn.confirm-primary-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 88%, black);
+  border-color: color-mix(in srgb, var(--color-danger) 88%, black);
+  color: #fff;
+}
+
+.confirm-dialog .corner {
+  /* Keep registration marks readable on the confirm panel. */
+  z-index: 1;
+}
 /* What a platform requires, in the dialog, before the operator tries. Framed
    as information rather than as an error, because at this point nothing has
    gone wrong — they are being told what to have ready. */

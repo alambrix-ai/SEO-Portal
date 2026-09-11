@@ -12,6 +12,7 @@ import type { PortalFeature, PortalOrganization } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { AgentIcon } from '@/components/AgentIcon'
 import { CardSection } from '@/components/CardSection'
+import { useConfirm } from '@/components/Confirm'
 import { ConnectorIcon } from '@/components/ConnectorIcon'
 import {
   AdminIcon,
@@ -87,6 +88,7 @@ function PortalFeatureIcon({ feature }: { feature: PortalFeature }) {
 export function PortalAdminPage() {
   const { session, refresh } = useAuth()
   const { fromResult, fromError } = useToasts()
+  const confirm = useConfirm()
   const [tab, setTab] = useState<Tab>('workspaces')
   const [selectedOrg, setSelectedOrg] = useState<PortalOrganization | null>(null)
   const [featureFilter, setFeatureFilter] = useState<FeatureKindFilter>('all')
@@ -506,15 +508,33 @@ export function PortalAdminPage() {
                           onChange={(next) => {
                             const turnOn = next === 'on'
                             if (turnOn === feature.enabled) return
-                            if (
-                              !turnOn &&
-                              !window.confirm(
-                                `Turn off ${feature.name}? Customers will no longer see it.`,
-                              )
-                            ) {
-                              return
-                            }
-                            void toggle(feature)
+                            void (async () => {
+                              if (!turnOn) {
+                                const ok = await confirm({
+                                  title: `Turn off ${feature.name}?`,
+                                  message:
+                                    'Customers will no longer see this in their console.',
+                                  detail:
+                                    'Existing data stays in the database. You can restore it later with Show disabled.',
+                                  confirmLabel: 'Turn off',
+                                  tone: 'danger',
+                                  icon:
+                                    feature.kind === 'connector' ? (
+                                      <ConnectorIcon
+                                        slug={feature.slug}
+                                        name={feature.name}
+                                        size={40}
+                                      />
+                                    ) : feature.kind === 'agent' ? (
+                                      <AgentIcon slug={feature.slug} size={40} />
+                                    ) : (
+                                      <PortalFeatureIcon feature={feature} />
+                                    ),
+                                })
+                                if (!ok) return
+                              }
+                              await toggle(feature)
+                            })()
                           }}
                         />
                       </li>

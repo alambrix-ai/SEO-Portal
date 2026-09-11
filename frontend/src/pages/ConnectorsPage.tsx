@@ -11,6 +11,7 @@ import { api } from '@/api/client'
 import type { ConnectorOut } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { CardSection } from '@/components/CardSection'
+import { useConfirm } from '@/components/Confirm'
 import { ConnectorIcon } from '@/components/ConnectorIcon'
 import { useToasts } from '@/components/Toasts'
 import { Dialog, ErrorState, Field, Loading, Tag } from '@/components/ui'
@@ -58,6 +59,7 @@ function statusTagTone(
 export function ConnectorsPage() {
   const { canWrite } = useAuth()
   const { push, fromError } = useToasts()
+  const confirm = useConfirm()
 
   const [category, setCategory] = useState('All')
   const categories = useResource(() => api.connectorCategories())
@@ -86,6 +88,16 @@ export function ConnectorsPage() {
 
   const disconnect = async (connector: ConnectorOut) => {
     if (!guard()) return
+    const ok = await confirm({
+      title: `Disconnect ${connector.name}?`,
+      message: 'Stored credentials will be removed from this workspace.',
+      detail:
+        'Agents that rely on this connector will report that they are waiting on a connection.',
+      confirmLabel: 'Disconnect',
+      tone: 'danger',
+      icon: <ConnectorIcon slug={connector.slug} name={connector.name} size={40} />,
+    })
+    if (!ok) return
     setBusySlug(connector.slug)
     try {
       await api.disconnect(connector.slug)
@@ -245,6 +257,7 @@ function ConnectDialog({
   onConnected: () => Promise<void>
 }) {
   const { push, fromError } = useToasts()
+  const confirm = useConfirm()
 
   // Non-secret values already stored are pre-filled; secrets start empty,
   // because the API deliberately never returns them.
@@ -282,14 +295,16 @@ function ConnectDialog({
   // credential and decided to remove the integration instead should not have
   // to cancel out and find another button.
   const remove = async () => {
-    if (
-      !window.confirm(
-        `Remove the stored credentials for ${connector.name}? The agents that ` +
-          'rely on it will report that they are waiting on a connector.',
-      )
-    ) {
-      return
-    }
+    const ok = await confirm({
+      title: `Remove ${connector.name} credentials?`,
+      message: 'Stored credentials for this connector will be deleted.',
+      detail:
+        'Agents that rely on it will report that they are waiting on a connector.',
+      confirmLabel: 'Remove credentials',
+      tone: 'danger',
+      icon: <ConnectorIcon slug={connector.slug} name={connector.name} size={40} />,
+    })
+    if (!ok) return
     setRemoving(true)
     try {
       await api.disconnect(connector.slug)

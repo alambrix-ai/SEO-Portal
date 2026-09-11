@@ -12,6 +12,7 @@ import type { AgentOut, LlmConnectorOut, NotifyChannelOut } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { AgentIcon } from '@/components/AgentIcon'
 import { CardSection } from '@/components/CardSection'
+import { useConfirm } from '@/components/Confirm'
 import { useToasts } from '@/components/Toasts'
 import {
   Blueprint,
@@ -416,6 +417,7 @@ function ConfigureDialog({
   onSaved: () => Promise<void>
 }) {
   const { push, fromError } = useToasts()
+  const confirm = useConfirm()
   const [schedule, setSchedule] = useState(agent.schedule)
   const [scope, setScope] = useState(agent.scope)
   // A channel the workspace can no longer deliver falls back to None, so
@@ -442,14 +444,16 @@ function ConfigureDialog({
   const remove = async () => {
     // Confirmed, because it also stops the agent — an irreversible-feeling
     // action deserves one question, and the question names the consequence.
-    if (
-      !window.confirm(
-        `Remove the configuration for ${agent.name}? It will stop, and you will ` +
-          'have to configure it again before it can run. Its run history is kept.',
-      )
-    ) {
-      return
-    }
+    const ok = await confirm({
+      title: `Remove ${agent.name}?`,
+      message: 'This clears its configuration and stops the agent.',
+      detail:
+        'You will need to configure it again before it can run. Run history is kept.',
+      confirmLabel: 'Remove configuration',
+      tone: 'danger',
+      icon: <AgentIcon slug={agent.slug} size={40} />,
+    })
+    if (!ok) return
     setRemoving(true)
     try {
       await api.resetAgentConfig(agent.slug)
