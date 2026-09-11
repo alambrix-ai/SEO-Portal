@@ -452,6 +452,109 @@ export const api = {
       body,
     }),
 
+  /**
+   * Stream Willy's reply over SSE (delta events + final structured payload).
+   * Uses fetch (not EventSource) so Bearer auth works.
+   */
+  assistantChatStream: async (
+    body: import('./types').AssistantChatRequest,
+    handlers: {
+      onDelta?: (text: string) => void
+      onStatus?: (text: string) => void
+      onFinal?: (payload: import('./types').AssistantChatResponse) => void
+      onError?: (detail: string) => void
+    } = {},
+    signal?: AbortSignal,
+  ): Promise<import('./types').AssistantChatResponse> => {
+    const send = async (): Promise<Response> => {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      }
+      const token = tokenStore.access
+      if (token) headers.Authorization = `Bearer ${token}`
+      return fetch(`${BASE_URL}/assistant/chat/stream`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal,
+      })
+    }
+
+    let response = await send()
+    if (response.status === 401) {
+      const refreshed = await refreshSession()
+      if (refreshed) {
+        response = await send()
+      } else {
+        tokenStore.clear()
+        onSessionLost?.()
+        throw await parseError(response)
+      }
+    }
+    if (!response.ok) throw await parseError(response)
+    if (!response.body) {
+      throw new ApiError(502, 'error', 'Streaming response had no body')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let finalPayload: import('./types').AssistantChatResponse | null = null
+    let streamError: string | null = null
+
+    const flushBlock = (block: string) => {
+      const lines = block.split(/\r?\n/)
+      let eventName = 'message'
+      const dataLines: string[] = []
+      for (const line of lines) {
+        if (line.startsWith('event:')) eventName = line.slice(6).trim()
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
+      }
+      if (!dataLines.length) return
+      let parsed: Record<string, unknown> = {}
+      try {
+        parsed = JSON.parse(dataLines.join('\n')) as Record<string, unknown>
+      } catch {
+        return
+      }
+      if (eventName === 'delta') {
+        const text = String(parsed.text ?? '')
+        if (text) handlers.onDelta?.(text)
+      } else if (eventName === 'status') {
+        handlers.onStatus?.(String(parsed.text ?? ''))
+      } else if (eventName === 'final') {
+        finalPayload = parsed as unknown as import('./types').AssistantChatResponse
+        handlers.onFinal?.(finalPayload)
+      } else if (eventName === 'error') {
+        streamError = String(parsed.detail ?? 'Streaming failed')
+        handlers.onError?.(streamError)
+      }
+    }
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let sep = buffer.indexOf('\n\n')
+      while (sep >= 0) {
+        const block = buffer.slice(0, sep)
+        buffer = buffer.slice(sep + 2)
+        if (block.trim()) flushBlock(block)
+        sep = buffer.indexOf('\n\n')
+      }
+    }
+    if (buffer.trim()) flushBlock(buffer)
+
+    if (streamError) {
+      throw new ApiError(502, 'error', streamError)
+    }
+    if (!finalPayload) {
+      throw new ApiError(502, 'error', 'Willy stream ended without a final reply')
+    }
+    return finalPayload
+  },
+
   // Meta
   health: () => fetch('/health').then((r) => r.json() as Promise<HealthStatus>),
 }

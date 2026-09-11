@@ -94,7 +94,12 @@ def _catalogue(db: Session, tenant_id: Any) -> dict[str, Any]:
     return {"agents": agents, "connectors": connectors}
 
 
-def _system_prompt(catalogue: dict[str, Any], mode: AssistantMode) -> str:
+def _system_prompt(
+    catalogue: dict[str, Any],
+    mode: AssistantMode,
+    *,
+    streaming: bool = False,
+) -> str:
     mode_rules = (
         "MODE: ask — Advise only. Explain which agents and connectors fit, "
         "why, and how the operator should connect them in the console. Do not "
@@ -112,6 +117,65 @@ def _system_prompt(catalogue: dict[str, Any], mode: AssistantMode) -> str:
         "credentials next and apply the connections for them. Never leave "
         "action_plan null when you can recommend at least one connector or agent."
     )
+
+    schema_block = """Respond with a single JSON object (no markdown fences around the whole object)
+shaped as:
+{
+  "reply": "Helpful markdown for the chat bubble (short paragraphs, **bold**, lists).",
+  "recommendations": {
+    "connectors": [{"slug": "...", "name": "...", "reason": "..."}],
+    "agents": [{"slug": "...", "name": "...", "reason": "...", "depends_on": ["connector_slug"]}]
+  },
+  "action_plan": null or {
+    "summary": "One line",
+    "steps": [
+      {
+        "id": "connect-wordpress",
+        "type": "connect_connector",
+        "slug": "wordpress",
+        "title": "Connect WordPress",
+        "reason": "...",
+        "fields": [{"key": "siteUrl", "label": "Site URL", "secret": false, "required": true}]
+      },
+      {
+        "id": "configure-on-page",
+        "type": "configure_agent",
+        "slug": "on_page_seo_sync",
+        "title": "Configure On-Page SEO Sync",
+        "reason": "...",
+        "config": {
+          "schedule": "Daily",
+          "scope": "/",
+          "notify_channel": "None",
+          "llm_connector": "anthropic_claude",
+          "max_actions_per_day": 20
+        }
+      },
+      {
+        "id": "resume-on-page",
+        "type": "resume_agent",
+        "slug": "on_page_seo_sync",
+        "title": "Start On-Page SEO Sync",
+        "reason": "..."
+      }
+    ]
+  }
+}"""
+
+    streaming_block = """Streaming output format (required):
+1) Write the user-facing markdown reply first (short paragraphs, **bold**, lists).
+   Do not wrap it in JSON and do not mention the marker below.
+2) Then a line that is exactly: <<<JSON>>>
+3) Then a JSON object (no markdown fences) shaped as:
+{
+  "recommendations": {
+    "connectors": [{"slug": "...", "name": "...", "reason": "..."}],
+    "agents": [{"slug": "...", "name": "...", "reason": "...", "depends_on": ["connector_slug"]}]
+  },
+  "action_plan": null or { "summary": "One line", "steps": [ ... same step shapes as catalogue guidance ... ] }
+}
+Do not include a "reply" key in the JSON — the markdown above is the reply."""
+
     return f"""You are Willy, the AutoMarket AI assistant inside THIS customer console.
 
 Scope (hard guardrail):
@@ -139,49 +203,7 @@ Memory (LlamaIndex chat engine):
 Catalogue (JSON):
 {json.dumps(catalogue, indent=2)}
 
-Respond with a single JSON object (no markdown fences around the whole object)
-shaped as:
-{{
-  "reply": "Helpful markdown for the chat bubble (short paragraphs, **bold**, lists).",
-  "recommendations": {{
-    "connectors": [{{"slug": "...", "name": "...", "reason": "..."}}],
-    "agents": [{{"slug": "...", "name": "...", "reason": "...", "depends_on": ["connector_slug"]}}]
-  }},
-  "action_plan": null or {{
-    "summary": "One line",
-    "steps": [
-      {{
-        "id": "connect-wordpress",
-        "type": "connect_connector",
-        "slug": "wordpress",
-        "title": "Connect WordPress",
-        "reason": "...",
-        "fields": [{{"key": "siteUrl", "label": "Site URL", "secret": false, "required": true}}]
-      }},
-      {{
-        "id": "configure-on-page",
-        "type": "configure_agent",
-        "slug": "on_page_seo_sync",
-        "title": "Configure On-Page SEO Sync",
-        "reason": "...",
-        "config": {{
-          "schedule": "Daily",
-          "scope": "/",
-          "notify_channel": "None",
-          "llm_connector": "anthropic_claude",
-          "max_actions_per_day": 20
-        }}
-      }},
-      {{
-        "id": "resume-on-page",
-        "type": "resume_agent",
-        "slug": "on_page_seo_sync",
-        "title": "Start On-Page SEO Sync",
-        "reason": "..."
-      }}
-    ]
-  }}
-}}
+{streaming_block if streaming else schema_block}
 
 Rules:
 - Only recommend slugs that exist in the catalogue.
@@ -504,6 +526,59 @@ def _provider() -> AnthropicProvider:
     )
 
 
+def _finalize_turn(
+    *,
+    catalogue: dict[str, Any],
+    mode: AssistantMode,
+    reply: str,
+    recommendations_raw: Any,
+    action_plan_raw: Any,
+    model: str,
+) -> dict[str, Any]:
+    recommendations = recommendations_raw or {"connectors": [], "agents": []}
+    if not isinstance(recommendations, dict):
+        recommendations = {"connectors": [], "agents": []}
+
+    known_c = {c["slug"] for c in catalogue["connectors"]}
+    known_a = {a["slug"] for a in catalogue["agents"]}
+    rec_connectors = [
+        row
+        for row in (recommendations.get("connectors") or [])
+        if isinstance(row, dict) and row.get("slug") in known_c
+    ]
+    rec_agents = [
+        row
+        for row in (recommendations.get("agents") or [])
+        if isinstance(row, dict) and row.get("slug") in known_a
+    ]
+
+    text = (reply or "").strip() or (
+        "I looked at your use case — open the recommendations below."
+    )
+    action_plan = None
+    if mode == "action":
+        action_plan = _normalize_action_plan(
+            action_plan_raw,
+            catalogue,
+            rec_connectors=rec_connectors,
+            rec_agents=rec_agents,
+        )
+        if action_plan and "credential" not in text.lower() and "connect" not in text.lower():
+            text = (
+                f"{text}\n\n"
+                "**Next:** I’ll collect any credentials below and connect / configure "
+                "each step for you."
+            ).strip()
+
+    return {
+        "reply": text,
+        "mode": mode,
+        "recommendations": {"connectors": rec_connectors, "agents": rec_agents},
+        "action_plan": action_plan,
+        "model": model or _env_model(),
+    }
+
+
 def chat(
     db: Session,
     *,
@@ -549,46 +624,108 @@ def chat(
         ) from exc
 
     parsed = _extract_json(result.text)
-    reply = str(parsed.get("reply") or "").strip() or (
-        "I looked at your use case — open the recommendations below."
+    return _finalize_turn(
+        catalogue=catalogue,
+        mode=mode,
+        reply=str(parsed.get("reply") or ""),
+        recommendations_raw=parsed.get("recommendations"),
+        action_plan_raw=parsed.get("action_plan"),
+        model=result.model or _env_model(),
     )
-    recommendations = parsed.get("recommendations") or {"connectors": [], "agents": []}
-    if not isinstance(recommendations, dict):
-        recommendations = {"connectors": [], "agents": []}
 
-    # Drop unknown slugs so the UI never offers a dead link.
-    known_c = {c["slug"] for c in catalogue["connectors"]}
-    known_a = {a["slug"] for a in catalogue["agents"]}
-    rec_connectors = [
-        row
-        for row in (recommendations.get("connectors") or [])
-        if isinstance(row, dict) and row.get("slug") in known_c
-    ]
-    rec_agents = [
-        row
-        for row in (recommendations.get("agents") or [])
-        if isinstance(row, dict) and row.get("slug") in known_a
-    ]
 
-    action_plan = None
-    if mode == "action":
-        action_plan = _normalize_action_plan(
-            parsed.get("action_plan"),
-            catalogue,
-            rec_connectors=rec_connectors,
-            rec_agents=rec_agents,
+def chat_stream(
+    db: Session,
+    *,
+    tenant_id: Any,
+    mode: AssistantMode,
+    message: str,
+    history: list[dict[str, str]] | None = None,
+):
+    """Yield SSE-ready dict events: status / delta / final / error."""
+    text = (message or "").strip()
+    if not text:
+        yield {"event": "error", "detail": "Describe your use case so the assistant can help."}
+        return
+
+    if _looks_off_topic(text):
+        log.info("Willy guardrail refused off-topic prompt (stream)")
+        payload = _refusal_payload(mode)
+        yield {"event": "delta", "text": payload["reply"]}
+        yield {"event": "final", "data": payload}
+        return
+
+    catalogue = _catalogue(db, tenant_id)
+    try:
+        provider = _provider()
+    except AssistantConfigError as exc:
+        yield {"event": "error", "detail": str(exc)}
+        return
+
+    yield {"event": "status", "text": "thinking"}
+
+    try:
+        from app.llm.willy_chat_engine import run_chat_engine_stream
+
+        reply_parts: list[str] = []
+        reply = ""
+        raw_tail = ""
+        model = _env_model()
+        for item in run_chat_engine_stream(
+            provider=provider,
+            system_prompt=_system_prompt(catalogue, mode, streaming=True),
+            message=text,
+            history=history,
+        ):
+            kind = item[0]
+            if kind == "delta":
+                piece = item[1]
+                reply_parts.append(piece)
+                yield {"event": "delta", "text": piece}
+            elif kind == "done":
+                reply = item[1] or "".join(reply_parts)
+                raw_tail = item[2] or ""
+                model = item[3] or model
+
+        parsed: dict[str, Any] = {}
+        if raw_tail.strip():
+            try:
+                parsed = _extract_json(raw_tail)
+            except AssistantUpstreamError:
+                parsed = {}
+
+        # Legacy fallback: whole response was JSON with a reply field.
+        if not (reply or "".join(reply_parts)) and parsed.get("reply"):
+            reply = str(parsed.get("reply") or "")
+            yield {"event": "delta", "text": reply}
+
+        final = _finalize_turn(
+            catalogue=catalogue,
+            mode=mode,
+            reply=reply or "".join(reply_parts),
+            recommendations_raw=parsed.get("recommendations"),
+            action_plan_raw=parsed.get("action_plan"),
+            model=model,
         )
-        if action_plan and "credential" not in reply.lower() and "connect" not in reply.lower():
-            reply = (
-                f"{reply}\n\n"
-                "**Next:** I’ll collect any credentials below and connect / configure "
-                "each step for you."
-            ).strip()
-
-    return {
-        "reply": reply,
-        "mode": mode,
-        "recommendations": {"connectors": rec_connectors, "agents": rec_agents},
-        "action_plan": action_plan,
-        "model": result.model or _env_model(),
-    }
+        streamed = ("".join(reply_parts) or reply).strip()
+        if streamed and final["reply"].startswith(streamed) and final["reply"] != streamed:
+            suffix = final["reply"][len(streamed) :]
+            if suffix:
+                yield {"event": "delta", "text": suffix}
+        yield {"event": "final", "data": final}
+    except AssistantConfigError as exc:
+        yield {"event": "error", "detail": str(exc)}
+    except LLMError as exc:
+        log.exception("SEO Assistant stream LLM failed")
+        yield {
+            "event": "error",
+            "detail": str(exc)
+            or "The assistant could not reach the LLM configured in the server .env.",
+        }
+    except Exception as exc:  # noqa: BLE001
+        log.exception("SEO Assistant stream failed")
+        yield {
+            "event": "error",
+            "detail": str(exc)
+            or "The assistant could not complete this turn.",
+        }

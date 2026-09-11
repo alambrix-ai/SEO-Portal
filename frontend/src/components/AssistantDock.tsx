@@ -125,26 +125,46 @@ export function AssistantDock() {
       .slice(-40)
       .map((m) => ({ role: m.role, content: m.content }))
     const userMsg: ChatMessage = { id: newId(), role: 'user', content: text }
-    setMessages((current) => [...current, userMsg])
+    const assistantId = newId()
+    setMessages((current) => [
+      ...current,
+      userMsg,
+      { id: assistantId, role: 'assistant', content: '' },
+    ])
     setBusy(true)
     setPlan(null)
     setStepIndex(0)
     setStepValues({})
     try {
-      const response = await api.assistantChat({
-        message: text,
-        mode,
-        history: priorHistory,
-      })
-      setMessages((current) => [
-        ...current,
+      const response = await api.assistantChatStream(
         {
-          id: newId(),
-          role: 'assistant',
-          content: response.reply,
-          payload: response,
+          message: text,
+          mode,
+          history: priorHistory,
         },
-      ])
+        {
+          onDelta: (chunk) => {
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === assistantId
+                  ? { ...message, content: message.content + chunk }
+                  : message,
+              ),
+            )
+          },
+        },
+      )
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                content: response.reply || message.content,
+                payload: response,
+              }
+            : message,
+        ),
+      )
       if (mode === 'action' && response.action_plan?.steps?.length) {
         setPlan(response.action_plan)
         setStepIndex(0)
@@ -156,6 +176,11 @@ export function AssistantDock() {
         )
       }
     } catch (caught) {
+      setMessages((current) =>
+        current.filter(
+          (message) => !(message.id === assistantId && !message.content.trim()),
+        ),
+      )
       fromError(caught)
     } finally {
       setBusy(false)
@@ -295,19 +320,41 @@ export function AssistantDock() {
                 role="log"
                 aria-live="polite"
               >
-                {messages.map((message) => (
+                {messages.map((message) => {
+                  const isPending =
+                    busy &&
+                    message.role === 'assistant' &&
+                    message.id === messages[messages.length - 1]?.id &&
+                    !message.content
+                  return (
                   <div
                     key={message.id}
-                    className={`assistant-bubble assistant-bubble-${message.role}`}
+                    className={`assistant-bubble assistant-bubble-${message.role}${
+                      busy &&
+                      message.role === 'assistant' &&
+                      message.id === messages[messages.length - 1]?.id
+                        ? ' is-streaming'
+                        : ''
+                    }${isPending ? ' assistant-bubble-pending' : ''}`}
                   >
                     <div className="assistant-bubble-role">
                       {message.role === 'user' ? 'You' : 'Willy'}
                     </div>
                     <div className="assistant-bubble-body">
                       {message.role === 'assistant' ? (
-                        <div className="assistant-md">
-                          <ReactMarkdown>{message.content}</ReactMarkdown>
-                        </div>
+                        message.content ? (
+                          <div className="assistant-md">
+                            <ReactMarkdown>{message.content}</ReactMarkdown>
+                          </div>
+                        ) : busy ? (
+                          <Loading
+                            label={
+                              mode === 'action'
+                                ? 'Building your action plan…'
+                                : 'Analysing your use case…'
+                            }
+                          />
+                        ) : null
                       ) : (
                         message.content
                       )}
@@ -316,18 +363,8 @@ export function AssistantDock() {
                       <RecommendationsBlock payload={message.payload} />
                     ) : null}
                   </div>
-                ))}
-                {busy ? (
-                  <div className="assistant-bubble assistant-bubble-assistant">
-                    <Loading
-                      label={
-                        mode === 'action'
-                          ? 'Building your action plan…'
-                          : 'Analysing your use case…'
-                      }
-                    />
-                  </div>
-                ) : null}
+                  )
+                })}
               </div>
 
               {plan && currentStep ? (

@@ -1,9 +1,12 @@
 """SEO Assistant HTTP API."""
 from __future__ import annotations
 
-from typing import Literal
+import json
+from collections.abc import Iterator
+from typing import Any, Literal
 
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import Field
 
 from app.api.deps import CurrentUserDep, DbSession
@@ -72,9 +75,7 @@ class AssistantChatResponse(ApiModel):
     model: str = ""
 
 
-@router.post("/chat", response_model=AssistantChatResponse)
-def chat(body: AssistantChatRequest, current: CurrentUserDep, db: DbSession) -> AssistantChatResponse:
-    """Analyse a use case and recommend (or plan) connectors and agents."""
+def _require_assistant_access(current: CurrentUserDep) -> None:
     if not current.module_enabled(Module.ONBOARDING):
         raise ForbiddenError(
             "The SEO Assistant is not enabled for this workspace. "
@@ -86,6 +87,12 @@ def chat(body: AssistantChatRequest, current: CurrentUserDep, db: DbSession) -> 
             "You do not have access to the SEO Assistant. "
             "Ask your workspace admin to grant Onboarding access for your role."
         )
+
+
+@router.post("/chat", response_model=AssistantChatResponse)
+def chat(body: AssistantChatRequest, current: CurrentUserDep, db: DbSession) -> AssistantChatResponse:
+    """Analyse a use case and recommend (or plan) connectors and agents."""
+    _require_assistant_access(current)
     result = seo_assistant.chat(
         db,
         tenant_id=current.tenant_id,
@@ -94,3 +101,40 @@ def chat(body: AssistantChatRequest, current: CurrentUserDep, db: DbSession) -> 
         history=[turn.model_dump() for turn in body.history],
     )
     return AssistantChatResponse(**result)
+
+
+@router.post("/chat/stream")
+def chat_stream(
+    body: AssistantChatRequest, current: CurrentUserDep, db: DbSession
+) -> StreamingResponse:
+    """Stream Willy's markdown reply as SSE, then a final structured payload."""
+    _require_assistant_access(current)
+
+    def generate() -> Iterator[bytes]:
+        for event in seo_assistant.chat_stream(
+            db,
+            tenant_id=current.tenant_id,
+            mode=body.mode,
+            message=body.message,
+            history=[turn.model_dump() for turn in body.history],
+        ):
+            name = str(event.get("event") or "message")
+            payload: dict[str, Any]
+            if name == "final":
+                payload = event.get("data") or {}
+                data = json.dumps(payload, default=str)
+            elif name in {"delta", "status"}:
+                data = json.dumps({"text": event.get("text") or ""})
+            else:
+                data = json.dumps({"detail": event.get("detail") or "error"})
+            yield f"event: {name}\ndata: {data}\n\n".encode("utf-8")
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

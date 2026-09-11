@@ -2904,6 +2904,7 @@ input[type='range']:disabled::-webkit-slider-thumb {
   border-radius: 16px;
   background: #fff;
   box-shadow: var(--shadow-sm);
+  flex: 0 0 auto;
 }
 
 .assistant-bubble-user {
@@ -2915,6 +2916,39 @@ input[type='range']:disabled::-webkit-slider-thumb {
 .assistant-bubble-assistant {
   align-self: flex-start;
   border-radius: 16px 16px 16px 4px;
+}
+
+.assistant-bubble-pending {
+  padding: 8px 12px;
+  max-width: max-content;
+}
+
+.assistant-bubble-pending .assistant-bubble-role {
+  margin-bottom: 2px;
+}
+
+.assistant-bubble-pending .loading,
+.assistant-bubble .loading {
+  padding: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+.assistant-bubble.is-streaming .assistant-md::after {
+  content: "";
+  display: inline-block;
+  width: 0.45em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: color-mix(in srgb, var(--color-accent) 75%, transparent);
+  animation: assistant-caret 0.9s steps(1) infinite;
+}
+
+@keyframes assistant-caret {
+  50% { opacity: 0; }
 }
 
 .assistant-bubble-role {

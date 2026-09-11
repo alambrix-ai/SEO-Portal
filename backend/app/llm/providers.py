@@ -13,6 +13,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import httpx
+
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.llm.base import LLMError, LLMUsage
@@ -99,6 +101,90 @@ class AnthropicProvider(HttpLLMProvider):
         return self._complete_payload(
             self._payload_messages(messages, system=system, max_tokens=resolved_max)
         )
+
+    def stream_messages(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        system: str = "",
+        max_tokens: int | None = None,
+    ):
+        """Yield plain-text deltas from Anthropic's streaming Messages API."""
+        import json
+
+        resolved_max = (
+            max_tokens
+            or self.default_max_tokens
+            or settings.llm_max_tokens
+        )
+        payload = self._payload_messages(
+            messages, system=system, max_tokens=resolved_max
+        )
+        payload["stream"] = True
+
+        client = self._http()
+        try:
+            with client.stream(
+                "POST",
+                self._endpoint(),
+                json=payload,
+                headers=self._headers(),
+                params=self._params(),
+            ) as response:
+                if response.status_code >= 400:
+                    detail = ""
+                    try:
+                        detail = (response.read() or b"").decode("utf-8", errors="replace")[:300]
+                    except Exception:  # noqa: BLE001
+                        detail = ""
+                    vendor_message = ""
+                    try:
+                        err_body = json.loads(detail) if detail else {}
+                        err = err_body.get("error") if isinstance(err_body, dict) else None
+                        if isinstance(err, dict):
+                            vendor_message = str(err.get("message") or "").strip()
+                    except Exception:  # noqa: BLE001
+                        vendor_message = ""
+                    if vendor_message:
+                        raise LLMError(f"{self.name}: {vendor_message}")
+                    from app.core.user_messages import message_for_http_status
+
+                    raise LLMError(
+                        message_for_http_status(response.status_code, service=self.name)
+                    )
+
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+                    if line.startswith("event:"):
+                        continue
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if not data or data == "[DONE]":
+                        continue
+                    try:
+                        event = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    etype = event.get("type")
+                    if etype == "content_block_delta":
+                        delta = event.get("delta") or {}
+                        if delta.get("type") == "text_delta":
+                            text = delta.get("text") or ""
+                            if text:
+                                yield text
+                    elif etype == "error":
+                        err = event.get("error") or {}
+                        raise LLMError(
+                            f"{self.name}: {err.get('message') or 'stream error'}"
+                        )
+        except LLMError:
+            raise
+        except httpx.TransportError as exc:
+            from app.core.user_messages import message_for_unreachable
+
+            raise LLMError(message_for_unreachable(self.name)) from exc
 
     def _parse(self, data: dict[str, Any]) -> tuple[str, LLMUsage, str]:
         if data.get("stop_reason") == "refusal":

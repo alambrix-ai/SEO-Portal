@@ -151,3 +151,121 @@ def run_chat_engine(
     response = engine.chat(user_turn)
     text = str(getattr(response, "response", None) or response)
     return LLMResponse(text=text, model=llm.last_model or provider.model)
+
+
+_STREAM_JSON_MARKER = "<<<JSON>>>"
+
+
+def _api_messages_from_memory(
+    *,
+    provider: AnthropicProvider,
+    history: list[dict[str, str]] | None,
+    user_turn: str,
+    token_limit: int,
+) -> list[dict[str, str]]:
+    """Token-trim prior turns via LlamaIndex memory, then flatten for Anthropic."""
+    llm = WillyAnthropicLLM(provider=provider)
+    memory = ChatMemoryBuffer.from_defaults(
+        token_limit=token_limit,
+        chat_history=_history_messages(history),
+        llm=llm,
+    )
+    memory.put(ChatMessage(role=MessageRole.USER, content=user_turn))
+    api_messages: list[dict[str, str]] = []
+    for msg in memory.get():
+        content = (msg.content or "").strip()
+        if not content:
+            continue
+        if msg.role == MessageRole.SYSTEM:
+            continue
+        role = "assistant" if msg.role == MessageRole.ASSISTANT else "user"
+        if api_messages and api_messages[-1]["role"] == role:
+            api_messages[-1]["content"] += "\n\n" + content
+        else:
+            api_messages.append({"role": role, "content": content})
+    if not api_messages or api_messages[-1]["role"] != "user":
+        api_messages.append({"role": "user", "content": user_turn})
+    if api_messages[0]["role"] != "user":
+        api_messages.insert(0, {"role": "user", "content": "(continued)"})
+    return api_messages
+
+
+def run_chat_engine_stream(
+    *,
+    provider: AnthropicProvider,
+    system_prompt: str,
+    message: str,
+    history: list[dict[str, str]] | None = None,
+    token_limit: int = _DEFAULT_TOKEN_LIMIT,
+):
+    """Yield ``("delta", text)`` for the markdown reply, then ``("done", reply, raw, model)``.
+
+    The model streams markdown first, then ``<<<JSON>>>`` and a JSON trailer for
+    recommendations / action_plan. Deltas stop at the marker so the UI never
+    shows raw JSON.
+    """
+    user_turn = (
+        f"{message.strip()}\n\n"
+        "Follow the streaming output format in the system instructions. "
+        "Use prior turns in memory for pronouns and follow-ups."
+    )
+    api_messages = _api_messages_from_memory(
+        provider=provider,
+        history=history,
+        user_turn=user_turn,
+        token_limit=token_limit,
+    )
+
+    buf = ""
+    emitted = 0
+    reply_done = False
+    json_only = False
+    looking = True
+    marker = _STREAM_JSON_MARKER
+
+    for chunk in provider.stream_messages(api_messages, system=system_prompt):
+        buf += chunk
+        if looking:
+            stripped = buf.lstrip()
+            if not stripped:
+                continue
+            looking = False
+            if stripped.startswith("{"):
+                # Legacy single-JSON response — buffer fully, parse reply later.
+                json_only = True
+                reply_done = True
+                continue
+
+        if json_only or reply_done:
+            continue
+
+        idx = buf.find(marker)
+        if idx >= 0:
+            piece = buf[emitted:idx]
+            if piece:
+                yield ("delta", piece)
+            emitted = idx
+            reply_done = True
+            continue
+        # Hold back enough chars for a marker that may span chunks.
+        safe_end = max(emitted, len(buf) - len(marker))
+        if safe_end > emitted:
+            yield ("delta", buf[emitted:safe_end])
+            emitted = safe_end
+
+    if json_only:
+        yield ("done", "", buf, provider.model)
+        return
+
+    if reply_done:
+        idx = buf.find(marker)
+        reply = buf[:idx].strip() if idx >= 0 else buf.strip()
+        raw_tail = buf[idx + len(marker) :].strip() if idx >= 0 else ""
+    else:
+        reply = buf.strip()
+        raw_tail = ""
+        if emitted < len(buf) and not reply_done:
+            # Flush remainder as markdown when no marker appeared.
+            yield ("delta", buf[emitted:])
+
+    yield ("done", reply, raw_tail or "", provider.model)
