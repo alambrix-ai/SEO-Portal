@@ -178,7 +178,7 @@ try {
   }
 
   // Printed directly on the torso, below the orange chest button.
-  print('SEO AGENT', 0.7, 0.14, 0, -0.53, 0.365, agent, '#38422b', 130, MONO);
+  print('WILLY', 0.7, 0.14, 0, -0.53, 0.365, agent, '#38422b', 130, MONO);
 
   // Redraw every label at the resolution it is about to be shown at. Called
   // from the resize pass, where the frustum width is known; the 12% deadband

@@ -1,6 +1,5 @@
 /**
- * Floating SEO Assistant — compact animated bot bottom-left on every page.
- * Opens a panel for Ask / Action chat without a dedicated route.
+ * Floating Willy — compact animated bot bottom-right on every page.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -17,7 +16,7 @@ import { AgentIcon } from '@/components/AgentIcon'
 import { ConnectorIcon } from '@/components/ConnectorIcon'
 import { WillyBot } from '@/components/WillyBot'
 import { useToasts } from '@/components/Toasts'
-import { Field, Loading, Segmented, Tag } from '@/components/ui'
+import { Field, Loading, Tag } from '@/components/ui'
 
 interface ChatMessage {
   id: string
@@ -41,8 +40,7 @@ export function AssistantDock() {
     {
       id: 'welcome',
       role: 'assistant',
-      content:
-        'Tell me what you want to achieve — organic growth, AEO answers, backlinks, ads protection, or something more specific. I will map it to the right connectors and agents on this platform.',
+      content: 'Hi — I’m Willy. What do you want to get done?',
     },
   ])
   const [plan, setPlan] = useState<ActionPlan | null>(null)
@@ -60,16 +58,16 @@ export function AssistantDock() {
     if (!session) return null
     if (!moduleEnabled) {
       return {
-        title: 'Assistant not available for this workspace',
+        title: 'Willy is not available for this workspace',
         body:
-          'The SEO Assistant is turned off for this workspace (Onboarding is disabled). Ask a platform administrator to enable it, or join a workspace where it is available.',
+          'Willy is turned off for this workspace (Onboarding is disabled). Ask a platform administrator to enable it, or join a workspace where it is available.',
       }
     }
     if (access('onboarding') === 'none' || !roleAllowed) {
       return {
         title: 'You do not have access',
         body:
-          'Your workspace admin has not granted you permission to use the SEO Assistant. Ask an admin to give your role access to Onboarding (view or full), then sign in again.',
+          'Your workspace admin has not granted you permission to use Willy. Ask an admin to give your role access to Onboarding (view or full), then sign in again.',
       }
     }
     return null
@@ -101,7 +99,7 @@ export function AssistantDock() {
     if (!allowed) {
       push(
         accessBlock?.body ||
-          'You do not have access to the SEO Assistant. Ask your workspace admin.',
+          'You do not have access to Willy. Ask your workspace admin.',
         'warning',
       )
       return
@@ -211,26 +209,19 @@ export function AssistantDock() {
         <section
           className="assistant-dock-panel"
           role="dialog"
-          aria-label="SEO Assistant"
+          aria-label="Willy"
           aria-modal="false"
         >
           <header className="assistant-dock-header">
             <div className="assistant-dock-brand">
               <div className="assistant-dock-heading">
-                <div className="assistant-dock-kicker-row">
-                  <span className="assistant-eyebrow">Smart setup</span>
-                  <span className="assistant-dock-live">Online</span>
-                </div>
-                <strong>SEO Assistant</strong>
-                <span className="assistant-dock-sub">
-                  Describe a goal — Willy maps connectors and agents for your workspace.
-                </span>
+                <strong>Willy</strong>
               </div>
             </div>
             <button
               type="button"
               className="assistant-dock-close"
-              aria-label="Close assistant"
+              aria-label="Close Willy"
               onClick={() => setOpen(false)}
             >
               <span aria-hidden="true">×</span>
@@ -251,25 +242,6 @@ export function AssistantDock() {
             </div>
           ) : (
             <>
-              <div className="assistant-dock-toolbar">
-                <div className="assistant-dock-modes">
-                  <Segmented
-                    name="assistant-dock-mode"
-                    value={mode}
-                    options={[
-                      { value: 'ask', label: 'Ask' },
-                      { value: 'action', label: 'Action' },
-                    ]}
-                    onChange={(next) => setMode(next as AssistantMode)}
-                  />
-                </div>
-                <span className="assistant-dock-mode-hint">
-                  {mode === 'ask'
-                    ? 'Guidance only — nothing is changed in your workspace.'
-                    : 'Guided connect & configure with your confirmation.'}
-                </span>
-              </div>
-
               <div className="assistant-chat-log" role="log" aria-live="polite">
                 {messages.map((message) => (
                   <div
@@ -277,7 +249,7 @@ export function AssistantDock() {
                     className={`assistant-bubble assistant-bubble-${message.role}`}
                   >
                     <div className="assistant-bubble-role">
-                      {message.role === 'user' ? 'You' : 'Assistant'}
+                      {message.role === 'user' ? 'You' : 'Willy'}
                     </div>
                     <div className="assistant-bubble-body">{message.content}</div>
                     {message.payload?.recommendations ? (
@@ -398,15 +370,39 @@ export function AssistantDock() {
                 </div>
               ) : null}
 
-              <div className="assistant-composer">
-                <label className="assistant-composer-label" htmlFor="assistant-dock-input">
-                  Your use case
-                </label>
+              <div className="assistant-query">
+                <div
+                  className="assistant-query-modes"
+                  role="radiogroup"
+                  aria-label="Assistant mode"
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === 'ask'}
+                    className={`assistant-capsule${mode === 'ask' ? ' is-active' : ''}`}
+                    onClick={() => setMode('ask')}
+                  >
+                    Ask
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === 'action'}
+                    className={`assistant-capsule${mode === 'action' ? ' is-active' : ''}`}
+                    onClick={() => setMode('action')}
+                  >
+                    Action
+                  </button>
+                  <span className="assistant-query-hint">
+                    {mode === 'ask' ? 'Guidance only' : 'Connect & configure'}
+                  </span>
+                </div>
                 <textarea
                   id="assistant-dock-input"
-                  className="input assistant-input"
-                  rows={3}
-                  placeholder="e.g. Analyse our product pages and make them SEO-ready for organic and AI search…"
+                  className="assistant-query-input"
+                  rows={2}
+                  placeholder="Ask Willy…"
                   value={draft}
                   disabled={busy}
                   onChange={(event) => setDraft(event.target.value)}
@@ -417,15 +413,15 @@ export function AssistantDock() {
                     }
                   }}
                 />
-                <div className="assistant-composer-actions">
+                <div className="assistant-query-footer">
                   <span className="small muted">Ctrl / ⌘ + Enter</span>
                   <button
                     type="button"
-                    className="btn btn-primary"
+                    className="btn btn-primary assistant-query-send"
                     disabled={busy || !draft.trim()}
                     onClick={() => void send()}
                   >
-                    {busy ? 'Thinking…' : mode === 'action' ? 'Plan setup' : 'Ask assistant'}
+                    {busy ? 'Thinking…' : mode === 'action' ? 'Plan' : 'Ask'}
                   </button>
                 </div>
               </div>
@@ -440,17 +436,16 @@ export function AssistantDock() {
             type="button"
             className="assistant-ask-me"
             onClick={() => setOpen(true)}
-            aria-label="Ask Willy, the SEO Assistant"
+            aria-label="Ask Willy"
           >
             <span className="assistant-ask-me-dot" aria-hidden="true" />
-            <span className="assistant-ask-me-text">Ask me</span>
-            <span className="assistant-ask-me-sub">SEO · AEO · setup</span>
+            <span className="assistant-ask-me-text">Ask Willy</span>
           </button>
         ) : null}
         <button
           type="button"
           className="assistant-dock-launcher"
-          aria-label={open ? 'Hide SEO Assistant' : 'Open SEO Assistant'}
+          aria-label={open ? 'Hide Willy' : 'Open Willy'}
           aria-expanded={open}
           onClick={() => setOpen((current) => !current)}
         >

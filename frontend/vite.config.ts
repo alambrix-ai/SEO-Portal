@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import { fileURLToPath, URL } from 'node:url'
 
 const threeVendor = fileURLToPath(
-  new URL('./public/vendor/three/three.module.min.js', import.meta.url),
+  new URL('./src/vendor/three/three.module.min.js', import.meta.url),
 )
 
 export default defineConfig({
@@ -11,7 +11,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
-      // Bundled Three.js (MIT) — absolute /vendor/... URLs break Vite/Rollup.
+      // Bundled Three.js (MIT). Keep under src/ — Vite cannot import from public/.
       three: threeVendor,
     },
   },

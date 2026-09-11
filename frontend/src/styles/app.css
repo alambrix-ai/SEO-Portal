@@ -2455,7 +2455,8 @@ input[type='range']:disabled::-webkit-slider-thumb {
   gap: 2px;
   min-width: 118px;
   padding: 10px 14px 11px;
-  border: 1px solid color-mix(in srgb, var(--color-accent-700) 35%, var(--color-divider));
+  border: 0;
+  border-radius: 18px;
   background: #fff;
   color: var(--color-text);
   box-shadow: var(--shadow-md);
@@ -2467,14 +2468,13 @@ input[type='range']:disabled::-webkit-slider-thumb {
 .assistant-ask-me::after {
   content: "";
   position: absolute;
-  right: -7px;
-  bottom: 14px;
+  right: -6px;
+  bottom: 16px;
   width: 12px;
   height: 12px;
   background: #fff;
-  border-right: 1px solid color-mix(in srgb, var(--color-accent-700) 35%, var(--color-divider));
-  border-bottom: 1px solid color-mix(in srgb, var(--color-accent-700) 35%, var(--color-divider));
   transform: rotate(-45deg);
+  box-shadow: 2px 2px 4px color-mix(in srgb, var(--color-text) 10%, transparent);
 }
 
 .assistant-ask-me:hover,
@@ -2502,12 +2502,6 @@ input[type='range']:disabled::-webkit-slider-thumb {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-accent-900);
-}
-
-.assistant-ask-me-sub {
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
 }
 
 /* Bare Willy — transparent hit target only. */
@@ -2644,25 +2638,41 @@ input[type='range']:disabled::-webkit-slider-thumb {
   flex-wrap: wrap;
 }
 
-.assistant-dock-live {
+.assistant-capsule {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
-  padding: 2px 7px;
+  padding: 4px 11px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  color: var(--color-accent-800);
   font-family: var(--font-heading);
   font-weight: var(--font-heading-weight);
-  font-size: 10px;
-  letter-spacing: 0.1em;
+  font-size: 11px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #0f6b58;
-  background: color-mix(in srgb, #20a789 14%, #fff);
-  border: 1px solid color-mix(in srgb, #20a789 32%, transparent);
+  cursor: pointer;
+  line-height: 1.2;
 }
 
-.assistant-dock-live::before {
+.assistant-capsule.is-active {
+  background: var(--color-accent-900);
+  color: #f5f7fa;
+}
+
+.assistant-capsule-live {
+  cursor: default;
+  color: #0f6b58;
+  background: color-mix(in srgb, #20a789 16%, transparent);
+}
+
+.assistant-capsule-live::before {
   content: "";
   width: 6px;
   height: 6px;
+  border-radius: 50%;
   background: #20a789;
 }
 
@@ -2689,11 +2699,12 @@ input[type='range']:disabled::-webkit-slider-thumb {
   flex: none;
   display: grid;
   place-items: center;
-  border: 1px solid var(--color-divider);
-  background: #fff;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
   color: var(--color-text);
   cursor: pointer;
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1;
   padding: 0;
 }
@@ -2701,31 +2712,8 @@ input[type='range']:disabled::-webkit-slider-thumb {
 .assistant-dock-close:hover,
 .assistant-dock-close:focus-visible {
   outline: none;
-  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-divider));
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
   color: var(--color-accent-900);
-}
-
-.assistant-dock-toolbar {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 18px 0;
-}
-
-.assistant-dock-modes {
-  padding: 3px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-divider);
-}
-
-.assistant-dock-modes .seg {
-  width: 100%;
-}
-
-.assistant-dock-mode-hint {
-  font-size: 12px;
-  line-height: 1.45;
-  color: color-mix(in srgb, var(--color-text) 58%, transparent);
 }
 
 .assistant-dock-locked {
@@ -2739,12 +2727,12 @@ input[type='range']:disabled::-webkit-slider-thumb {
   margin: 0 auto 12px;
   display: grid;
   place-items: center;
+  border-radius: 999px;
   font-family: var(--font-heading);
   font-weight: var(--font-heading-weight);
   font-size: 18px;
   color: var(--color-danger);
   background: color-mix(in srgb, var(--color-danger) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-danger) 28%, transparent);
 }
 
 .assistant-dock-locked-title {
@@ -2765,14 +2753,14 @@ input[type='range']:disabled::-webkit-slider-thumb {
 
 .assistant-dock-panel .assistant-chat-log {
   flex: 1;
-  min-height: 190px;
+  min-height: 200px;
   max-height: none;
   overflow-y: auto;
   padding: 14px 18px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  background: color-mix(in srgb, var(--color-surface) 45%, #fff);
+  gap: 10px;
+  background: color-mix(in srgb, var(--color-surface) 40%, #fff);
 }
 
 .assistant-dock-step {
@@ -2785,38 +2773,64 @@ input[type='range']:disabled::-webkit-slider-thumb {
   box-shadow: var(--shadow-sm);
 }
 
-.assistant-dock-panel .assistant-composer {
-  padding: 14px 18px 16px;
+/* Query / search bar with Ask · Action capsules inside */
+.assistant-query {
+  margin: 0 14px 14px;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   background: #fff;
-  border-top: 1px solid var(--color-divider);
+  border: 1px solid color-mix(in srgb, var(--color-text) 12%, transparent);
+  border-radius: 18px;
+  box-shadow: var(--shadow-sm);
 }
 
-.assistant-composer-label {
-  display: block;
-  margin-bottom: 6px;
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
+.assistant-query-modes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.assistant-query-hint {
+  margin-left: auto;
   font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--color-accent-800);
+  color: color-mix(in srgb, var(--color-text) 50%, transparent);
 }
 
-.assistant-dock-panel .assistant-input {
-  min-height: 78px;
+.assistant-query-input {
+  width: 100%;
+  min-height: 56px;
   resize: none;
-  background: #fff;
-  border-color: color-mix(in srgb, var(--color-text) 16%, transparent);
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.45;
+  padding: 2px 2px 0;
 }
 
-.assistant-dock-panel .assistant-input:focus {
-  border-color: var(--color-accent);
+.assistant-query-input:focus {
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent);
 }
 
-.assistant-dock-panel .assistant-composer-actions .btn-primary {
-  min-width: 132px;
+.assistant-query-input::placeholder {
+  color: color-mix(in srgb, var(--color-text) 42%, transparent);
+}
+
+.assistant-query-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.assistant-query-send {
+  border-radius: 999px;
+  min-width: 72px;
+  padding-inline: 16px;
 }
 
 .assistant-eyebrow {
@@ -2829,22 +2843,23 @@ input[type='range']:disabled::-webkit-slider-thumb {
 }
 
 .assistant-bubble {
-  max-width: 94%;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
+  max-width: 92%;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 16px;
   background: #fff;
   box-shadow: var(--shadow-sm);
 }
 
 .assistant-bubble-user {
   align-self: flex-end;
-  background: color-mix(in srgb, var(--color-accent-100) 70%, #fff);
-  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  background: color-mix(in srgb, var(--color-accent-100) 75%, #fff);
+  border-radius: 16px 16px 4px 16px;
 }
 
 .assistant-bubble-assistant {
   align-self: flex-start;
-  border-left: 3px solid var(--color-accent);
+  border-radius: 16px 16px 16px 4px;
 }
 
 .assistant-bubble-role {
@@ -2897,25 +2912,6 @@ input[type='range']:disabled::-webkit-slider-thumb {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-}
-
-.assistant-composer {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.assistant-input {
-  resize: vertical;
-  min-height: 72px;
-  width: 100%;
-}
-
-.assistant-composer-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
 }
 
 .assistant-step-mark {
