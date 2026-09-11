@@ -110,6 +110,20 @@ class UserOut(ApiModel):
     last_login_at: datetime | None = None
 
 
+class WorkspaceCardOut(ApiModel):
+    """One seat on the workspace switcher / onboarding cards."""
+
+    id: str
+    name: str
+    slug: str
+    primary_domain: str = ""
+    role: Role
+    role_label: str
+    onboarding_complete: bool
+    is_current: bool
+    is_owner: bool = False
+
+
 class SessionOut(ApiModel):
     """Everything the console needs on load: identity, org, and access map."""
 
@@ -134,6 +148,21 @@ class SessionOut(ApiModel):
     #: SEO & AEO and Technical SEO share one module and count different
     #: things. Absent or zero means the badge is not drawn.
     nav_counts: dict[str, int] = {}
+    #: Every workspace this address can open. Isolated by tenant_id.
+    workspaces: list[WorkspaceCardOut] = []
+
+
+class CreateWorkspaceRequest(ApiModel):
+    name: str = Field(min_length=2, max_length=160)
+    primary_domain: str = Field(default="", max_length=255)
+
+    @field_validator("primary_domain")
+    @classmethod
+    def _clean_domain(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        for prefix in ("https://", "http://", "www."):
+            cleaned = cleaned.removeprefix(prefix)
+        return cleaned.rstrip("/")
 
 
 class AuthResponse(ApiModel):

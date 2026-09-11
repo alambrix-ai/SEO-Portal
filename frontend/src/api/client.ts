@@ -290,6 +290,18 @@ export const api = {
 
   me: () => request<SessionOut>('/auth/me'),
 
+  workspaces: () => request<import('./types').WorkspaceCard[]>('/workspaces'),
+  createWorkspace: (payload: { name: string; primary_domain?: string }) =>
+    request<AuthResponse>('/workspaces', { method: 'POST', body: payload }),
+  switchWorkspace: (organizationId: string) =>
+    request<AuthResponse>(`/workspaces/${organizationId}/switch`, {
+      method: 'POST',
+    }),
+  deleteWorkspace: (organizationId: string) =>
+    request<AuthResponse>(`/workspaces/${organizationId}`, {
+      method: 'DELETE',
+    }),
+
   /** Revoke every session, this one included. The passwordless remedy. */
   signOutEverywhere: () =>
     request<Message>('/auth/sign-out-everywhere', { method: 'POST' }),
@@ -314,11 +326,14 @@ export const api = {
     request<Message>('/notifications/seen', { method: 'POST' }),
 
   // Dashboard & reports
-  dashboard: () => request<DashboardOut>('/dashboard'),
-  reports: (range: '7d' | '30d' | '90d') => request<ReportsOut>(`/reports?range=${range}`),
+  dashboard: (signal?: AbortSignal) =>
+    request<DashboardOut>('/dashboard', { signal }),
+  reports: (range: '7d' | '30d' | '90d', signal?: AbortSignal) =>
+    request<ReportsOut>(`/reports?range=${range}`, { signal }),
 
   // Onboarding
-  onboarding: () => request<OnboardingOut>('/onboarding'),
+  onboarding: (signal?: AbortSignal) =>
+    request<OnboardingOut>('/onboarding', { signal }),
   saveOnboarding: (payload: Partial<{
     step: number
     domain: string
@@ -329,9 +344,10 @@ export const api = {
     request<ActionResult>('/onboarding/complete', { method: 'POST' }),
 
   // Agents
-  agents: () => request<AgentOut[]>('/agents'),
+  agents: (signal?: AbortSignal) => request<AgentOut[]>('/agents', { signal }),
   agent: (slug: string) => request<AgentOut>(`/agents/${slug}`),
-  agentOptions: () => request<AgentOptions>('/agents/options'),
+  agentOptions: (signal?: AbortSignal) =>
+    request<AgentOptions>('/agents/options', { signal }),
   agentRuns: (slug: string) => request<AgentRun[]>(`/agents/${slug}/runs`),
   pauseAgent: (slug: string) =>
     request<ActionResult>(`/agents/${slug}/pause`, { method: 'POST' }),
@@ -353,18 +369,24 @@ export const api = {
     request<ActionResult>(`/agents/${slug}/run`, { method: 'POST' }),
 
   // SEO
-  seo: (search = '') =>
-    request<SeoWorkspace>(`/seo${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  seo: (search = '', signal?: AbortSignal) =>
+    request<SeoWorkspace>(
+      `/seo${search ? `?search=${encodeURIComponent(search)}` : ''}`,
+      { signal },
+    ),
   seoPage: (id: string) => request<SeoPageDetail>(`/seo/pages/${id}`),
 
   /** The Technical SEO screen: findings, counts and what to do. */
-  seoAudit: (params: { status?: string; kind?: string; severity?: string } = {}) => {
+  seoAudit: (
+    params: { status?: string; kind?: string; severity?: string } = {},
+    signal?: AbortSignal,
+  ) => {
     const query = new URLSearchParams()
     for (const [key, value] of Object.entries(params)) {
       if (value) query.set(key, value)
     }
     const suffix = query.toString()
-    return request<SeoAuditOut>(`/seo/audit${suffix ? `?${suffix}` : ''}`)
+    return request<SeoAuditOut>(`/seo/audit${suffix ? `?${suffix}` : ''}`, { signal })
   },
   ignoreIssue: (id: string, note: string) =>
     request<ActionResult>(`/seo/audit/${id}/ignore`, { method: 'POST', body: { note } }),
@@ -374,14 +396,15 @@ export const api = {
     request<ActionResult>(`/seo/pages/${id}/request-approval`, { method: 'POST' }),
 
   // Off-page
-  offpage: () => request<OffPageWorkspace>('/offpage'),
+  offpage: (signal?: AbortSignal) =>
+    request<OffPageWorkspace>('/offpage', { signal }),
   launchOutreach: (targetId: string) =>
     request<ActionResult>(`/offpage/targets/${targetId}/outreach`, { method: 'POST' }),
   launchCounterPitch: (alertId: string) =>
     request<ActionResult>(`/offpage/alerts/${alertId}/counter-pitch`, { method: 'POST' }),
 
   // Ads
-  ads: () => request<AdsWorkspace>('/ads'),
+  ads: (signal?: AbortSignal) => request<AdsWorkspace>('/ads', { signal }),
   setBudget: (channel: string, percent: number) =>
     request<AdsWorkspace>('/ads/budget', { method: 'PUT', body: { channel, percent } }),
   unlockChannel: (channel: string) =>
@@ -392,11 +415,13 @@ export const api = {
     request<ActionResult>('/ads/creatives/generate', { method: 'POST' }),
 
   // Connectors
-  connectors: (category = '') =>
+  connectors: (category = '', signal?: AbortSignal) =>
     request<ConnectorOut[]>(
       `/connectors${category && category !== 'All' ? `?category=${encodeURIComponent(category)}` : ''}`,
+      { signal },
     ),
-  connectorCategories: () => request<string[]>('/connectors/categories'),
+  connectorCategories: (signal?: AbortSignal) =>
+    request<string[]>('/connectors/categories', { signal }),
   connect: (slug: string, values: Record<string, string>, oauth_completed = false) =>
     request<ConnectorOut>(`/connectors/${slug}/connect`, {
       method: 'POST',
@@ -405,7 +430,8 @@ export const api = {
   disconnect: (slug: string) =>
     request<ConnectorOut>(`/connectors/${slug}/disconnect`, { method: 'POST' }),
   // Approvals
-  approvals: () => request<ApprovalOut[]>('/approvals'),
+  approvals: (signal?: AbortSignal) =>
+    request<ApprovalOut[]>('/approvals', { signal }),
   approvalCount: () => request<{ pending: number }>('/approvals/count'),
   approval: (id: string) => request<ApprovalDetail>(`/approvals/${id}`),
   approve: (id: string, note = '') =>
@@ -414,8 +440,11 @@ export const api = {
     request<ActionResult>(`/approvals/${id}/reject`, { method: 'POST', body: { note } }),
 
   // Admin
-  admin: (search = '') =>
-    request<AdminOut>(`/admin${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  admin: (search = '', signal?: AbortSignal) =>
+    request<AdminOut>(
+      `/admin${search ? `?search=${encodeURIComponent(search)}` : ''}`,
+      { signal },
+    ),
   auditLog: (search = '') =>
     request<import('./types').AuditEntryOut[]>(
       `/admin/audit${search ? `?search=${encodeURIComponent(search)}` : ''}`,
@@ -433,12 +462,19 @@ export const api = {
     request<ActionResult>(`/admin/invitations/${id}`, { method: 'DELETE' }),
 
   // Portal Admin (platform operators)
-  portalOverview: () => request<import('./types').PortalOverview>('/portal/overview'),
-  portalOrganizations: () =>
-    request<import('./types').PortalOrganization[]>('/portal/organizations'),
-  portalOrganizationUsers: (orgId: string) =>
-    request<import('./types').PortalUser[]>(`/portal/organizations/${orgId}/users`),
-  portalFeatures: () => request<import('./types').PortalFeature[]>('/portal/features'),
+  portalOverview: (signal?: AbortSignal) =>
+    request<import('./types').PortalOverview>('/portal/overview', { signal }),
+  portalOrganizations: (signal?: AbortSignal) =>
+    request<import('./types').PortalOrganization[]>('/portal/organizations', {
+      signal,
+    }),
+  portalOrganizationUsers: (orgId: string, signal?: AbortSignal) =>
+    request<import('./types').PortalUser[]>(
+      `/portal/organizations/${orgId}/users`,
+      { signal },
+    ),
+  portalFeatures: (signal?: AbortSignal) =>
+    request<import('./types').PortalFeature[]>('/portal/features', { signal }),
   setPortalFeature: (kind: string, slug: string, enabled: boolean) =>
     request<ActionResult>(`/portal/features/${encodeURIComponent(kind)}/${encodeURIComponent(slug)}`, {
       method: 'PUT',

@@ -100,23 +100,31 @@ export function PortalAdminPage() {
   const isPortalAdmin = Boolean(session?.is_portal_admin)
 
   const overview = useResource(
-    () => (isPortalAdmin ? api.portalOverview() : Promise.resolve(null)),
+    (signal) => (isPortalAdmin ? api.portalOverview(signal) : Promise.resolve(null)),
     [isPortalAdmin],
+    'portal:overview',
   )
   const orgs = useResource(
-    () => (isPortalAdmin ? api.portalOrganizations() : Promise.resolve([])),
+    (signal) =>
+      isPortalAdmin ? api.portalOrganizations(signal) : Promise.resolve([]),
     [isPortalAdmin],
+    'portal:orgs',
   )
   const features = useResource(
-    () => (isPortalAdmin ? api.portalFeatures() : Promise.resolve([])),
-    [isPortalAdmin],
+    (signal) =>
+      isPortalAdmin && tab === 'features'
+        ? api.portalFeatures(signal)
+        : Promise.resolve([]),
+    [isPortalAdmin, tab],
+    tab === 'features' ? 'portal:features' : undefined,
   )
   const users = useResource(
-    () =>
+    (signal) =>
       isPortalAdmin && selectedOrg
-        ? api.portalOrganizationUsers(selectedOrg.id)
+        ? api.portalOrganizationUsers(selectedOrg.id, signal)
         : Promise.resolve([]),
     [isPortalAdmin, selectedOrg?.id],
+    selectedOrg ? `portal:users:${selectedOrg.id}` : undefined,
   )
 
   const filteredOrgs = useMemo(() => {

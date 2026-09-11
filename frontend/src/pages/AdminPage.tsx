@@ -48,8 +48,9 @@ export function AdminPage() {
   const [search, setSearch] = useState('')
   const debounced = useDebounced(search)
   const { data, loading, error, reload } = useResource(
-    () => api.admin(debounced),
+    (signal) => api.admin(debounced, signal),
     [debounced],
+    `admin:${debounced}`,
   )
 
   const [inviting, setInviting] = useState(false)

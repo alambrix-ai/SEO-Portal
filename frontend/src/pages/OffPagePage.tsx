@@ -20,7 +20,11 @@ import { useResource } from '@/hooks/useResource'
 export function OffPagePage() {
   const { canWrite } = useAuth()
   const { push, fromResult, fromError } = useToasts()
-  const { data, loading, error, reload } = useResource(() => api.offpage())
+  const { data, loading, error, reload } = useResource(
+    (signal) => api.offpage(signal),
+    [],
+    'offpage',
+  )
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const writable = canWrite('offpage')

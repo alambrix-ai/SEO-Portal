@@ -73,6 +73,7 @@ from app.core.security import (
 from app.db.base import new_id, utcnow
 from app.db.session import bind_tenant
 from app.models.identity import AuthIdentity, CodePurpose, LoginCode
+from app.models.membership import WorkspaceMembership
 from app.models.workspace import (
     Invitation,
     Organization,
@@ -146,7 +147,7 @@ def unique_slug(db: Session, desired: str) -> str:
 
 
 def find_identity(db: Session, address: str) -> AuthIdentity | None:
-    """Resolve an address to its organisation, before any session exists.
+    """Resolve an address to its login directory row, before any session exists.
 
     Matched on the blind index; the plaintext address never appears in a
     WHERE clause. See ``app.models.identity`` for why this lookup has to sit
@@ -155,30 +156,117 @@ def find_identity(db: Session, address: str) -> AuthIdentity | None:
     return db.get(AuthIdentity, email_index(address))
 
 
+def list_memberships(db: Session, *, email_index_value: str) -> list[WorkspaceMembership]:
+    """Every workspace seat for an address, newest first."""
+    return list(
+        db.execute(
+            select(WorkspaceMembership)
+            .where(WorkspaceMembership.email_index == email_index_value)
+            .order_by(WorkspaceMembership.created_at.desc())
+        ).scalars()
+    )
+
+
+def find_membership(
+    db: Session, *, email_index_value: str, tenant_id: str
+) -> WorkspaceMembership | None:
+    return db.execute(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.email_index == email_index_value,
+            WorkspaceMembership.tenant_id == tenant_id,
+        )
+    ).scalar_one_or_none()
+
+
+def _membership_org_alive(db: Session, membership: WorkspaceMembership) -> bool:
+    """True when the seat and its organisation are both still available."""
+    if not membership.is_active:
+        return False
+    org = db.get(Organization, membership.tenant_id)
+    return org is not None and org.is_active
+
+
 def find_user_by_email(db: Session, address: str) -> User | None:
-    """Load the user behind an address, pinning their organisation first.
+    """Load the last-active user behind an address, pinning their organisation.
 
     The pin is what puts every subsequent query in this transaction inside
-    that organisation's row-level-security boundary.
+    that organisation's row-level-security boundary. Soft-deleted workspaces
+    (``Organization.is_active = False``) are skipped so login lands on a
+    live seat.
     """
     identity = find_identity(db, address)
     if identity is None:
         return None
-    bind_tenant(db, identity.tenant_id)
-    return db.get(User, identity.user_id)
+    # Prefer the last-active membership when it is still live; otherwise the
+    # newest active seat for this address.
+    membership = find_membership(
+        db, email_index_value=identity.email_index, tenant_id=identity.tenant_id
+    )
+    if membership is None or not _membership_org_alive(db, membership):
+        memberships = [
+            m
+            for m in list_memberships(db, email_index_value=identity.email_index)
+            if _membership_org_alive(db, m)
+        ]
+        if not memberships:
+            return None
+        membership = memberships[0]
+        identity.user_id = membership.user_id
+        identity.tenant_id = membership.tenant_id
+    bind_tenant(db, membership.tenant_id)
+    user = db.get(User, membership.user_id)
+    if user is None or not user.is_active:
+        return None
+    return user
+
+
+def set_last_active(db: Session, user: User) -> AuthIdentity:
+    """Point the login directory at this workspace as the default after OTP."""
+    identity = db.get(AuthIdentity, user.email_index)
+    if identity is None:
+        identity = AuthIdentity(
+            email_index=user.email_index,
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            is_active=True,
+            sso_provider=user.sso_provider,
+        )
+        db.add(identity)
+    else:
+        identity.user_id = user.id
+        identity.tenant_id = user.tenant_id
+        identity.is_active = True
+        if user.sso_provider:
+            identity.sso_provider = user.sso_provider
+    db.flush()
+    return identity
+
+
+def add_membership(db: Session, user: User) -> WorkspaceMembership:
+    """Record a seat for this user in their organisation."""
+    existing = find_membership(
+        db, email_index_value=user.email_index, tenant_id=user.tenant_id
+    )
+    if existing is not None:
+        existing.user_id = user.id
+        existing.is_active = user.is_active
+        db.flush()
+        return existing
+    membership = WorkspaceMembership(
+        email_index=user.email_index,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        is_active=user.is_active,
+    )
+    db.add(membership)
+    db.flush()
+    return membership
 
 
 def register_identity(db: Session, user: User) -> AuthIdentity:
-    """Add a user to the global directory. Called once per account created."""
-    identity = AuthIdentity(
-        email_index=user.email_index,
-        user_id=user.id,
-        tenant_id=user.tenant_id,
-        is_active=user.is_active,
-        sso_provider=user.sso_provider,
-    )
-    db.add(identity)
-    db.flush()
+    """Add or refresh the global directory entry and membership for a user."""
+    identity = set_last_active(db, user)
+    add_membership(db, user)
     return identity
 
 
@@ -726,12 +814,15 @@ def invite_member(
 ) -> Invitation:
     address = normalize_email(email)
     role_value = Role(role).value
+    index = email_index(address)
 
-    if find_identity(db, address) is not None:
-        raise ConflictError("That person already has an account")
+    # Already seated in *this* workspace — not "has any account".
+    existing_member = find_membership(db, email_index_value=index, tenant_id=org.id)
+    if existing_member is not None and existing_member.is_active:
+        raise ConflictError("That person is already a member of this workspace")
+
     assert_seat_available(db, org)
 
-    index = email_index(address)
     existing = db.execute(
         select(Invitation).where(
             Invitation.tenant_id == org.id,
@@ -804,13 +895,33 @@ def accept_invitation(
     proves. Making them wait for a second email to say the same thing would be
     ceremony, not security. From here on they sign in with a code like
     everybody else.
+
+    If the address already owns other workspaces, this adds another seat —
+    it does not replace them.
     """
     invitation, org = peek_invitation(db, token=token)
     assert_seat_available(db, org)
 
+    existing = find_membership(
+        db, email_index_value=invitation.email_index, tenant_id=org.id
+    )
+    if existing is not None and existing.is_active:
+        raise ConflictError("You are already a member of this workspace — sign in instead")
+
+    # Reuse the name from another seat when the invitee did not type one.
+    prior_name = full_name.strip()
+    if not prior_name:
+        identity = db.get(AuthIdentity, invitation.email_index)
+        if identity is not None:
+            bind_tenant(db, identity.tenant_id)
+            prior = db.get(User, identity.user_id)
+            if prior is not None:
+                prior_name = prior.name
+        bind_tenant(db, org.id)
+
     user = User(
         tenant_id=org.id,
-        name=full_name.strip(),
+        name=prior_name or invitation.email.split("@")[0],
         email=invitation.email,
         email_index=invitation.email_index,
         role=invitation.role,
@@ -824,7 +935,7 @@ def accept_invitation(
         register_identity(db, user)
     except IntegrityError as exc:
         db.rollback()
-        raise ConflictError("An account already exists for that email") from exc
+        raise ConflictError("Could not join this workspace") from exc
 
     invitation.accepted_at = utcnow()
     audit.record(
@@ -892,17 +1003,283 @@ def deactivate_member(db: Session, *, org: Organization, actor: User, member_id:
         raise ForbiddenError("You cannot deactivate your own account")
 
     member.is_active = False
-    # Mirror it into the directory so the account is rejected at login,
-    # before any organisation is pinned.
+    membership = find_membership(
+        db, email_index_value=member.email_index, tenant_id=org.id
+    )
+    if membership is not None:
+        membership.is_active = False
+
+    # Only disable the login directory when *no* active seats remain.
+    still_active = [
+        m
+        for m in list_memberships(db, email_index_value=member.email_index)
+        if m.is_active
+    ]
     identity = db.get(AuthIdentity, member.email_index)
     if identity is not None:
-        identity.is_active = False
+        if still_active:
+            identity.user_id = still_active[0].user_id
+            identity.tenant_id = still_active[0].tenant_id
+            identity.is_active = True
+        else:
+            identity.is_active = False
+
     revoke_all_sessions(db, member, "deactivated")
     db.flush()
     audit.record_user_action(
         db, user=actor, action=f"deactivated {member.name}", module="admin"
     )
     return member
+
+
+# ── Multi-workspace ────────────────────────────────────────────────────────
+@dataclass(slots=True)
+class WorkspaceCard:
+    id: str
+    name: str
+    slug: str
+    primary_domain: str
+    role: str
+    role_label: str
+    onboarding_complete: bool
+    is_current: bool
+    is_owner: bool
+
+
+def list_workspace_cards(
+    db: Session, *, email_index_value: str, current_tenant_id: str
+) -> list[WorkspaceCard]:
+    """Cards for every seat this address holds."""
+    from app.models.workspace import OnboardingState
+
+    cards: list[WorkspaceCard] = []
+    for membership in list_memberships(db, email_index_value=email_index_value):
+        if not membership.is_active:
+            continue
+        bind_tenant(db, membership.tenant_id)
+        org = db.get(Organization, membership.tenant_id)
+        user = db.get(User, membership.user_id)
+        if org is None or not org.is_active or user is None or not user.is_active:
+            continue
+        state = db.execute(
+            select(OnboardingState).where(OnboardingState.tenant_id == org.id)
+        ).scalar_one_or_none()
+        role = Role(user.role)
+        cards.append(
+            WorkspaceCard(
+                id=org.id,
+                name=org.name,
+                slug=org.slug,
+                primary_domain=org.primary_domain or "",
+                role=role.value,
+                role_label=ROLE_LABELS[role],
+                onboarding_complete=bool(state and state.completed),
+                is_current=org.id == current_tenant_id,
+                is_owner=user.is_owner,
+            )
+        )
+    # Current workspace first, then alphabetical.
+    cards.sort(key=lambda c: (not c.is_current, c.name.lower()))
+    return cards
+
+
+def create_workspace(
+    db: Session,
+    *,
+    actor: User,
+    name: str,
+    primary_domain: str = "",
+    user_agent: str = "",
+    ip_address: str | None = None,
+) -> AuthResult:
+    """Provision another organisation for an existing account holder."""
+    address = normalize_email(actor.email)
+    index = actor.email_index
+    org_name = name.strip() or "My workspace"
+    domain = primary_domain.strip().lower()
+    for prefix in ("https://", "http://", "www."):
+        domain = domain.removeprefix(prefix)
+    domain = domain.rstrip("/")
+
+    org_id = new_id()
+    org = Organization(
+        id=org_id,
+        name=org_name,
+        slug=unique_slug(db, org_name),
+        primary_domain=domain,
+        wrapped_dek=OrgCipher.provision(org_id),
+        dek_version=1,
+        global_autonomy=True,
+        plan_name=settings.default_plan_name,
+        seats_total=settings.default_seats,
+        renews_on=(utcnow() + timedelta(days=settings.default_plan_days)).date(),
+    )
+    db.add(org)
+    db.flush()
+    bind_tenant(db, org.id)
+
+    user = User(
+        tenant_id=org.id,
+        name=actor.name,
+        email=address,
+        email_index=index,
+        role=Role.ADMIN.value,
+        is_owner=True,
+        email_verified=True,
+        email_verified_at=utcnow(),
+    )
+    db.add(user)
+    try:
+        db.flush()
+        register_identity(db, user)
+    except IntegrityError as exc:
+        db.rollback()
+        raise ConflictError("Could not create that workspace") from exc
+
+    from app.services.provisioning import provision_organization
+
+    provision_organization(db, org)
+
+    audit.record(
+        db,
+        tenant_id=org.id,
+        actor=user.name,
+        actor_id=user.id,
+        action="created a new workspace",
+        module="admin",
+        ip_address=ip_address,
+    )
+    tokens = _issue_tokens(db, user, user_agent=user_agent, ip_address=ip_address)
+    db.flush()
+    return AuthResult(user=user, organization=org, tokens=tokens)
+
+
+def switch_workspace(
+    db: Session,
+    *,
+    actor: User,
+    organization_id: str,
+    user_agent: str = "",
+    ip_address: str | None = None,
+) -> AuthResult:
+    """Re-issue tokens for another workspace the caller is a member of."""
+    membership = find_membership(
+        db, email_index_value=actor.email_index, tenant_id=organization_id
+    )
+    if membership is None or not membership.is_active:
+        raise ForbiddenError("You are not a member of that workspace")
+
+    bind_tenant(db, organization_id)
+    user = db.get(User, membership.user_id)
+    if user is None or not user.is_active:
+        raise ForbiddenError("That workspace seat is no longer active")
+    org = get_organization(db, organization_id)
+
+    set_last_active(db, user)
+    tokens = _issue_tokens(db, user, user_agent=user_agent, ip_address=ip_address)
+    db.flush()
+    return AuthResult(user=user, organization=org, tokens=tokens)
+
+
+def delete_workspace(
+    db: Session,
+    *,
+    actor: User,
+    organization_id: str,
+    user_agent: str = "",
+    ip_address: str | None = None,
+) -> AuthResult:
+    """Remove a workspace from the caller's account without wiping rows.
+
+    Flips ``is_active`` on the organisation, every membership seat, and users
+    in that tenant. The console treats it as a normal delete; data stays for
+    recovery / audit. Returns a session on a remaining workspace (switching
+    automatically when the deleted one was current).
+    """
+    membership = find_membership(
+        db, email_index_value=actor.email_index, tenant_id=organization_id
+    )
+    if membership is None or not membership.is_active:
+        raise NotFoundError("Workspace not found")
+
+    bind_tenant(db, organization_id)
+    user = db.get(User, membership.user_id)
+    if user is None or not user.is_active:
+        raise NotFoundError("Workspace not found")
+    if not user.is_owner:
+        raise ForbiddenError("Only the workspace owner can delete it")
+
+    org = db.get(Organization, organization_id)
+    if org is None or not org.is_active:
+        raise NotFoundError("Workspace not found")
+
+    live_cards = list_workspace_cards(
+        db,
+        email_index_value=actor.email_index,
+        current_tenant_id=actor.tenant_id,
+    )
+    if len(live_cards) <= 1:
+        raise ConflictError("You need at least one workspace. Create another before deleting this one.")
+
+    was_current = organization_id == actor.tenant_id
+    fallback = next((c for c in live_cards if c.id != organization_id), None)
+    if fallback is None:
+        raise ConflictError("You need at least one workspace. Create another before deleting this one.")
+
+    # Soft-delete: hide from switchers / login without dropping tenant data.
+    org.is_active = False
+    for seat in list(
+        db.execute(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.tenant_id == organization_id
+            )
+        ).scalars()
+    ):
+        seat.is_active = False
+
+    for member in list(
+        db.execute(select(User).where(User.tenant_id == organization_id)).scalars()
+    ):
+        member.is_active = False
+
+    audit.record(
+        db,
+        tenant_id=organization_id,
+        actor=user.name,
+        actor_id=user.id,
+        action="deleted a workspace",
+        module="admin",
+        ip_address=ip_address,
+    )
+    db.flush()
+
+    if was_current:
+        return switch_workspace(
+            db,
+            actor=actor,
+            organization_id=fallback.id,
+            user_agent=user_agent,
+            ip_address=ip_address,
+        )
+
+    # Stay on the current workspace; refresh tokens so the session card list
+    # drops the deleted org.
+    bind_tenant(db, actor.tenant_id)
+    current_org = get_organization(db, actor.tenant_id)
+    current_user = db.get(User, actor.id)
+    if current_user is None or not current_user.is_active:
+        return switch_workspace(
+            db,
+            actor=actor,
+            organization_id=fallback.id,
+            user_agent=user_agent,
+            ip_address=ip_address,
+        )
+    tokens = _issue_tokens(
+        db, current_user, user_agent=user_agent, ip_address=ip_address
+    )
+    db.flush()
+    return AuthResult(user=current_user, organization=current_org, tokens=tokens)
 
 
 # ── Invitations ────────────────────────────────────────────────────────────

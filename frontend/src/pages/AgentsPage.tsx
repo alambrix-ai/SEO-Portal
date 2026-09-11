@@ -80,10 +80,13 @@ export function AgentsPage() {
   // toggle doing nothing at all.
   const globalAutonomy = session?.organization.global_autonomy
   const { data, loading, error, reload } = useResource(
-    () => api.agents(),
+    (signal) => api.agents(signal),
     [globalAutonomy],
+    'agents',
   )
-  const options = useResource(() => api.agentOptions())
+  const [optionsData, setOptionsData] = useState<Awaited<
+    ReturnType<typeof api.agentOptions>
+  > | null>(null)
 
   const [configuring, setConfiguring] = useState<AgentOut | null>(null)
   const [busySlug, setBusySlug] = useState<string | null>(null)
@@ -95,10 +98,13 @@ export function AgentsPage() {
       push('View-only access for your role', 'warning')
       return
     }
-    // Refresh connector availability so the LLM list matches Connectors now,
-    // not when the page first loaded.
-    await options.reload()
-    setConfiguring(agent)
+    // Load options only when Configure opens - not on every Agents visit.
+    try {
+      setOptionsData(await api.agentOptions())
+      setConfiguring(agent)
+    } catch (caught) {
+      fromError(caught)
+    }
   }
 
   // While any agent has a pass open, refresh often enough that the step
@@ -160,15 +166,43 @@ export function AgentsPage() {
   if (error && !data) return <ErrorState message={error} onRetry={reload} />
   if (!data) return null
 
+  const fleetCounts = {
+    attention: data.filter((a) => a.group === 'attention').length,
+    running: data.filter((a) => a.group === 'running').length,
+    ready: data.filter((a) => a.group === 'ready').length,
+    idle: data.filter((a) => a.group === 'idle').length,
+  }
+
   return (
     <>
-      <p className="page-intro">
-        {data.length} agents run the SEO/AEO and programmatic ad pipeline end to end.
-        Configure an agent (including which LLM connector it should write with), then
-        start it - nothing runs against your site until you have set its schedule and
-        daily cap. Once running, toggle it between autonomous execution and
-        human-in-the-loop review.
-      </p>
+      <section className="agents-masthead" aria-label="Fleet overview">
+        <div className="agents-masthead-copy">
+          <div className="agents-masthead-eyebrow">Fleet · {data.length} agents</div>
+          <h2 className="agents-masthead-title">Run the pipeline end to end</h2>
+          <p className="agents-masthead-lede">
+            Configure schedule, daily cap, and LLM connector, then start - nothing
+            touches your site until you do. Toggle autonomy vs review once live.
+          </p>
+        </div>
+        <ul className="agents-masthead-stats">
+          <li className="agents-stat">
+            <span className="agents-stat-value">{fleetCounts.running}</span>
+            <span className="agents-stat-label">Active</span>
+          </li>
+          <li className="agents-stat">
+            <span className="agents-stat-value">{fleetCounts.ready}</span>
+            <span className="agents-stat-label">Ready</span>
+          </li>
+          <li className="agents-stat">
+            <span className="agents-stat-value">{fleetCounts.idle}</span>
+            <span className="agents-stat-label">Not set up</span>
+          </li>
+          <li className={`agents-stat${fleetCounts.attention ? ' is-alert' : ''}`}>
+            <span className="agents-stat-value">{fleetCounts.attention}</span>
+            <span className="agents-stat-label">Needs care</span>
+          </li>
+        </ul>
+      </section>
 
       {AGENT_SECTIONS.map(({ key, title, description, tone }) => {
         const rows = data.filter((agent) => agent.group === key)
@@ -387,9 +421,9 @@ export function AgentsPage() {
       {configuring ? (
         <ConfigureDialog
           agent={configuring}
-          schedules={options.data?.schedules ?? []}
-          channels={options.data?.notify_channels ?? []}
-          llmConnectors={options.data?.llm_connectors ?? []}
+          schedules={optionsData?.schedules ?? []}
+          channels={optionsData?.notify_channels ?? []}
+          llmConnectors={optionsData?.llm_connectors ?? []}
           onClose={() => setConfiguring(null)}
           onSaved={async () => {
             setConfiguring(null)

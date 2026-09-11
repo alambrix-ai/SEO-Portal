@@ -19,7 +19,11 @@ import { useResource } from '@/hooks/useResource'
 export function ApprovalsPage() {
   const { canWrite, refresh } = useAuth()
   const { push, fromResult, fromError } = useToasts()
-  const { data, loading, error, reload } = useResource(() => api.approvals())
+  const { data, loading, error, reload } = useResource(
+    (signal) => api.approvals(signal),
+    [],
+    'approvals',
+  )
 
   const [detail, setDetail] = useState<ApprovalDetail | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)

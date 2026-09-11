@@ -52,8 +52,9 @@ export function TechnicalSeoPage() {
   const [status, setStatus] = useState<StatusFilter>('open')
   const [kind, setKind] = useState('')
   const { data, loading, error, reload } = useResource(
-    () => api.seoAudit({ status, kind }),
+    (signal) => api.seoAudit({ status, kind }, signal),
     [status, kind],
+    `seo-audit:${status}:${kind}`,
   )
 
   const [ignoring, setIgnoring] = useState<SeoIssueOut | null>(null)

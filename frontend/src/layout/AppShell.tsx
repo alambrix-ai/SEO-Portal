@@ -149,6 +149,8 @@ export function AppShell() {
   if (!session) return null
 
   const pageTitle = TITLES[location.pathname] ?? 'AutoMarket AI'
+  // Willy sits on the Launch CTA on this screen; keep the wizard clear.
+  const showAssistant = location.pathname !== '/onboarding'
 
   return (
     <div
@@ -205,10 +207,9 @@ export function AppShell() {
         </div>
 
         <div className="sidebar-footer">
-          Signed in as
-          <strong>{session.user.role_label}</strong>
-          <div className="small muted" style={{ marginTop: 4 }}>
-            {session.organization.name}
+          <div className="sidebar-footer-meta">
+            Signed in as
+            <strong>{session.user.role_label}</strong>
           </div>
         </div>
 
@@ -281,7 +282,7 @@ export function AppShell() {
         </main>
       </div>
 
-      <AssistantDock />
+      {showAssistant ? <AssistantDock /> : null}
     </div>
   )
 }

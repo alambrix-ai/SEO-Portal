@@ -6,7 +6,10 @@
  * dense tiles and catalogues use plain `.card` so screens stay scannable.
  */
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from 'react'
+
+import { popModalOpen, pushModalOpen } from '@/lib/modalOpen'
 
 // ── Blueprint frame ────────────────────────────────────────────────────────
 export function Blueprint({
@@ -264,16 +267,17 @@ export function Dialog({
       if (event.key === 'Escape') onClose()
     }
     document.addEventListener('keydown', onKey)
-    // A modal over a scrollable grid should not let the page scroll behind it.
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    pushModalOpen()
     return () => {
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = previous
+      popModalOpen()
     }
   }, [onClose])
 
-  return (
+  return createPortal(
     <div className="dialog-backdrop" role="presentation" onClick={onClose}>
       <Blueprint
         className="dialog"
@@ -287,7 +291,8 @@ export function Dialog({
         <div className="dialog-body">{children}</div>
         {actions ? <div className="dialog-actions">{actions}</div> : null}
       </Blueprint>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

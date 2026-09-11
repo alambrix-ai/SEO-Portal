@@ -18,20 +18,30 @@ import {
 
 import { api, setSessionLostHandler, tokenStore } from '@/api/client'
 import type { Access, AuthResponse, ModuleKey, SessionOut } from '@/api/types'
+import { invalidateResourceCache } from '@/hooks/useResource'
 
 interface AuthState {
   session: SessionOut | null
   loading: boolean
   /** Redeem a mailed code for a session. There is no password to pass. */
-  signIn: (email: string, code: string) => Promise<void>
+  signIn: (email: string, code: string) => Promise<SessionOut>
   signUp: (payload: {
     organization_name: string
     full_name: string
     email: string
     code: string
     primary_domain?: string
-  }) => Promise<void>
+  }) => Promise<SessionOut>
   adopt: (response: AuthResponse) => void
+  /** Switch to another workspace; returns the new session. */
+  switchWorkspace: (organizationId: string) => Promise<SessionOut>
+  /** Create another workspace and land on it. */
+  createWorkspace: (payload: {
+    name: string
+    primary_domain?: string
+  }) => Promise<SessionOut>
+  /** Remove a workspace from the account (soft-deleted server-side). */
+  deleteWorkspace: (organizationId: string) => Promise<SessionOut>
   signOut: () => Promise<void>
   refresh: () => Promise<void>
   /** Optimistically update the cached session (e.g. the approvals badge). */
@@ -85,16 +95,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(response.session)
   }, [])
 
+  const switchWorkspace = useCallback(
+    async (organizationId: string) => {
+      const response = await api.switchWorkspace(organizationId)
+      invalidateResourceCache()
+      adopt(response)
+      return response.session
+    },
+    [adopt],
+  )
+
+  const createWorkspace = useCallback(
+    async (payload: { name: string; primary_domain?: string }) => {
+      const response = await api.createWorkspace(payload)
+      invalidateResourceCache()
+      adopt(response)
+      return response.session
+    },
+    [adopt],
+  )
+
+  const deleteWorkspace = useCallback(
+    async (organizationId: string) => {
+      const response = await api.deleteWorkspace(organizationId)
+      invalidateResourceCache()
+      adopt(response)
+      return response.session
+    },
+    [adopt],
+  )
+
   const signIn = useCallback(
     async (email: string, code: string) => {
-      adopt(await api.login(email, code))
+      const response = await api.login(email, code)
+      adopt(response)
+      return response.session
     },
     [adopt],
   )
 
   const signUp = useCallback(
     async (payload: Parameters<AuthState['signUp']>[0]) => {
-      adopt(await api.register(payload))
+      const response = await api.register(payload)
+      adopt(response)
+      return response.session
     },
     [adopt],
   )
@@ -127,6 +171,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signUp,
       adopt,
+      switchWorkspace,
+      createWorkspace,
+      deleteWorkspace,
       signOut,
       refresh,
       patch,
@@ -134,7 +181,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canView: (module) => access(module) !== 'none',
       canWrite: (module) => access(module) === 'full',
     }
-  }, [session, loading, signIn, signUp, adopt, signOut, refresh, patch])
+  }, [
+    session,
+    loading,
+    signIn,
+    signUp,
+    adopt,
+    switchWorkspace,
+    createWorkspace,
+    deleteWorkspace,
+    signOut,
+    refresh,
+    patch,
+  ])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

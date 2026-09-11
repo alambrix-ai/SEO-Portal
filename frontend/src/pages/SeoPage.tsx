@@ -28,8 +28,9 @@ export function SeoPage() {
   const [search, setSearch] = useState('')
   const debounced = useDebounced(search)
   const { data, loading, error, reload } = useResource(
-    () => api.seo(debounced),
+    (signal) => api.seo(debounced, signal),
     [debounced],
+    `seo:${debounced}`,
   )
 
   const [detail, setDetail] = useState<SeoPageDetail | null>(null)

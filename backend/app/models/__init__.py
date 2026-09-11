@@ -14,6 +14,7 @@ from app.models.agent import AgentRecord, AgentRun, AgentStatus, RunStatus
 from app.models.approval import ApprovalItem, ApprovalStatus, ApprovalType
 from app.models.connector import ConnectorCategory, ConnectorHealth, ConnectorRecord
 from app.models.identity import AuthIdentity, CodePurpose, LoginCode
+from app.models.membership import WorkspaceMembership
 from app.models.metrics import DailyMetric
 from app.models.offpage import BacklinkStatus, BacklinkTarget, CompetitorAlert, OutreachPitch
 from app.models.portal import FeatureKind, PortalFeatureFlag
@@ -47,6 +48,7 @@ __all__ = [
     "ApprovalType",
     "AudienceCluster",
     "AuthIdentity",
+    "WorkspaceMembership",
     "AuditLogEntry",
     "BacklinkStatus",
     "BacklinkTarget",

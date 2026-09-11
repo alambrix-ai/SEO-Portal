@@ -15,8 +15,10 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { createPortal } from 'react-dom'
 
 import { Blueprint } from '@/components/ui'
+import { popModalOpen, pushModalOpen } from '@/lib/modalOpen'
 
 export type ConfirmTone = 'danger' | 'neutral'
 
@@ -60,10 +62,12 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     }
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    pushModalOpen()
     document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = previous
+      popModalOpen()
     }
   }, [pending, close])
 
@@ -85,68 +89,71 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   return (
     <ConfirmContext.Provider value={value}>
       {children}
-      {pending ? (
-        <div
-          className="dialog-backdrop confirm-backdrop"
-          role="presentation"
-          onClick={() => close(false)}
-        >
-          <Blueprint
-            className={`dialog confirm-dialog confirm-${pending.tone ?? 'neutral'}`}
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="confirm-title"
-            aria-describedby="confirm-message"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="confirm-head">
-              {pending.icon ? (
-                <div className="confirm-icon">{pending.icon}</div>
-              ) : (
-                <div
-                  className={`confirm-glyph confirm-glyph-${pending.tone ?? 'neutral'}`}
-                  aria-hidden="true"
-                >
-                  {pending.tone === 'danger' ? '!' : '?'}
-                </div>
-              )}
-              <div className="confirm-copy">
-                <div className="confirm-eyebrow">
-                  {pending.tone === 'danger' ? 'Please confirm' : 'Confirm'}
-                </div>
-                <h2 id="confirm-title" className="confirm-title">
-                  {pending.title}
-                </h2>
-              </div>
-            </div>
-            <div className="confirm-body">
-              <p id="confirm-message" className="confirm-message">
-                {pending.message}
-              </p>
-              {pending.detail ? (
-                <p className="confirm-detail">{pending.detail}</p>
-              ) : null}
-            </div>
-            <div className="confirm-actions">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => close(false)}
-                autoFocus
+      {pending
+        ? createPortal(
+            <div
+              className="dialog-backdrop confirm-backdrop"
+              role="presentation"
+              onClick={() => close(false)}
+            >
+              <Blueprint
+                className={`dialog confirm-dialog confirm-${pending.tone ?? 'neutral'}`}
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="confirm-title"
+                aria-describedby="confirm-message"
+                onClick={(event) => event.stopPropagation()}
               >
-                {pending.cancelLabel ?? 'Cancel'}
-              </button>
-              <button
-                type="button"
-                className={`btn btn-primary${pending.tone === 'danger' ? ' confirm-primary-danger' : ''}`}
-                onClick={() => close(true)}
-              >
-                {pending.confirmLabel ?? 'Confirm'}
-              </button>
-            </div>
-          </Blueprint>
-        </div>
-      ) : null}
+                <div className="confirm-head">
+                  {pending.icon ? (
+                    <div className="confirm-icon">{pending.icon}</div>
+                  ) : (
+                    <div
+                      className={`confirm-glyph confirm-glyph-${pending.tone ?? 'neutral'}`}
+                      aria-hidden="true"
+                    >
+                      {pending.tone === 'danger' ? '!' : '?'}
+                    </div>
+                  )}
+                  <div className="confirm-copy">
+                    <div className="confirm-eyebrow">
+                      {pending.tone === 'danger' ? 'Please confirm' : 'Confirm'}
+                    </div>
+                    <h2 id="confirm-title" className="confirm-title">
+                      {pending.title}
+                    </h2>
+                  </div>
+                </div>
+                <div className="confirm-body">
+                  <p id="confirm-message" className="confirm-message">
+                    {pending.message}
+                  </p>
+                  {pending.detail ? (
+                    <p className="confirm-detail">{pending.detail}</p>
+                  ) : null}
+                </div>
+                <div className="confirm-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => close(false)}
+                    autoFocus
+                  >
+                    {pending.cancelLabel ?? 'Cancel'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-primary${pending.tone === 'danger' ? ' confirm-primary-danger' : ''}`}
+                    onClick={() => close(true)}
+                  >
+                    {pending.confirmLabel ?? 'Confirm'}
+                  </button>
+                </div>
+              </Blueprint>
+            </div>,
+            document.body,
+          )
+        : null}
     </ConfirmContext.Provider>
   )
 }

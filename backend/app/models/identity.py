@@ -16,7 +16,9 @@ do the job:
 * the only identifying value it holds is the **blind index** of the address —
   an HMAC, not the address, and not reversible;
 * it carries no name, no credential, no personal data of any kind;
-* it is the platform-wide uniqueness constraint on an email address.
+* it is the platform-wide uniqueness constraint on an email address for login;
+* ``user_id`` / ``tenant_id`` remember the last-active workspace; additional
+  seats live in :class:`~app.models.membership.WorkspaceMembership`.
 
 The flow is: index the submitted address, find the row, pin that
 organisation, and load the user *under* row-level security from there. So the
@@ -42,12 +44,13 @@ class AuthIdentity(Base, TimestampMixin):
     __tablename__ = "auth_identities"
     __table_args__ = (Index("ix_identity_tenant", "tenant_id"),)
 
-    # The blind index is the primary key: it is unique platform-wide, which is
-    # what stops the same address registering twice.
+    # The blind index is the primary key: it is unique platform-wide for the
+    # login directory. ``user_id`` / ``tenant_id`` point at the last-active
+    # workspace membership for this address (not the only one).
     email_index: Mapped[str] = mapped_column(BlindIndex, primary_key=True)
 
     user_id: Mapped[str] = mapped_column(
-        FK, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True
+        FK, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     tenant_id: Mapped[str] = mapped_column(
         FK, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False

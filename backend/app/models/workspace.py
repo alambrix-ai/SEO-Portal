@@ -90,7 +90,7 @@ class User(Base, TimestampMixin, TenantScopedMixin):
 
     __tablename__ = "users"
     __table_args__ = (
-        UniqueConstraint("email_index", name="uq_users_email_index"),
+        UniqueConstraint("tenant_id", "email_index", name="uq_users_tenant_email"),
         Index("ix_users_tenant_role", "tenant_id", "role"),
     )
 

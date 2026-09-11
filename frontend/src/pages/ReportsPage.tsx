@@ -33,7 +33,11 @@ const PAD = { top: 14, right: 8, bottom: 8, left: 8 }
 
 export function ReportsPage() {
   const [range, setRange] = useState<Range>('30d')
-  const { data, loading, error, reload } = useResource(() => api.reports(range), [range])
+  const { data, loading, error, reload } = useResource(
+    (signal) => api.reports(range, signal),
+    [range],
+    `reports:${range}`,
+  )
 
   const chart = useMemo(() => {
     const series = data?.trend ?? []

@@ -76,9 +76,11 @@ export function DashboardPage() {
   // Same reason as the agents page: the header's autonomy switch changes what
   // this screen is showing.
   const globalAutonomy = session?.organization.global_autonomy
-  const { data, loading, error, reload } = useResource(() => api.dashboard(), [
-    globalAutonomy,
-  ])
+  const { data, loading, error, reload } = useResource(
+    (signal) => api.dashboard(signal),
+    [globalAutonomy],
+    'dashboard',
+  )
 
   if (loading && !data) return <Loading label="Loading your workspace…" />
   if (error && !data) return <ErrorState message={error} onRetry={reload} />

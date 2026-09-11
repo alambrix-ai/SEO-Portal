@@ -32,6 +32,7 @@ from app.schemas.auth import (
     SessionOut,
     TokenResponse,
     UserOut,
+    WorkspaceCardOut,
 )
 from app.schemas.common import Message
 from app.services import approvals, audit, auth as auth_service
@@ -119,6 +120,24 @@ def build_session(db: DbSession, user: User, org: Organization) -> SessionOut:
         connected_connectors=connected,
         total_connectors=total_connectors,
         nav_counts=counts,
+        workspaces=[
+            WorkspaceCardOut(
+                id=card.id,
+                name=card.name,
+                slug=card.slug,
+                primary_domain=card.primary_domain,
+                role=Role(card.role),
+                role_label=card.role_label,
+                onboarding_complete=card.onboarding_complete,
+                is_current=card.is_current,
+                is_owner=card.is_owner,
+            )
+            for card in auth_service.list_workspace_cards(
+                db,
+                email_index_value=user.email_index,
+                current_tenant_id=org.id,
+            )
+        ],
     )
 
 

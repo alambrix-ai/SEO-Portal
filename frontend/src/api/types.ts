@@ -72,6 +72,20 @@ export interface SessionOut {
   total_connectors: number
   /** route -> how much is waiting there. Zeroes are omitted. */
   nav_counts: Record<string, number>
+  /** Every workspace this address can open. */
+  workspaces: WorkspaceCard[]
+}
+
+export interface WorkspaceCard {
+  id: string
+  name: string
+  slug: string
+  primary_domain: string
+  role: Role
+  role_label: string
+  onboarding_complete: boolean
+  is_current: boolean
+  is_owner: boolean
 }
 
 export interface AuthResponse {

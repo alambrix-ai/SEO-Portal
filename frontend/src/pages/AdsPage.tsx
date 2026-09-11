@@ -25,7 +25,11 @@ import { money, moneyExact } from '@/lib/money'
 export function AdsPage() {
   const { canWrite } = useAuth()
   const { push, fromResult, fromError } = useToasts()
-  const { data, loading, error, reload, set } = useResource(() => api.ads())
+  const { data, loading, error, reload, set } = useResource(
+    (signal) => api.ads(signal),
+    [],
+    'ads',
+  )
 
   // Slider positions are held locally while dragging, then committed on
   // release - otherwise every pixel of movement would be a request.

@@ -64,7 +64,6 @@ export function LoginPage() {
       .catch(() => setPolicy(null))
   }, [])
 
-  const destination = (location.state as { from?: string } | null)?.from ?? '/dashboard'
   const ssoProviders = policy?.sso_providers ?? []
   const codeLength = policy?.code_length ?? 6
   const signupOpen = policy?.public_signup !== false
@@ -115,8 +114,15 @@ export function LoginPage() {
     setNoAccount(false)
     setBusy(true)
     try {
-      await signIn(email.trim(), code)
-      navigate(destination, { replace: true })
+      const nextSession = await signIn(email.trim(), code)
+      const intended = (location.state as { from?: string } | null)?.from
+      // Unfinished workspaces always finish the wizard first.
+      const target = !nextSession.onboarding_complete
+        ? '/onboarding'
+        : intended && intended !== '/login' && intended !== '/register'
+          ? intended
+          : '/dashboard'
+      navigate(target, { replace: true })
     } catch (caught) {
       setError(message(caught, 'Could not sign you in'))
     } finally {
@@ -148,7 +154,7 @@ export function LoginPage() {
             <div className="auth-stage-copy">
               <div className="auth-stage-hero">
                 <p className="auth-stage-kicker">SEO · AEO · Ads console</p>
-                <h1 className="auth-stage-title">Rank. Cite. Convert.</h1>
+                <h1 className="auth-stage-title">Analyse. Rank. Convert.</h1>
                 <p className="auth-stage-lead">
                   Autonomous SEO, answer-engine visibility, technical health, and
                   programmatic ads in one branded workspace.

@@ -1,13 +1,16 @@
 /**
  * Routing and route guards.
  *
- * Two guards, both driven by the session the API returned:
+ * Guards driven by the session the API returned:
  *
  * - `RequireAuth` keeps unauthenticated visitors on the public screens, and
  *   remembers where they were going so signing in lands them there.
  * - `RequireModule` refuses a screen the caller's role cannot view. The API
  *   enforces the same rule; this only avoids rendering a page that would then
  *   fail every request it makes.
+ * - `RequireOnboardingDone` sends unfinished workspaces to the wizard before
+ *   the dashboard (and other product screens) are useful. Connectors stay
+ *   reachable mid-wizard because step two links there.
  */
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
@@ -32,6 +35,13 @@ import { ReportsPage } from '@/pages/ReportsPage'
 import { SeoPage } from '@/pages/SeoPage'
 import { TechnicalSeoPage } from '@/pages/TechnicalSeoPage'
 
+/** Paths reachable while the workspace still has unfinished onboarding. */
+const ONBOARDING_OPEN_PATHS = new Set([
+  '/onboarding',
+  '/connectors',
+  '/account',
+])
+
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   const location = useLocation()
@@ -55,10 +65,34 @@ function RequireModule({
   return <>{children}</>
 }
 
+/** Unfinished workspaces finish the wizard before the rest of the console. */
+function RequireOnboardingDone({ children }: { children: React.ReactNode }) {
+  const { session, canView } = useAuth()
+  const location = useLocation()
+
+  if (
+    session &&
+    !session.onboarding_complete &&
+    canView('onboarding') &&
+    !ONBOARDING_OPEN_PATHS.has(location.pathname)
+  ) {
+    return <Navigate to="/onboarding" replace />
+  }
+  return <>{children}</>
+}
+
 function PublicOnly({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   if (loading) return <Loading label="Loading…" />
-  if (session) return <Navigate to="/dashboard" replace />
+  // Fresh workspaces land in the wizard; completed ones on the dashboard.
+  if (session) {
+    return (
+      <Navigate
+        to={session.onboarding_complete ? '/dashboard' : '/onboarding'}
+        replace
+      />
+    )
+  }
   return <>{children}</>
 }
 
@@ -88,7 +122,9 @@ export function App() {
       <Route
         element={
           <RequireAuth>
-            <AppShell />
+            <RequireOnboardingDone>
+              <AppShell />
+            </RequireOnboardingDone>
           </RequireAuth>
         }
       >
