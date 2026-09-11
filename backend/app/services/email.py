@@ -3,14 +3,16 @@
 This module is not a nicety on this platform — it *is* the authentication
 channel. Sign-in is a one-time code mailed to the address, so a deployment
 without working mail is a deployment nobody can log in to, which is why
-production refuses to start with neither ``SMTP_HOST`` nor ``RESEND_API_KEY``.
+production refuses to start without ``RESEND_API_KEY``.
 
-Prefer ``RESEND_API_KEY`` on Render and similar hosts: they commonly block
-outbound SMTP ports (587/465), while HTTPS to ``api.resend.com`` works.
+Provider is chosen from ``APP_ENV`` (not “whichever key is set”):
 
-In development, with both unset, the message is written to the log instead of
-sent, so a local install needs no mail server — the code is right there in the
-console.
+* ``development`` → SMTP (local / Gmail app password, Mailhog, etc.)
+* ``test`` → Resend HTTPS (integration / hosted testing)
+* ``staging`` / ``production`` → Resend HTTPS (Render blocks SMTP)
+
+In development, with ``SMTP_HOST`` unset, the message is written to the log
+instead — the code is right there in the console.
 """
 from __future__ import annotations
 
@@ -109,19 +111,33 @@ def _send_via_smtp(message: Message) -> bool:
     return True
 
 
+def _use_resend() -> bool:
+    """``test`` / staging / production → Resend; ``development`` (local) → SMTP."""
+    return settings.app_env in ("test", "staging", "production")
+
+
 def _send(message: Message) -> bool:
     """Return True when handed to a mail provider, False when only logged."""
-    if settings.resend_api_key:
-        return _send_via_resend(message)
-    if not settings.smtp_host:
-        log.info(
-            "[email:not-configured] to=%s subject=%s\n%s",
+    if settings.app_env == "development":
+        if not settings.smtp_host:
+            log.info(
+                "[email:not-configured] to=%s subject=%s\n%s",
+                message.to,
+                message.subject,
+                message.text,
+            )
+            return False
+        return _send_via_smtp(message)
+
+    # APP_ENV=test (and staging/production): Resend only
+    if not settings.resend_api_key:
+        log.error(
+            "APP_ENV=%s requires RESEND_API_KEY to send mail to %s",
+            settings.app_env,
             message.to,
-            message.subject,
-            message.text,
         )
         return False
-    return _send_via_smtp(message)
+    return _send_via_resend(message)
 
 
 def _link(path: str, token: str) -> str:

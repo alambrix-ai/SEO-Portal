@@ -445,6 +445,13 @@ export const api = {
       body: { enabled },
     }),
 
+  // SEO Assistant
+  assistantChat: (body: import('./types').AssistantChatRequest) =>
+    request<import('./types').AssistantChatResponse>('/assistant/chat', {
+      method: 'POST',
+      body,
+    }),
+
   // Meta
   health: () => fetch('/health').then((r) => r.json() as Promise<HealthStatus>),
 }

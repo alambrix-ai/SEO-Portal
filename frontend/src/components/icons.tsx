@@ -139,6 +139,21 @@ export function AdminIcon(props: IconProps) {
   )
 }
 
+export function AssistantIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="5" y="4.5" width="10" height="8" rx="0.5" />
+      <line x1="10" y1="1.8" x2="10" y2="4.5" />
+      <circle cx="10" cy="1.5" r="0.9" />
+      <circle cx="7.5" cy="8" r="0.7" />
+      <circle cx="12.5" cy="8" r="0.7" />
+      <path d="M7.2 10.2c.8.7 1.8 1 2.8 1s2-.3 2.8-1" />
+      <line x1="8" y1="12.5" x2="7" y2="16.5" />
+      <line x1="12" y1="12.5" x2="13" y2="16.5" />
+    </Icon>
+  )
+}
+
 export function BellIcon(props: IconProps) {
   return (
     <Icon size={16} {...props}>

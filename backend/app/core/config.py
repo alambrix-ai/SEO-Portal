@@ -241,6 +241,9 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 120.0
     llm_max_attempts: int = 3
 
+    # SEO Assistant (platform Anthropic key — not a workspace connector).
+    assistant_model: str = "claude-sonnet-4-5"
+
     # Cost attribution, in currency units per million tokens. Left at zero,
     # run costs read zero and a warning says so — rather than a built-in price
     # table that is wrong the week a vendor changes its rates, silently, in a
@@ -314,11 +317,11 @@ class Settings(BaseSettings):
                 "FORCE_HTTPS must be true so sessions and credentials are not "
                 "sent in the clear"
             )
-        if not self.smtp_host and not self.resend_api_key:
+        if not self.resend_api_key:
             problems.append(
-                "SMTP_HOST or RESEND_API_KEY must be set: sign-in is a "
-                "one-time code sent by email, so without mail nobody can "
-                "log in (prefer RESEND_API_KEY on Render — SMTP ports are blocked)"
+                "RESEND_API_KEY must be set in production: sign-in is a "
+                "one-time code sent by email, and SMTP ports are blocked on "
+                "Render (APP_ENV=development uses SMTP locally instead)"
             )
         if self.public_base_url.startswith("http://"):
             problems.append(

@@ -134,6 +134,7 @@ class CredentialFieldOut(ApiModel):
     help_text: str = ""
     is_oauth: bool = False
     oauth_label: str = ""
+    default: str = ""
 
 
 class ConnectorOut(ApiModel):

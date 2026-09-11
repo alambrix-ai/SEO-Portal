@@ -35,6 +35,8 @@ class CredentialField:
     help_text: str = ""
     # OAuth "buttons" are rendered instead of an input.
     oauth_label: str = ""
+    #: Shown in the connect form when the workspace has no saved hint yet.
+    default: str = ""
 
     @property
     def is_oauth(self) -> bool:
@@ -55,6 +57,7 @@ class CredentialField:
             "help_text": self.help_text,
             "is_oauth": self.is_oauth,
             "oauth_label": self.oauth_label,
+            "default": self.default,
         }
 
 
@@ -70,6 +73,26 @@ def secret(key: str, label: str, placeholder: str = "", **kw: Any) -> Credential
 
 def text(key: str, label: str, placeholder: str = "", **kw: Any) -> CredentialField:  # noqa: ANN401
     return CredentialField(key=key, label=label, placeholder=placeholder, **kw)
+
+
+def number(key: str, label: str, placeholder: str = "", **kw: Any) -> CredentialField:  # noqa: ANN401
+    return CredentialField(
+        key=key, label=label, kind=FieldKind.NUMBER, placeholder=placeholder, **kw
+    )
+
+
+def apply_defaults(
+    fields: tuple[CredentialField, ...], values: dict[str, str]
+) -> dict[str, str]:
+    """Fill blank optional (and empty) fields with their declared defaults."""
+    out = dict(values)
+    for field in fields:
+        if field.is_oauth or field.is_secret:
+            continue
+        current = (out.get(field.key) or "").strip()
+        if not current and field.default:
+            out[field.key] = field.default
+    return out
 
 
 def monthly_budget(key: str = "monthlyBudget") -> CredentialField:

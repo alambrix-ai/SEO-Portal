@@ -43,12 +43,13 @@ class AnthropicProvider(HttpLLMProvider):
         return "/v1/messages"
 
     def _payload(self, prompt: str, *, system: str, max_tokens: int) -> dict[str, Any]:
+        effort = (self.effort or settings.llm_effort or "high").lower()
         body: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens,
             "messages": [{"role": "user", "content": prompt}],
             "thinking": {"type": "adaptive"},
-            "output_config": {"effort": settings.llm_effort},
+            "output_config": {"effort": effort},
         }
         if system:
             body["system"] = system
@@ -88,7 +89,7 @@ class OpenAICompatibleProvider(HttpLLMProvider):
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-        return {
+        body: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             # The current parameter name. The older `max_tokens` is rejected by
@@ -96,6 +97,11 @@ class OpenAICompatibleProvider(HttpLLMProvider):
             # the kind of guess this codebase does not make.
             "max_completion_tokens": max_tokens,
         }
+        if self.temperature is not None:
+            body["temperature"] = self.temperature
+        if self.top_p is not None:
+            body["top_p"] = self.top_p
+        return body
 
     def _parse(self, data: dict[str, Any]) -> tuple[str, LLMUsage, str]:
         choices = data.get("choices") or []
@@ -148,10 +154,17 @@ class GeminiProvider(HttpLLMProvider):
     def _endpoint(self) -> str:
         return f"/v1beta/models/{self.model}:generateContent"
 
+# Fix Gemini thinkingConfig nesting — put thinkingConfig inside generationConfig cleanly
     def _payload(self, prompt: str, *, system: str, max_tokens: int) -> dict[str, Any]:
+        generation: dict[str, Any] = {"maxOutputTokens": max_tokens}
+        if self.temperature is not None:
+            generation["temperature"] = self.temperature
+        level = (self.thinking_level or "").strip().lower()
+        if level in {"low", "medium", "high"}:
+            generation["thinkingConfig"] = {"thinkingLevel": level}
         body: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": max_tokens},
+            "generationConfig": generation,
         }
         if system:
             body["systemInstruction"] = {"parts": [{"text": system}]}

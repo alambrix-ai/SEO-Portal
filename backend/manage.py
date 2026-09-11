@@ -203,19 +203,25 @@ def cmd_check(args: argparse.Namespace) -> int:
     if not (settings.llm_price_input_per_mtok or settings.llm_price_output_per_mtok):
         print("Model pricing    : unset — run costs will read zero")
 
-    if settings.resend_api_key:
-        print("Email            : Resend (HTTPS)")
-    elif not settings.smtp_host:
-        # Not a warning on this platform — mail *is* the login system, so an
-        # unconfigured mail server means nobody can sign in at all. Codes are
-        # written to the log instead, which is only tolerable locally.
-        print(
-            "Email            : NOT CONFIGURED — sign-in codes will be written "
-            "to the log instead of sent, and nobody can log in normally"
-        )
-        ok = False
+    if settings.app_env == "development":
+        if not settings.smtp_host:
+            print(
+                "Email            : NOT CONFIGURED — APP_ENV=development uses "
+                "SMTP; codes will be written to the log instead of sent"
+            )
+            ok = False
+        else:
+            print(f"Email            : SMTP {settings.smtp_host}:{settings.smtp_port} (APP_ENV=development)")
     else:
-        print(f"Email            : {settings.smtp_host}:{settings.smtp_port}")
+        # test / staging / production → Resend
+        if not settings.resend_api_key:
+            print(
+                f"Email            : NOT CONFIGURED — APP_ENV={settings.app_env} "
+                "requires RESEND_API_KEY"
+            )
+            ok = False
+        else:
+            print(f"Email            : Resend (HTTPS) (APP_ENV={settings.app_env})")
 
     print("\nStatus: " + ("ready" if ok else "NOT ready — see above"))
     return 0 if ok else 1

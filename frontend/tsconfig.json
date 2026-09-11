@@ -21,6 +21,7 @@
     "allowImportingTsExtensions": false,
     "verbatimModuleSyntax": false,
     "noEmit": true,
+    "allowJs": true,
     "baseUrl": ".",
     "paths": {
       "@/*": [

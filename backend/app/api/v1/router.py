@@ -8,6 +8,7 @@ from app.api.v1 import (
     ads,
     agents,
     approvals,
+    assistant,
     auth,
     connectors,
     dashboard,
@@ -24,6 +25,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(onboarding.router)
+api_router.include_router(assistant.router)
 api_router.include_router(agents.router)
 api_router.include_router(seo.router)
 api_router.include_router(offpage.router)

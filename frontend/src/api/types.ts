@@ -236,6 +236,8 @@ export interface CredentialField {
   help_text: string
   is_oauth: boolean
   oauth_label: string
+  /** Pre-filled when the workspace has no saved hint yet. */
+  default?: string
 }
 
 export interface ConnectorOut {
@@ -585,6 +587,59 @@ export interface PortalFeature {
   slug: string
   name: string
   enabled: boolean
+}
+
+// ── SEO Assistant ──────────────────────────────────────────────────────────
+export type AssistantMode = 'ask' | 'action'
+
+export interface AssistantChatRequest {
+  message: string
+  mode: AssistantMode
+  history?: { role: 'user' | 'assistant'; content: string }[]
+}
+
+export interface RecommendedItem {
+  slug: string
+  name: string
+  reason: string
+  depends_on?: string[]
+}
+
+export interface ActionField {
+  key: string
+  label: string
+  secret: boolean
+  required: boolean
+  placeholder: string
+  help: string
+  type: string
+  is_oauth: boolean
+}
+
+export interface ActionStep {
+  id: string
+  type: 'connect_connector' | 'configure_agent' | 'resume_agent'
+  slug: string
+  title: string
+  reason: string
+  fields?: ActionField[]
+  config?: Record<string, string | number> | null
+}
+
+export interface ActionPlan {
+  summary: string
+  steps: ActionStep[]
+}
+
+export interface AssistantChatResponse {
+  reply: string
+  mode: AssistantMode
+  recommendations: {
+    connectors: RecommendedItem[]
+    agents: RecommendedItem[]
+  }
+  action_plan: ActionPlan | null
+  model: string
 }
 
 // ── Health ─────────────────────────────────────────────────────────────────

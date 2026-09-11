@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from app.connectors.base.aeo_base import AEO_CAPABILITIES, BaseAeoConnector, urls_in_text
 from app.connectors.base.connector import ConnectorSpec
-from app.connectors.base.credentials import secret, text
+from app.connectors.base.credentials import secret
+from app.connectors.base.llm_fields import openai_llm_fields
 from app.core.logging import get_logger
 
 log = get_logger(__name__)
@@ -23,15 +24,10 @@ class OpenAiConnector(BaseAeoConnector):
         description="Writing for agents, and citation checks in ChatGPT search.",
         fields=(
             secret("apiKey", "API key", "sk-••••••••"),
-            text(
-                "model",
-                "Model",
-                "gpt-4o",
-                help_text="The exact model name from OpenAI — there is no default.",
-            ),
+            *openai_llm_fields(),
         ),
         capabilities=AEO_CAPABILITIES,
-        docs_url="https://platform.openai.com/docs/api-reference/responses",
+        docs_url="https://platform.openai.com/docs/api-reference/chat",
         base_url="https://api.openai.com/v1",
     )
 

@@ -7,9 +7,24 @@ into the same provider stack the agents already call via ``ctx.ask``.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.connectors.base.connector import Capability
+from app.connectors.base.llm_fields import (
+    ANTHROPIC_DEFAULT_EFFORT,
+    ANTHROPIC_DEFAULT_MAX_TOKENS,
+    GEMINI_DEFAULT_MAX_TOKENS,
+    GEMINI_DEFAULT_TEMPERATURE,
+    GEMINI_DEFAULT_THINKING_LEVEL,
+    OPENAI_DEFAULT_MAX_TOKENS,
+    OPENAI_DEFAULT_TEMPERATURE,
+    PERPLEXITY_DEFAULT_MAX_TOKENS,
+    PERPLEXITY_DEFAULT_TEMPERATURE,
+    PERPLEXITY_DEFAULT_TOP_P,
+    parse_choice,
+    parse_float,
+    parse_int,
+)
 from app.core.logging import get_logger
 from app.llm.base import LLMError, LLMProvider
 from app.llm.providers import (
@@ -26,13 +41,29 @@ log = get_logger(__name__)
 
 
 class PerplexityProvider(OpenAICompatibleProvider):
-    """Perplexity's chat API is OpenAI-shaped but not under ``/v1``."""
+    """Perplexity Sonar — OpenAI-shaped chat, with ``max_tokens`` (not completion)."""
 
     name = "Perplexity"
     key_setting = "connector"
 
     def _endpoint(self) -> str:
         return "/chat/completions"
+
+    def _payload(self, prompt: str, *, system: str, max_tokens: int) -> dict[str, Any]:
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+        }
+        if self.temperature is not None:
+            body["temperature"] = self.temperature
+        if self.top_p is not None:
+            body["top_p"] = self.top_p
+        return body
 
 
 # Connector slug → (provider class, API root). Roots match the vendor chat
@@ -68,6 +99,61 @@ class UnusedLLMProvider(LLMProvider):
 
 def supports_agent_llm(slug: str) -> bool:
     return slug in _CONNECTOR_PROVIDERS
+
+
+def _options_for(slug: str, creds: Any) -> dict[str, Any]:
+    """Vendor-specific generation knobs from the connector's stored values."""
+    get = creds.get
+    if slug == "anthropic_claude":
+        return {
+            "default_max_tokens": parse_int(
+                get("maxTokens"), default=int(ANTHROPIC_DEFAULT_MAX_TOKENS)
+            ),
+            "effort": parse_choice(
+                get("effort"),
+                allowed={"low", "medium", "high", "xhigh", "max"},
+                default=ANTHROPIC_DEFAULT_EFFORT,
+            ),
+        }
+    if slug == "google_gemini":
+        return {
+            "default_max_tokens": parse_int(
+                get("maxTokens"), default=int(GEMINI_DEFAULT_MAX_TOKENS)
+            ),
+            "temperature": parse_float(
+                get("temperature"), default=float(GEMINI_DEFAULT_TEMPERATURE)
+            ),
+            "thinking_level": parse_choice(
+                get("thinkingLevel"),
+                allowed={"low", "medium", "high"},
+                default=GEMINI_DEFAULT_THINKING_LEVEL,
+            ),
+        }
+    if slug == "openai":
+        return {
+            "default_max_tokens": parse_int(
+                get("maxTokens"), default=int(OPENAI_DEFAULT_MAX_TOKENS)
+            ),
+            "temperature": parse_float(
+                get("temperature"), default=float(OPENAI_DEFAULT_TEMPERATURE)
+            ),
+        }
+    if slug == "perplexity":
+        return {
+            "default_max_tokens": parse_int(
+                get("maxTokens"), default=int(PERPLEXITY_DEFAULT_MAX_TOKENS)
+            ),
+            "temperature": parse_float(
+                get("temperature"), default=float(PERPLEXITY_DEFAULT_TEMPERATURE)
+            ),
+            "top_p": parse_float(
+                get("topP"),
+                default=float(PERPLEXITY_DEFAULT_TOP_P),
+                minimum=0.0,
+                maximum=1.0,
+            ),
+        }
+    return {}
 
 
 def provider_from_connector(
@@ -117,11 +203,13 @@ def provider_from_connector(
             "Open Connectors and finish the connection."
         ) from exc
 
-    provider = klass(api_key=api_key, model=model, base_url=base_url)
+    options = _options_for(choice, instance.credentials)
+    provider = klass(api_key=api_key, model=model, base_url=base_url, **options)
     log.info(
-        "Agent LLM from connector %s (%s / %s)",
+        "Agent LLM from connector %s (%s / %s) options=%s",
         choice,
         provider.name,
         model,
+        {k: v for k, v in options.items()},
     )
     return provider

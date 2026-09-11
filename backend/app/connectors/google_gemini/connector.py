@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from app.connectors.base.aeo_base import AEO_CAPABILITIES, BaseAeoConnector, urls_in_text
 from app.connectors.base.connector import ConnectorSpec, HealthReport
-from app.connectors.base.credentials import secret, text
+from app.connectors.base.credentials import secret
+from app.connectors.base.llm_fields import gemini_llm_fields
 from app.core.exceptions import ConnectorError
 from app.core.logging import get_logger
 from app.db.base import utcnow
@@ -25,12 +26,7 @@ class GoogleGeminiConnector(BaseAeoConnector):
         description="Writing for agents, and citation checks in Gemini answers.",
         fields=(
             secret("apiKey", "API key", "AIza••••••••"),
-            text(
-                "model",
-                "Model",
-                "gemini-2.0-flash",
-                help_text="The exact model name from Google — there is no default.",
-            ),
+            *gemini_llm_fields(),
         ),
         capabilities=AEO_CAPABILITIES,
         docs_url="https://ai.google.dev/gemini-api/docs",

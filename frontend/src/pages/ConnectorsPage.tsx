@@ -265,7 +265,7 @@ function ConnectDialog({
     const initial: Record<string, string> = {}
     for (const field of connector.fields) {
       if (field.is_oauth) continue
-      initial[field.key] = connector.hints[field.key] ?? ''
+      initial[field.key] = connector.hints[field.key] ?? field.default ?? ''
     }
     return initial
   })

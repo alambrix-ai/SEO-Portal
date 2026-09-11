@@ -56,7 +56,18 @@ class HttpLLMProvider(LLMProvider):
     #: Which setting holds this provider's key, for error messages that name it.
     key_setting: str = ""
 
-    def __init__(self, *, api_key: str, model: str, base_url: str) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        base_url: str,
+        default_max_tokens: int | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        effort: str | None = None,
+        thinking_level: str | None = None,
+    ) -> None:
         if not api_key:
             raise LLMError(
                 f"{self.name} is missing its API key. Open Connectors, "
@@ -70,6 +81,11 @@ class HttpLLMProvider(LLMProvider):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url.rstrip("/")
+        self.default_max_tokens = default_max_tokens
+        self.temperature = temperature
+        self.top_p = top_p
+        self.effort = effort
+        self.thinking_level = thinking_level
         self._client: httpx.Client | None = None
 
     # ── Vendor specifics ───────────────────────────────────────────────────
@@ -125,18 +141,21 @@ class HttpLLMProvider(LLMProvider):
         max_tokens: int | None = None,
         temperature: float = 0.2,
     ) -> LLMResponse:
-        # Sampling parameters are not sent. They differ in name and legal
-        # range across these four vendors, and a value silently ignored by one
-        # of them is worse than one nobody passed.
-        del temperature
+        # Per-call temperature is ignored when the connector already set one;
+        # otherwise vendors that support sampling use the connector (or this)
+        # value inside _payload. Callers that still pass temperature= are fine.
+        _ = temperature
 
+        resolved_max = (
+            max_tokens
+            or self.default_max_tokens
+            or settings.llm_max_tokens
+        )
         client = self._http()
         request = client.build_request(
             "POST",
             self._endpoint(),
-            json=self._payload(
-                prompt, system=system, max_tokens=max_tokens or settings.llm_max_tokens
-            ),
+            json=self._payload(prompt, system=system, max_tokens=resolved_max),
             headers=self._headers(),
             params=self._params(),
         )

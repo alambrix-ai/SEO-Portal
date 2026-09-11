@@ -23,6 +23,7 @@ import { AgentsPage } from '@/pages/AgentsPage'
 import { ApprovalsPage } from '@/pages/ApprovalsPage'
 import { ConnectorsPage } from '@/pages/ConnectorsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { AssistantPage } from '@/pages/AssistantPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { OffPagePage } from '@/pages/OffPagePage'
 import { OnboardingPage } from '@/pages/OnboardingPage'
@@ -98,6 +99,14 @@ export function App() {
           element={
             <RequireModule module="onboarding">
               <OnboardingPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/assistant"
+          element={
+            <RequireModule module="onboarding">
+              <AssistantPage />
             </RequireModule>
           }
         />

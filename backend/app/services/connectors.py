@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.connectors.base import registry
 from app.connectors.base.connector import BaseConnector, Capability, HealthReport
-from app.connectors.base.credentials import Credentials, split_hints, validate
+from app.connectors.base.credentials import Credentials, apply_defaults, split_hints, validate
 from app.core.exceptions import ConnectorError, NotFoundError
 from app.core.logging import get_logger
 from app.db.base import utcnow
@@ -267,6 +267,8 @@ def connect(
         raise ConnectorError("This connection is not available right now.")
 
     cleaned = {k: (v or "").strip() for k, v in (values or {}).items()}
+    # Documented defaults (model, max tokens, effort, …) fill blanks first.
+    cleaned = apply_defaults(spec.fields, cleaned)
     validate(spec.fields, cleaned, oauth_done=oauth_completed or record.oauth_completed)
 
     # The shape is right; now find out whether the vendor agrees. This raises,

@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from app.connectors.base.aeo_base import AEO_CAPABILITIES, BaseAeoConnector, urls_in_text
 from app.connectors.base.connector import ConnectorSpec, HealthReport
-from app.connectors.base.credentials import secret, text
+from app.connectors.base.credentials import secret
+from app.connectors.base.llm_fields import anthropic_llm_fields
 from app.core.exceptions import ConnectorError
 from app.core.logging import get_logger
 from app.core.user_messages import message_for_http_status, message_for_unreachable
@@ -31,12 +32,7 @@ class AnthropicClaudeConnector(BaseAeoConnector):
         description="Writing for agents, and citation checks in Claude web search.",
         fields=(
             secret("apiKey", "API key", "sk-ant-••••••••"),
-            text(
-                "model",
-                "Model",
-                "claude-sonnet-4-5",
-                help_text="The exact model name from Anthropic — there is no default.",
-            ),
+            *anthropic_llm_fields(),
         ),
         capabilities=AEO_CAPABILITIES,
         docs_url="https://docs.anthropic.com/en/api/messages",

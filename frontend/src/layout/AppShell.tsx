@@ -16,6 +16,7 @@ import {
   AdsIcon,
   AgentsIcon,
   ApprovalsIcon,
+  AssistantIcon,
   ConnectorsIcon,
   DashboardIcon,
   OffPageIcon,
@@ -38,6 +39,7 @@ interface NavEntry {
 const NAV: NavEntry[] = [
   { to: '/dashboard', label: 'Dashboard', module: 'dashboard', icon: DashboardIcon },
   { to: '/onboarding', label: 'Onboarding', module: 'onboarding', icon: OnboardingIcon },
+  { to: '/assistant', label: 'SEO Assistant', module: 'onboarding', icon: AssistantIcon },
   { to: '/agents', label: 'AI Agents', module: 'agents', icon: AgentsIcon },
   { to: '/seo', label: 'SEO & AEO', module: 'seo', icon: SeoIcon },
   { to: '/technical', label: 'Technical SEO', module: 'seo', icon: TechnicalIcon },
@@ -59,6 +61,7 @@ const NAV: NavEntry[] = [
 const TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/onboarding': 'Onboarding',
+  '/assistant': 'SEO Assistant',
   '/agents': 'AI Agents',
   '/seo': 'SEO & AEO',
   '/technical': 'Technical SEO',

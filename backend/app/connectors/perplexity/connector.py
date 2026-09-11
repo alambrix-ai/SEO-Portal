@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from app.connectors.base.aeo_base import AEO_CAPABILITIES, BaseAeoConnector, urls_in_text
 from app.connectors.base.connector import ConnectorSpec
-from app.connectors.base.credentials import secret, text
+from app.connectors.base.credentials import secret
+from app.connectors.base.llm_fields import perplexity_llm_fields
 from app.core.logging import get_logger
 
 log = get_logger(__name__)
@@ -24,15 +25,10 @@ class PerplexityConnector(BaseAeoConnector):
         description="Writing for agents, and citation checks in Perplexity answers.",
         fields=(
             secret("apiKey", "API key", "pplx-••••••••"),
-            text(
-                "model",
-                "Model",
-                "sonar",
-                help_text="The exact model name from Perplexity — there is no default.",
-            ),
+            *perplexity_llm_fields(),
         ),
         capabilities=AEO_CAPABILITIES,
-        docs_url="https://docs.perplexity.ai/",
+        docs_url="https://docs.perplexity.ai/docs/sonar/openai-compatibility",
         base_url="https://api.perplexity.ai",
     )
 
