@@ -292,7 +292,10 @@ def test_the_shipped_fonts_match_fonts_lock() -> None:
     for digest, relative, *_ in entries:
         path = (FONTS / relative).resolve()
         assert path.is_relative_to(FONTS.resolve()), relative
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == digest, relative
+        payload = path.read_bytes()
+        if relative.endswith(".txt"):
+            payload = payload.replace(b"\r\n", b"\n")
+        assert hashlib.sha256(payload).hexdigest() == digest, relative
 
 
 def test_the_console_image_needs_no_writable_nginx_config() -> None:
