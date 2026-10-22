@@ -31,16 +31,26 @@ log = get_logger(__name__)
 
 AssistantMode = Literal["ask", "action"]
 
+# What a marketer sees when the assistant fails. Exception text never reaches
+# them: it can carry vendor bodies, keys or stack-shaped detail.
+_NOT_SET_UP = (
+    "The assistant is not set up yet. Ask your administrator to finish setting it up."
+)
+_UNREACHABLE = "The assistant could not be reached just now. Please try again in a few minutes."
+_TURN_FAILED = "The assistant could not finish this reply. Please try again."
+
 
 def _catalogue(db: Session, tenant_id: Any) -> dict[str, Any]:
     """Agents and connectors the assistant may recommend, with live status."""
     enabled_agents = portal_features.enabled_agent_slugs(db)
-    enabled_connectors = portal_features.enabled_connector_slugs(db)
     connected = {
         row.slug
         for row in connector_service.list_records(db, tenant_id=tenant_id)
         if row.connected
     }
+    # Unverified types hidden in Portal Admin are not recommended, unless
+    # this workspace already connected one.
+    enabled_connectors = portal_features.offered_connector_slugs(db, connected=connected)
 
     agents: list[dict[str, Any]] = []
     for agent in all_agents():
@@ -176,13 +186,13 @@ shaped as:
 }
 Do not include a "reply" key in the JSON — the markdown above is the reply."""
 
-    return f"""You are Willy, the AutoMarket AI assistant inside THIS customer console.
+    return f"""You are Willy, the Synaprank.ai assistant inside THIS customer console.
 
 Scope (hard guardrail):
 - You ONLY help with this portal: SEO, AEO, technical SEO, off-page/PR, ads,
   connectors, AI agents, onboarding, approvals, and workspace setup.
 - Refuse anything outside that scope: maths, general trivia, coding homework,
-  news, personal advice, other products, or role-play unrelated to AutoMarket.
+  news, personal advice, other products, or role-play unrelated to Synaprank.
 - When refusing, say briefly that you only help with this portal, give 1–2
   example questions that ARE in scope, and return empty recommendations and
   null action_plan. Do not answer the off-topic question itself.
@@ -217,7 +227,7 @@ Rules:
 
 
 _OFF_TOPIC_REPLY = (
-    "I only help with **this AutoMarket portal** — SEO, AEO, connectors, and "
+    "I only help with **this Synaprank portal** — SEO, AEO, connectors, and "
     "agents.\n\n"
     "Try something like:\n"
     "- *How do I improve on-page SEO for our product pages?*\n"
@@ -257,6 +267,7 @@ def _looks_off_topic(message: str) -> bool:
         "onboarding",
         "workspace",
         "portal",
+        "synaprank",
         "automarket",
         "willy",
         "site",
@@ -508,15 +519,12 @@ def _provider() -> AnthropicProvider:
     key = (settings.anthropic_api_key or "").strip()
     model = _env_model()
     if not key:
-        raise AssistantConfigError(
-            "SEO Assistant needs ANTHROPIC_API_KEY in the server .env "
-            "(not a workspace Anthropic connector).",
-        )
+        # The setting name is for operators, so it goes to the log only.
+        log.warning("SEO Assistant unavailable: ANTHROPIC_API_KEY is not set")
+        raise AssistantConfigError(_NOT_SET_UP)
     if not model:
-        raise AssistantConfigError(
-            "SEO Assistant needs ASSISTANT_MODEL or LLM_MODEL in the server .env "
-            "(for example claude-sonnet-4-5).",
-        )
+        log.warning("SEO Assistant unavailable: ASSISTANT_MODEL / LLM_MODEL is not set")
+        raise AssistantConfigError(_NOT_SET_UP)
     return AnthropicProvider(
         api_key=key,
         model=model,
@@ -611,17 +619,11 @@ def chat(
     except AssistantConfigError:
         raise
     except LLMError as exc:
-        log.exception("SEO Assistant env-LLM call failed")
-        raise AssistantUpstreamError(str(exc) or (
-            "The assistant could not reach the LLM configured in the server .env. "
-            "Check ANTHROPIC_API_KEY and ASSISTANT_MODEL (or LLM_MODEL)."
-        )) from exc
+        log.error("SEO Assistant env-LLM call failed (%s)", type(exc).__name__)
+        raise AssistantUpstreamError(_UNREACHABLE) from exc
     except Exception as exc:  # noqa: BLE001 — surface as operator-facing error
-        log.exception("SEO Assistant LlamaIndex chat engine failed")
-        raise AssistantUpstreamError(
-            "The assistant could not complete this turn. "
-            "Check ANTHROPIC_API_KEY and ASSISTANT_MODEL (or LLM_MODEL).",
-        ) from exc
+        log.error("SEO Assistant chat engine failed (%s)", type(exc).__name__)
+        raise AssistantUpstreamError(_TURN_FAILED) from exc
 
     parsed = _extract_json(result.text)
     return _finalize_turn(
@@ -658,8 +660,8 @@ def chat_stream(
     catalogue = _catalogue(db, tenant_id)
     try:
         provider = _provider()
-    except AssistantConfigError as exc:
-        yield {"event": "error", "detail": str(exc)}
+    except AssistantConfigError:
+        yield {"event": "error", "detail": _NOT_SET_UP}
         return
 
     yield {"event": "status", "text": "thinking"}
@@ -713,19 +715,15 @@ def chat_stream(
             if suffix:
                 yield {"event": "delta", "text": suffix}
         yield {"event": "final", "data": final}
-    except AssistantConfigError as exc:
-        yield {"event": "error", "detail": str(exc)}
+    except AssistantConfigError:
+        yield {"event": "error", "detail": _NOT_SET_UP}
+    except AssistantUpstreamError as exc:
+        # Raised by this module with authored copy (e.g. an unreadable reply).
+        log.error("SEO Assistant stream failed (%s)", type(exc).__name__)
+        yield {"event": "error", "detail": exc.message}
     except LLMError as exc:
-        log.exception("SEO Assistant stream LLM failed")
-        yield {
-            "event": "error",
-            "detail": str(exc)
-            or "The assistant could not reach the LLM configured in the server .env.",
-        }
+        log.error("SEO Assistant stream LLM failed (%s)", type(exc).__name__)
+        yield {"event": "error", "detail": _UNREACHABLE}
     except Exception as exc:  # noqa: BLE001
-        log.exception("SEO Assistant stream failed")
-        yield {
-            "event": "error",
-            "detail": str(exc)
-            or "The assistant could not complete this turn.",
-        }
+        log.error("SEO Assistant stream failed (%s)", type(exc).__name__)
+        yield {"event": "error", "detail": _TURN_FAILED}

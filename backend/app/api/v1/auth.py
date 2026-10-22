@@ -12,7 +12,7 @@ which addresses have accounts.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, BackgroundTasks, Request, status
 from sqlalchemy import func, select
 
 from app.api.deps import ClientIp, CurrentUserDep, DbSession
@@ -39,6 +39,14 @@ from app.services import approvals, audit, auth as auth_service
 from app.services.auth import AuthResult, CodeChallenge
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+#: The one answer to "send me a sign-in code", whoever asks. It must not
+#: change with whether the address has an account, or the form becomes a way
+#: to find out which addresses are customers.
+SIGN_IN_CODE_REQUESTED = (
+    "If that address has an account, we've sent it a sign-in code. "
+    "Check your inbox."
+)
 
 
 # ── Serialisation ──────────────────────────────────────────────────────────
@@ -161,21 +169,27 @@ def _challenge(challenge: CodeChallenge, detail: str) -> CodeChallengeResponse:
 # ── Step one: ask for a code ───────────────────────────────────────────────
 @router.post("/request-code", response_model=CodeChallengeResponse)
 def request_code(
-    payload: RequestCodeRequest, db: DbSession, request: Request, ip: ClientIp
+    payload: RequestCodeRequest,
+    db: DbSession,
+    request: Request,
+    ip: ClientIp,
+    background: BackgroundTasks,
 ) -> CodeChallengeResponse:
-    """Mail a sign-in code to an existing active account.
+    """Mail a sign-in code if the address has an active account.
 
-    Returns 404 when the address has no account, and 403 when the account is
-    deactivated, so the console can guide the operator clearly.
+    The response is identical either way — same status, same body — and the
+    mail goes out after the response, so its delivery time cannot give the
+    answer away either. The code row is committed before the mail is sent.
     """
     challenge = auth_service.request_sign_in_code(
         db,
         email=str(payload.email),
         ip_address=ip,
         user_agent=request.headers.get("user-agent", ""),
+        schedule_mail=background.add_task,
     )
     db.commit()
-    return _challenge(challenge, "A sign-in code is on its way to that address")
+    return _challenge(challenge, SIGN_IN_CODE_REQUESTED)
 
 
 @router.post("/request-signup-code", response_model=CodeChallengeResponse)
@@ -184,8 +198,10 @@ def request_signup_code(
 ) -> CodeChallengeResponse:
     """Mail a code to prove an address before a workspace is created.
 
-    This one does report an address that is already registered — somebody
-    trying to sign up needs to be told to sign in instead.
+    This one does report an address that is already registered (409) —
+    somebody trying to sign up needs to be told to sign in instead. That is a
+    known, rate-limited disclosure; sign-in (``/request-code``) no longer
+    makes it.
     """
     challenge = auth_service.request_sign_up_code(
         db,
@@ -225,7 +241,12 @@ def register(
 def login(
     payload: LoginRequest, db: DbSession, request: Request, ip: ClientIp
 ) -> AuthResponse:
-    """Redeem a sign-in code for a session."""
+    """Redeem a sign-in code for a session.
+
+    Every refusal is the same 401 and the same sentence
+    (``auth_service.CODE_REJECTED_MESSAGE``): it never says how many tries
+    are left, whether the address exists, or whether sign-in is paused.
+    """
     result = auth_service.authenticate(
         db,
         email=str(payload.email),
@@ -253,8 +274,9 @@ def refresh(
 
 
 @router.post("/logout", response_model=Message)
-def logout(payload: RefreshRequest, db: DbSession) -> Message:
-    auth_service.logout(db, refresh_token=payload.refresh_token)
+def logout(payload: RefreshRequest, db: DbSession, ip: ClientIp) -> Message:
+    """End one session lineage. Audited in the session's workspace."""
+    auth_service.logout(db, refresh_token=payload.refresh_token, ip_address=ip)
     db.commit()
     return Message(detail="Signed out")
 
@@ -267,22 +289,28 @@ def me(current: CurrentUserDep, db: DbSession) -> SessionOut:
 
 @router.post("/sign-out-everywhere", response_model=Message)
 def sign_out_everywhere(current: CurrentUserDep, db: DbSession) -> Message:
-    """Revoke every session this user has, including the one calling.
+    """Revoke every session this person has, in every workspace, including the one calling.
 
     With no password, this is the one remedy a user can apply themselves: if
     they think somebody has been in their mailbox, ending every live session
     is what actually cuts that access off. A stolen code cannot be reused —
     it was spent — but a session minted from one lasts until it is revoked.
     """
-    count = auth_service.revoke_all_sessions(db, current.user, "signed_out_everywhere")
+    count = auth_service.revoke_sessions_everywhere(
+        db, current.user, "signed_out_everywhere"
+    )
     audit.record_user_action(
-        db, user=current.user, action="signed out of every device", module="admin"
+        db,
+        user=current.user,
+        action="signed out of every device in every workspace",
+        module="admin",
+        context={"revoked": count},
     )
     db.commit()
     return Message(
         detail=(
-            f"Signed out of {count} session{'s' if count != 1 else ''} — "
-            "sign in again with a new code"
+            f"Signed out of {count} session{'s' if count != 1 else ''} in all your "
+            "workspaces. Sign in again with a new code."
         )
     )
 

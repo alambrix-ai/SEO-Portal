@@ -7,6 +7,10 @@
     python manage.py rollup          # daily metric rollup
     python manage.py rotate-keys     # re-wrap org data keys under the new KEK
     python manage.py check           # configuration and connectivity report
+    python manage.py verify <slug> --workspace <id|slug> [--allow-writes] [--record]
+                                     [--environment live|test_account|sandbox]
+                                     [--set verifyKEY=VALUE ...]
+    python manage.py verify --all --workspace <id|slug>   # every connected connector
 """
 from __future__ import annotations
 
@@ -227,6 +231,136 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _find_workspace(db, ref: str):  # noqa: ANN001, ANN202
+    """A workspace by id or slug, or None."""
+    import uuid
+
+    from app.models.workspace import Organization
+
+    ref = (ref or "").strip()
+    try:
+        uuid.UUID(ref)
+    except ValueError:
+        pass
+    else:
+        org = db.get(Organization, ref)
+        if org is not None:
+            return org
+    return db.execute(select(Organization).where(Organization.slug == ref)).scalar_one_or_none()
+
+
+def _print_report(report, *, name: str, workspace: str) -> None:  # noqa: ANN001
+    from app.services.verification import ENVIRONMENT_LABELS
+
+    env = ENVIRONMENT_LABELS.get(report.environment, report.environment)
+    print(f"\n{name} ({report.slug}) - {env} - workspace {workspace}")
+    if report.steps:
+        width = max(len(s.key) for s in report.steps)
+        for step in report.steps:
+            mark = "SKIP" if step.skipped else ("PASS" if step.ok else "FAIL")
+            took = "" if step.skipped else f"{step.seconds:6.2f}s"
+            print(f"  {mark}  {step.kind:<5}  {step.key:<{width}}  {took:>7}  {step.detail}")
+    if report.note:
+        print(f"  Note: {report.note}")
+    print(f"  Result: {'PASSED' if report.ok else 'FAILED'}")
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    """Run connectors' live checks with one workspace's connection.
+
+    Exit code 0 when every connector checked passed; 1 when any failed, could
+    not be run, or has no live check yet; 2 for a usage problem (unknown
+    workspace or connector, nothing to check).
+    """
+    from app.connectors.base import registry
+    from app.core.exceptions import AppError
+    from app.db.session import SessionLocal, session_scope
+    from app.services import verification
+
+    if bool(args.slug) == bool(args.all):
+        print("Give one connector slug, or --all (not both).", file=sys.stderr)
+        return 2
+    if args.slug and registry.get_spec(args.slug) is None:
+        print(f"No connector called {args.slug!r}.", file=sys.stderr)
+        return 2
+
+    options: dict[str, str] = {}
+    for pair in args.set or []:
+        key, sep, value = pair.partition("=")
+        if not sep:
+            print(f"--set needs key=value, got {pair!r}.", file=sys.stderr)
+            return 2
+        options[key.strip()] = value
+    try:
+        options = verification.clean_options(options)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    lookup = SessionLocal()
+    try:
+        org = _find_workspace(lookup, args.workspace)
+        if org is None:
+            print(f"No workspace with id or slug {args.workspace!r}.", file=sys.stderr)
+            return 2
+        tenant_id, org_name = org.id, org.slug
+    finally:
+        lookup.close()
+
+    run_by = f"cli:{args.run_by}" if args.run_by else "cli"
+    results: list[tuple[str, str]] = []
+    with session_scope(tenant_id) as db:
+        from app.models.workspace import Organization
+        from app.services.connectors import build_connector_bundle
+
+        org = db.get(Organization, tenant_id)
+        if args.all:
+            bundle = build_connector_bundle(db, org)
+            slugs = [s for s in registry.connector_slugs() if s in bundle.connected]
+            bundle.close()
+            slugs = [s for s in slugs if verification.has_steps(s)]
+            if not slugs:
+                print(f"Nothing to check: no connector connected in {org_name} has a live check yet.")
+                return 2
+        else:
+            slugs = [args.slug]
+
+        for slug in slugs:
+            name = registry.get_spec(slug).name
+            outcome = verification.RunOutcome()
+            try:
+                report = verification.run(
+                    db,
+                    org,
+                    slug,
+                    allow_writes=args.allow_writes,
+                    record=args.record,
+                    environment=args.environment or None,
+                    options=options,
+                    run_by=run_by,
+                    outcome=outcome,
+                )
+            except AppError as exc:
+                print(f"\n{name} ({slug}): {exc.message}", file=sys.stderr)
+                results.append((slug, "ERROR"))
+                continue
+            db.commit()
+            _print_report(report, name=name, workspace=org_name)
+            if not report.steps:
+                results.append((slug, "NO CHECK"))
+                continue
+            for path in outcome.cassettes:
+                print(f"  Recorded {path}")
+            results.append((slug, "PASSED" if report.ok else "FAILED"))
+    verification.invalidate_cache()
+
+    if len(results) > 1:
+        print("\nSummary")
+        for slug, result in results:
+            print(f"  {result:<8}  {slug}")
+    return 0 if all(result == "PASSED" for _, result in results) else 1
+
+
 def _safe_dsn() -> str:
     """The DSN with any password removed, for printing."""
     from urllib.parse import urlsplit, urlunsplit
@@ -243,7 +377,7 @@ def _safe_dsn() -> str:
 # ── Entry point ────────────────────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="manage.py", description="AutoMarket AI operations CLI"
+        prog="manage.py", description="Synaprank.ai operations CLI"
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -268,6 +402,43 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("check", help="configuration and connectivity report").set_defaults(
         func=cmd_check
     )
+
+    verify = sub.add_parser(
+        "verify", help="run a connector's live checks against a real (test) account"
+    )
+    verify.add_argument("slug", nargs="?", default="", help="connector slug, e.g. site_crawler")
+    verify.add_argument(
+        "--all", action="store_true", help="every connected connector that has a live check"
+    )
+    verify.add_argument(
+        "--workspace", required=True, help="the workspace (id or slug) whose connection to use"
+    )
+    verify.add_argument(
+        "--allow-writes",
+        action="store_true",
+        help="also run write steps (they undo themselves); test or sandbox accounts only",
+    )
+    verify.add_argument(
+        "--environment",
+        choices=("live", "test_account", "sandbox"),
+        default="",
+        help="say what the connection points at, overriding its own setting for this run",
+    )
+    verify.add_argument(
+        "--record",
+        action="store_true",
+        help="save the scrubbed HTTP exchanges under tests/cassettes/<slug>/",
+    )
+    verify.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="verifyKEY=VALUE",
+        help="a run-only option for the checks, e.g. verifyImageUrl=https://...; repeatable; "
+        "names must start with 'verify'; never saved",
+    )
+    verify.add_argument("--run-by", default="", help="who ran it, stored with the result")
+    verify.set_defaults(func=cmd_verify)
     return parser
 
 

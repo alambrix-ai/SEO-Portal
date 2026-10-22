@@ -1,7 +1,8 @@
 """Agent registration, per-organisation configuration, and run history."""
 from __future__ import annotations
 
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -92,6 +93,57 @@ class AgentRecord(Base, TimestampMixin, TenantScopedMixin):
         return self.status == AgentStatus.RUNNING.value
 
 
+#: How many timeline entries a run keeps. A pass over hundreds of pages
+#: reports a step per page; the console needs the shape, not every line.
+TIMELINE_LIMIT = 40
+
+_COUNT_SUFFIX = re.compile(r"\s*\(\d+ of \d+\)\s*$")
+
+
+def record_timeline_step(
+    detail: dict | None, step: str, *, done: int = 0, total: int = 0
+) -> dict:
+    """Return ``detail`` with ``step`` recorded on its ``timeline``.
+
+    A step that only moves its own counter ("Applying (3 of 9)" after
+    "Applying (2 of 9)") updates the current entry instead of adding one.
+    Each entry keeps when it started and when it was last updated, so the
+    console can tell a long step from a pass that has stopped reporting.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    out = dict(detail or {})
+    timeline = [dict(entry) for entry in (out.get("timeline") or [])]
+    label = _COUNT_SUFFIX.sub("", step).strip()[:160] or step[:160]
+    if timeline and timeline[-1].get("label") == label:
+        timeline[-1].update(text=step[:160], done=done, total=total, updated_at=now)
+    else:
+        if timeline:
+            timeline[-1]["ended_at"] = now
+        timeline.append(
+            {
+                "label": label,
+                "text": step[:160],
+                "done": done,
+                "total": total,
+                "at": now,
+                "updated_at": now,
+            }
+        )
+    out["timeline"] = timeline[-TIMELINE_LIMIT:]
+    return out
+
+
+def close_timeline(detail: dict | None) -> dict:
+    """Mark the last timeline entry as ended, when the pass finishes."""
+    out = dict(detail or {})
+    timeline = [dict(entry) for entry in (out.get("timeline") or [])]
+    if timeline and not timeline[-1].get("ended_at"):
+        timeline[-1]["ended_at"] = datetime.now(timezone.utc).isoformat()
+    if timeline:
+        out["timeline"] = timeline
+    return out
+
+
 class AgentRun(Base, TenantScopedMixin):
     """One execution of one agent, and the actions it produced."""
 
@@ -130,6 +182,12 @@ class AgentRun(Base, TenantScopedMixin):
     tokens_in: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     tokens_out: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     cost: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    # Which connected AI model actually wrote for this run: the connector slug
+    # and the model id it used. Empty when the run made no model call. Kept
+    # on the run (not read from the agent) because the agent's choice can
+    # change afterwards, and usage reports must price what was really used.
+    llm_connector: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    llm_model: Mapped[str] = mapped_column(String(128), default="", nullable=False)
 
     # Structural detail only (counts, ids, timings). Anything that could carry
     # customer content goes through the organisation's own key instead.

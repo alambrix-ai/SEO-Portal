@@ -35,6 +35,10 @@ class Module(StrEnum):
     APPROVALS = "approvals"
     REPORTS = "reports"
     ADMIN = "admin"
+    #: Articles, campaigns, social posts and emails the content agents write.
+    CONTENT = "content"
+    #: Brand kits (logos, colours, fonts) and products the Creative Studio uses.
+    BRAND_KIT = "brand_kit"
 
 
 ROLE_LABELS: dict[Role, str] = {
@@ -62,32 +66,32 @@ ROLE_ACCESS: dict[Role, dict[Module, Access]] = {
     Role.ADMIN: {
         Module.DASHBOARD: F, Module.ONBOARDING: F, Module.AGENTS: F, Module.SEO: F,
         Module.OFFPAGE: F, Module.ADS: F, Module.CONNECTORS: F, Module.APPROVALS: F,
-        Module.REPORTS: F, Module.ADMIN: F,
+        Module.REPORTS: F, Module.ADMIN: F, Module.CONTENT: F, Module.BRAND_KIT: F,
     },
     Role.MANAGER: {
         Module.DASHBOARD: F, Module.ONBOARDING: F, Module.AGENTS: F, Module.SEO: F,
         Module.OFFPAGE: F, Module.ADS: F, Module.CONNECTORS: V, Module.APPROVALS: F,
-        Module.REPORTS: F, Module.ADMIN: V,
+        Module.REPORTS: F, Module.ADMIN: V, Module.CONTENT: F, Module.BRAND_KIT: F,
     },
     Role.SEO: {
         Module.DASHBOARD: F, Module.ONBOARDING: N, Module.AGENTS: V, Module.SEO: F,
         Module.OFFPAGE: F, Module.ADS: N, Module.CONNECTORS: V, Module.APPROVALS: V,
-        Module.REPORTS: V, Module.ADMIN: N,
+        Module.REPORTS: V, Module.ADMIN: N, Module.CONTENT: F, Module.BRAND_KIT: V,
     },
     Role.ADS: {
         Module.DASHBOARD: F, Module.ONBOARDING: N, Module.AGENTS: V, Module.SEO: N,
         Module.OFFPAGE: N, Module.ADS: F, Module.CONNECTORS: V, Module.APPROVALS: V,
-        Module.REPORTS: V, Module.ADMIN: N,
+        Module.REPORTS: V, Module.ADMIN: N, Module.CONTENT: F, Module.BRAND_KIT: V,
     },
     Role.APPROVER: {
         Module.DASHBOARD: F, Module.ONBOARDING: N, Module.AGENTS: V, Module.SEO: V,
         Module.OFFPAGE: V, Module.ADS: V, Module.CONNECTORS: V, Module.APPROVALS: F,
-        Module.REPORTS: V, Module.ADMIN: N,
+        Module.REPORTS: V, Module.ADMIN: N, Module.CONTENT: V, Module.BRAND_KIT: V,
     },
     Role.CLIENT: {
         Module.DASHBOARD: V, Module.ONBOARDING: N, Module.AGENTS: N, Module.SEO: N,
         Module.OFFPAGE: N, Module.ADS: N, Module.CONNECTORS: N, Module.APPROVALS: N,
-        Module.REPORTS: V, Module.ADMIN: N,
+        Module.REPORTS: V, Module.ADMIN: N, Module.CONTENT: N, Module.BRAND_KIT: N,
     },
 }
 
@@ -97,6 +101,8 @@ AGENT_CATEGORY_MODULE: dict[str, Module] = {
     "SEO & AEO": Module.SEO,
     "Off-Page": Module.OFFPAGE,
     "Ads": Module.ADS,
+    "Local business": Module.SEO,
+    "Content & Social": Module.CONTENT,
 }
 
 

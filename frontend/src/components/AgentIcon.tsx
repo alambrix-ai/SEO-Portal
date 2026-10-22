@@ -9,109 +9,7 @@ import type { CSSProperties, ReactNode, SVGProps } from 'react'
 
 type GlyphProps = SVGProps<SVGSVGElement> & { size?: number }
 
-type Theme = {
-  from: string
-  mid: string
-  to: string
-  ink: string
-  /** Inner glyph accents that contrast the tile ink. */
-  detail: string
-}
 
-const AGENT_THEMES: Record<string, Theme> = {
-  aeo_qa_injector: {
-    from: '#6d4570',
-    mid: '#8f5f8a',
-    to: '#5b3e58',
-    ink: '#fff8f0',
-    detail: '#3d2a38',
-  },
-  backlink_node_discovery: {
-    from: '#b07a45',
-    mid: '#966b3f',
-    to: '#6e4a28',
-    ink: '#fff8f0',
-    detail: '#3d2a18',
-  },
-  click_fraud_controller: {
-    from: '#5c3a22',
-    mid: '#3d2a18',
-    to: '#2a1c10',
-    ink: '#f6efe6',
-    detail: '#1a120c',
-  },
-  competitor_link_monitor: {
-    from: '#6a8f74',
-    mid: '#7d9a83',
-    to: '#4a3247',
-    ink: '#faf8f4',
-    detail: '#243028',
-  },
-  digital_pr_outreach: {
-    from: '#e0c27a',
-    mid: '#d4b56a',
-    to: '#a87848',
-    ink: '#1a1a1a',
-    detail: '#fff8f0',
-  },
-  dynamic_creative_optimizer: {
-    from: '#9a6a8c',
-    mid: '#865a78',
-    to: '#c09060',
-    ink: '#fff8f0',
-    detail: '#3d2a38',
-  },
-  first_party_audience_modeler: {
-    from: '#8fad96',
-    mid: '#7d9a83',
-    to: '#4f5f55',
-    ink: '#faf8f4',
-    detail: '#243028',
-  },
-  knowledge_graph_schema: {
-    from: '#8a6238',
-    mid: '#5c4026',
-    to: '#3d2a18',
-    ink: '#f6efe6',
-    detail: '#1a120c',
-  },
-  on_page_seo_sync: {
-    from: '#8fa97f',
-    mid: '#6f8f68',
-    to: '#4f6a48',
-    ink: '#fff8f0',
-    detail: '#243028',
-  },
-  predictive_budget_engine: {
-    from: '#e8c96e',
-    mid: '#d4b56a',
-    to: '#b8893f',
-    ink: '#1a1a1a',
-    detail: '#fff8f0',
-  },
-  referral_spam_guard: {
-    from: '#6b455f',
-    mid: '#4a3247',
-    to: '#2f1f2c',
-    ink: '#f6efe6',
-    detail: '#1a120c',
-  },
-  technical_seo_auditor: {
-    from: '#8a4f4a',
-    mid: '#6e3d3a',
-    to: '#4a2a28',
-    ink: '#fff8f0',
-    detail: '#2a1614',
-  },
-}
-
-const FALLBACK_THEME: Theme = {
-  from: '#f3ebe0',
-  mid: '#e5d8c6',
-  to: '#cbb89a',
-  ink: '#5c4026',
-  detail: '#fff8f0',
-}
 
 function Glyph({
   size = 22,
@@ -351,6 +249,26 @@ function SpamShieldIcon({ size }: GlyphProps) {
   )
 }
 
+function MapPinIcon({ size }: GlyphProps) {
+  return (
+    <Glyph size={size}>
+      <path fill="currentColor" opacity="0.3" d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 1 1 13 0c0 5.4-6.5 11-6.5 11z" />
+      <path stroke="currentColor" strokeWidth="2" strokeLinejoin="round" d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 1 1 13 0c0 5.4-6.5 11-6.5 11z" />
+      <circle cx="12" cy="10" r="2.4" fill="currentColor" />
+    </Glyph>
+  )
+}
+
+function ReviewReplyIcon({ size }: GlyphProps) {
+  return (
+    <Glyph size={size}>
+      <path fill="currentColor" opacity="0.3" d="M4 5h16v11H9l-5 4z" />
+      <path stroke="currentColor" strokeWidth="2" strokeLinejoin="round" d="M4 5h16v11H9l-5 4z" />
+      <path fill="currentColor" d="M12 7.6l.9 1.9 2.1.3-1.5 1.4.4 2.1-1.9-1-1.9 1 .4-2.1-1.5-1.4 2.1-.3z" />
+    </Glyph>
+  )
+}
+
 function AuditIcon({ size }: GlyphProps) {
   return (
     <Glyph size={size}>
@@ -411,22 +329,51 @@ const AGENT_ICONS: Record<string, (props: GlyphProps) => ReactNode> = {
   predictive_budget_engine: ForecastIcon,
   referral_spam_guard: SpamShieldIcon,
   technical_seo_auditor: AuditIcon,
+  local_search_tracker: MapPinIcon,
+  review_responder: ReviewReplyIcon,
+}
+
+/** Product-area tint for each agent: one restrained hue per area. */
+const AREA_TINT: Record<string, { bg: string; fg: string; border: string }> = {
+  seo: { bg: '#eff6ff', fg: '#1d4ed8', border: '#dbeafe' },
+  offpage: { bg: '#f5f3ff', fg: '#6d28d9', border: '#ede9fe' },
+  ads: { bg: '#f0fdfa', fg: '#0f766e', border: '#ccfbf1' },
+  guard: { bg: '#f8fafc', fg: '#334155', border: '#e2e8f0' },
+  local: { bg: '#fff7ed', fg: '#c2410c', border: '#ffedd5' },
+}
+
+const AGENT_AREA: Record<string, keyof typeof AREA_TINT> = {
+  aeo_qa_injector: 'seo',
+  knowledge_graph_schema: 'seo',
+  on_page_seo_sync: 'seo',
+  technical_seo_auditor: 'seo',
+  backlink_node_discovery: 'offpage',
+  competitor_link_monitor: 'offpage',
+  digital_pr_outreach: 'offpage',
+  dynamic_creative_optimizer: 'ads',
+  first_party_audience_modeler: 'ads',
+  predictive_budget_engine: 'ads',
+  click_fraud_controller: 'guard',
+  referral_spam_guard: 'guard',
+  local_search_tracker: 'local',
+  review_responder: 'local',
 }
 
 export function AgentIcon({ slug, size = 44 }: { slug: string; size?: number }) {
-  const theme = AGENT_THEMES[slug] ?? FALLBACK_THEME
+  const tint = AREA_TINT[AGENT_AREA[slug] ?? 'guard'] ?? AREA_TINT.guard!
   const Component = AGENT_ICONS[slug] ?? GenericAgentIcon
-  const glyphSize = Math.max(18, Math.round(size * 0.55))
+  const glyphSize = Math.max(16, Math.round(size * 0.55))
   const style = {
     width: size,
     height: size,
-    color: theme.ink,
-    ['--agent-detail' as string]: theme.detail,
-    background: `linear-gradient(145deg, ${theme.from} 0%, ${theme.mid} 48%, ${theme.to} 100%)`,
+    color: tint.fg,
+    background: tint.bg,
+    borderColor: tint.border,
+    ['--agent-detail' as string]: tint.fg,
   } as CSSProperties
 
   return (
-    <span className="connector-icon agent-icon agent-icon-rich" style={style}>
+    <span className="connector-icon agent-icon agent-icon-flat" style={style}>
       {Component({ size: glyphSize })}
     </span>
   )

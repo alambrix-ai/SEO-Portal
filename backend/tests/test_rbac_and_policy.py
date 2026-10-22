@@ -63,6 +63,24 @@ def test_only_admin_manages_connectors_and_admin():
     assert can_write(Role.ADMIN, Module.ADMIN)
 
 
+def test_brand_kit_is_managed_by_admins_and_managers_only():
+    assert Module.BRAND_KIT.value == "brand_kit"
+    expected = {
+        Role.ADMIN: Access.FULL,
+        Role.MANAGER: Access.FULL,
+        Role.SEO: Access.VIEW,
+        Role.ADS: Access.VIEW,
+        Role.APPROVER: Access.VIEW,
+        Role.CLIENT: Access.NONE,
+    }
+    for role, access in expected.items():
+        assert access_map(role)["brand_kit"] == access.value, role
+    # Specialists and approvers can use a kit but never change it.
+    for role in (Role.SEO, Role.ADS, Role.APPROVER, Role.CLIENT):
+        assert not can_write(role, Module.BRAND_KIT), role
+    assert not can_view(Role.CLIENT, Module.BRAND_KIT)
+
+
 def test_no_role_can_write_what_it_cannot_view():
     """Write access without view access would be incoherent."""
     for role in Role:

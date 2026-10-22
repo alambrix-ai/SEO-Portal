@@ -12,6 +12,7 @@ import pkgutil
 from pathlib import Path
 
 from app.connectors.base.connector import BaseConnector, Capability, ConnectorSpec
+from app.core.config import settings
 from app.core.logging import get_logger
 
 log = get_logger(__name__)
@@ -19,9 +20,12 @@ log = get_logger(__name__)
 # Marketplace order: the filter chips on the Connectors screen follow this.
 CATEGORY_ORDER: tuple[str, ...] = (
     "CMS",
+    "Local business",
     "Ad Platforms",
+    "Social media",
     "Analytics & Search",
     "CRM",
+    "Email marketing",
     "AEO/LLM Monitoring",
     "Collaboration",
 )
@@ -31,11 +35,25 @@ CATALOG_ORDER: tuple[str, ...] = (
     "wordpress", "shopify", "magento", "webflow", "custom_api",
     "google_ads", "meta_ads", "linkedin_ads", "tiktok_ads", "microsoft_ads", "dsp_exchange",
     "google_analytics_4", "search_console", "adobe_analytics", "bing_webmaster",
-    "google_business_profile",
+    "dataforseo_backlinks",
+    "google_business_profile", "google_places",
     "salesforce", "hubspot",
     "openai", "perplexity", "google_gemini", "anthropic_claude",
+    "xai_grok", "vllm", "ollama",
+    "facebook_pages", "instagram_business", "linkedin_pages", "x_twitter", "pinterest",
+    "reddit",
     "slack", "smtp_email", "zapier_webhooks",
+    "mailchimp", "brevo", "klaviyo",
 )
+
+#: Connectors left out of the catalogue while a platform setting is off.
+#: They stay registered (``get_class`` / ``get_spec`` still find them), so a
+#: connection made earlier can be read and disconnected; they are only no
+#: longer offered, provisioned or picked. Reddit needs commercial API
+#: approval first (``REDDIT_ENABLED``).
+SWITCHED_OFF_UNLESS: dict[str, str] = {
+    "reddit": "reddit_enabled",
+}
 
 _classes: dict[str, type[BaseConnector]] = {}
 _loaded = False
@@ -98,9 +116,20 @@ def register(klass: type[BaseConnector]) -> None:
     _classes[klass.spec.slug] = klass
 
 
+def is_offered(slug: str) -> bool:
+    """False while the platform setting this connector needs is off."""
+    setting = SWITCHED_OFF_UNLESS.get(slug)
+    return setting is None or bool(getattr(settings, setting, False))
+
+
+def _offered_slugs() -> list[str]:
+    return [slug for slug in sorted(_classes, key=_order_key) if is_offered(slug)]
+
+
 def all_specs() -> list[ConnectorSpec]:
+    """Every connector the catalogue offers, in marketplace order."""
     _discover()
-    return [_classes[slug].spec for slug in sorted(_classes, key=_order_key)]
+    return [_classes[slug].spec for slug in _offered_slugs()]
 
 
 def get_class(slug: str) -> type[BaseConnector] | None:
@@ -114,8 +143,9 @@ def get_spec(slug: str) -> ConnectorSpec | None:
 
 
 def connector_slugs() -> list[str]:
+    """The slugs of :func:`all_specs`, in the same order."""
     _discover()
-    return sorted(_classes, key=_order_key)
+    return _offered_slugs()
 
 
 def categories() -> list[str]:

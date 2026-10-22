@@ -52,6 +52,16 @@ def schema_graph(
     organization: str,
     max_body_chars: int = 5000,
 ) -> str:
+    """``url`` empty means the site's domain is not known.
+
+    The model is then told to leave ``url`` out rather than given a
+    placeholder domain, which it would faithfully copy into the graph.
+    """
+    if url:
+        url_rule = "Use the absolute URL above for any `url` property."
+    else:
+        url = "not known"
+        url_rule = "The page's URL is not known: leave out `url` and `@id`."
     return f"""[TASK:schema_graph]
 Build schema.org JSON-LD for this page.
 
@@ -63,9 +73,9 @@ SCHEMA_TYPES: {", ".join(schema_types)}
 PAGE CONTENT:
 {body[:max_body_chars]}
 
-Produce one graph per requested type. Use the absolute URL above for any
-`url` property. Include only properties the content above supports, and never
-include ratings or reviews unless the page itself shows them."""
+Produce one graph per requested type. {url_rule} Include only properties the
+content above supports, and never include ratings or reviews unless the page
+itself shows them."""
 
 def validate_json_ld(graph: dict, schema_type: str) -> str | None:
     """Return a reason to reject the graph, or ``None`` if it is usable."""

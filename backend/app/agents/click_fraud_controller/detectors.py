@@ -14,8 +14,13 @@ from enum import StrEnum
 
 from app.connectors.base.interfaces import TrafficSample
 
-# Used when a channel has no measured cost per click yet.
+# Used when a channel has no measured cost per click and no CAC to estimate
+# one from. A placeholder in the workspace currency, not a measurement: any
+# saving computed from it is reported as an estimate.
 FALLBACK_CPC = 1.20
+# Rough share of a CAC that one click costs, used only to *estimate* a CPC
+# when the platform's own spend/clicks is unavailable.
+CPC_FROM_CAC_RATIO = 0.04
 
 # Signal keys safe to persist on a fraud event. Anything not listed — an IP,
 # a device id, a user agent — is detection input only and is never stored.
@@ -113,14 +118,19 @@ def assess(
     suspicion = 0
     if sample.bounce_rate >= 0.9:
         suspicion += 1
-    if sample.avg_session_seconds <= 3.0:
+    # Only where the platform reports time on site: Google placement data has
+    # none, and its zero default would otherwise mark every placement.
+    if sample.engagement_known and sample.avg_session_seconds <= 3.0:
         suspicion += 1
     if repeats >= 5:
         suspicion += 1
     if clicks_per_minute >= 12:
         suspicion += 1
-    if _as_float(signals.get("viewport_area")) in (0.0, 1.0):
-        # A 1x1 or absent viewport is typical of stacked or hidden ads.
+    viewport = _as_optional_float(signals.get("viewport_area"))
+    if viewport is not None and viewport <= 1.0:
+        # A zero or 1x1 viewport is typical of stacked or hidden ads. Only a
+        # *reported* viewport counts: most platforms do not send one at all,
+        # and treating "not reported" as 0 added suspicion to every source.
         suspicion += 1
 
     if suspicion >= 3 and sample.sessions >= 3:
@@ -134,6 +144,16 @@ def _as_int(value: object) -> int:
         return int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return 0
+
+
+def _as_optional_float(value: object) -> float | None:
+    """A number, or None when the signal is absent or not numeric."""
+    if value is None or isinstance(value, bool) or value == "":
+        return None
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
 
 
 def _as_float(value: object) -> float:

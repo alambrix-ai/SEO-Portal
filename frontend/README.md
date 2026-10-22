@@ -1,4 +1,4 @@
-# AutoMarket AI — console
+# Synaprank.ai — console
 
 React 18 + TypeScript + Vite. Eleven screens over the platform API, drawn in
 the **Industry** design system: steel-blue on a light technical ground, Barlow

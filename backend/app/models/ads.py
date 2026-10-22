@@ -25,6 +25,7 @@ class AdChannel(StrEnum):
     META = "meta"
     LINKEDIN = "linkedin"
     TIKTOK = "tiktok"
+    MICROSOFT = "microsoft"
     DSP = "dsp"
 
 
@@ -33,6 +34,7 @@ CHANNEL_LABELS: dict[str, str] = {
     AdChannel.META.value: "Meta Ads",
     AdChannel.LINKEDIN.value: "LinkedIn Ads",
     AdChannel.TIKTOK.value: "TikTok Ads",
+    AdChannel.MICROSOFT.value: "Microsoft Ads",
     AdChannel.DSP.value: "DSP / Exchange",
 }
 
@@ -43,6 +45,7 @@ CHANNEL_CONNECTOR: dict[str, str] = {
     AdChannel.META.value: "meta_ads",
     AdChannel.LINKEDIN.value: "linkedin_ads",
     AdChannel.TIKTOK.value: "tiktok_ads",
+    AdChannel.MICROSOFT.value: "microsoft_ads",
     AdChannel.DSP.value: "dsp_exchange",
 }
 

@@ -1,7 +1,10 @@
 """Admin — team and role-based access, invitations, billing, audit log."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from datetime import date
+from typing import Literal
+
+from fastapi import APIRouter, Query, Response
 from sqlalchemy import func, select
 
 from app.api.deps import ClientIp, CurrentUserDep, DbSession
@@ -21,6 +24,10 @@ from app.services import auth as auth_service
 from app.services import views
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+#: Next-page cursor for the audit export; the frontend reads this name
+#: (frontend/src/api/client.ts), and CORS must expose it.
+NEXT_CURSOR_HEADER = "X-Next-Cursor"
 
 
 def _team(db: DbSession, tenant_id: str) -> list[User]:
@@ -110,6 +117,59 @@ def audit_log(
             db, tenant_id=current.tenant_id, search=search, limit=limit
         )
     ]
+
+
+@router.get("/audit/export")
+def export_audit_log(
+    current: CurrentUserDep,
+    db: DbSession,
+    ip: ClientIp,
+    start: date = Query(alias="from"),
+    end: date = Query(alias="to"),
+    fmt: Literal["csv", "json"] = Query(default="csv", alias="format"),
+    cursor: str | None = Query(default=None, max_length=audit_service.CURSOR_MAX_LENGTH),
+) -> Response:
+    """Download the audit log for a date range, one page at a time.
+
+    Admin writers only. The range and page size are capped by settings. When
+    more rows remain, ``X-Next-Cursor`` carries the cursor for the next page.
+    IP addresses are not exported, and the export itself is audited.
+    """
+    current.require_write(Module.ADMIN)
+    page = audit_service.export_page(
+        db, tenant_id=current.tenant_id, start=start, end=end, cursor=cursor
+    )
+    audit_service.record_user_action(
+        db,
+        user=current.user,
+        action="exported the audit log",
+        module=Module.ADMIN.value,
+        ip_address=ip,
+        context={
+            "event": "audit_export",
+            "from": start.isoformat(),
+            "to": end.isoformat(),
+            "format": fmt,
+            "rows": len(page.rows),
+            "continued": cursor is not None,
+            "more": page.next_cursor is not None,
+        },
+    )
+    db.commit()
+
+    if fmt == "csv":
+        body, media = audit_service.export_csv(page.rows), "text/csv; charset=utf-8"
+    else:
+        body, media = audit_service.export_json(page.rows), "application/json"
+    headers = {
+        "Content-Disposition": (
+            f'attachment; filename="{audit_service.export_filename(start, end, fmt)}"'
+        ),
+        "Cache-Control": "no-store",
+    }
+    if page.next_cursor:
+        headers[NEXT_CURSOR_HEADER] = page.next_cursor
+    return Response(content=body, media_type=media, headers=headers)
 
 
 # ── Team management ────────────────────────────────────────────────────────

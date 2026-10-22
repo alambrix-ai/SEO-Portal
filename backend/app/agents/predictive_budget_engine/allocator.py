@@ -221,16 +221,30 @@ def blended_cac(states: list[ChannelState]) -> float:
 
 
 def projected_cac(states: list[ChannelState], percents: dict[str, int]) -> float:
-    """Blended CAC the proposed split would produce at the same total spend.
+    """Blended CAC a split would produce at the same total spend.
 
-    This is what justifies the change: if the projection is not better than
-    the current blend, there is no reason to move money.
+    Spend S split by shares p_i buys S·p_i / CAC_i conversions on each
+    channel, so the blend is Σp_i / Σ(p_i / CAC_i) — a share-weighted
+    *harmonic* mean, over the channels whose CAC is credible.
+
+    Call it with the current shares *and* with the proposed ones and compare
+    the two. The engine used to compare the proposal against the measured
+    blend (total spend / total conversions), which covers different channels
+    and a different formula, so the "improvement" mostly measured the gap
+    between the two formulas rather than anything the shift would do.
     """
     credible = [s for s in states if s.cac_is_credible]
     if not credible:
         return 0.0
     total_share = sum(percents.get(s.channel, 0) for s in credible)
-    if total_share == 0:
+    if total_share <= 0:
         return 0.0
-    weighted = sum(percents.get(s.channel, 0) * s.cac for s in credible)
-    return round(weighted / total_share, 2)
+    conversions_per_share = sum(percents.get(s.channel, 0) / s.cac for s in credible)
+    if conversions_per_share <= 0:
+        return 0.0
+    return round(total_share / conversions_per_share, 2)
+
+
+def current_shares(states: list[ChannelState]) -> dict[str, int]:
+    """The split in force now, normalised like the one ``allocate`` works from."""
+    return _baseline(states) if states else {}

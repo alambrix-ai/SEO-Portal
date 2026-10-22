@@ -1,9 +1,8 @@
 /**
- * Floating Willy - compact animated bot bottom-right on every page.
+ * Floating AI assistant - launcher button bottom-right on every page.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Link } from 'react-router-dom'
 
 import { api } from '@/api/client'
 import type {
@@ -11,19 +10,53 @@ import type {
   ActionStep,
   AssistantChatResponse,
   AssistantMode,
+  ConnectorOut,
 } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { AgentIcon } from '@/components/AgentIcon'
+import { ConnectDialog } from '@/components/ConnectDialog'
 import { ConnectorIcon } from '@/components/ConnectorIcon'
-import { WillyBot } from '@/components/WillyBot'
+import { AssistantIcon } from '@/components/icons'
 import { useToasts } from '@/components/Toasts'
-import { Field, Loading, Tag } from '@/components/ui'
+import { Loading, Tag } from '@/components/ui'
 
 interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   payload?: AssistantChatResponse
+}
+
+/**
+ * Model replies are untrusted, so the markdown is an allow-list of text
+ * formatting only. Links and images are not on it: a link keeps its words as
+ * plain text, an image disappears entirely. That stops a reply from loading a
+ * tracking pixel or sending someone to a look-alike site. Raw HTML is dropped
+ * and every URL is blanked as a second line of defence.
+ */
+const ASSISTANT_MD_ELEMENTS: readonly string[] = [
+  'p',
+  'br',
+  'strong',
+  'em',
+  'del',
+  'ul',
+  'ol',
+  'li',
+  'blockquote',
+  'code',
+  'pre',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'hr',
+]
+
+function noUrls(): string {
+  return ''
 }
 
 function newId() {
@@ -41,12 +74,13 @@ export function AssistantDock() {
     {
       id: 'welcome',
       role: 'assistant',
-      content: 'Hi - I’m Willy. What do you want to get done?',
+      content: 'Hi, I can help you set up integrations and agents. What would you like to do?',
     },
   ])
   const [plan, setPlan] = useState<ActionPlan | null>(null)
   const [stepIndex, setStepIndex] = useState(0)
-  const [stepValues, setStepValues] = useState<Record<string, string>>({})
+  /** The connect screen, opened from a plan's connect step. */
+  const [connecting, setConnecting] = useState<ConnectorOut | null>(null)
   const [stepBusy, setStepBusy] = useState(false)
   const chatLogRef = useRef<HTMLDivElement>(null)
   const stepPanelRef = useRef<HTMLDivElement>(null)
@@ -61,16 +95,16 @@ export function AssistantDock() {
     if (!session) return null
     if (!moduleEnabled) {
       return {
-        title: 'Willy is not available for this workspace',
+        title: 'The assistant is not available for this workspace',
         body:
-          'Willy is turned off for this workspace (Onboarding is disabled). Ask a platform administrator to enable it, or join a workspace where it is available.',
+          'The assistant is turned off for this workspace (Onboarding is disabled). Ask a platform administrator to enable it, or join a workspace where it is available.',
       }
     }
     if (access('onboarding') === 'none' || !roleAllowed) {
       return {
         title: 'You do not have access',
         body:
-          'Your workspace admin has not granted you permission to use Willy. Ask an admin to give your role access to Onboarding (view or full), then sign in again.',
+          'Your workspace admin has not granted you permission to use the assistant. Ask an admin to give your role access to Onboarding (view or full), then sign in again.',
       }
     }
     return null
@@ -112,7 +146,7 @@ export function AssistantDock() {
     if (!allowed) {
       push(
         accessBlock?.body ||
-          'You do not have access to Willy. Ask your workspace admin.',
+          'You do not have access to the assistant. Ask your workspace admin.',
         'warning',
       )
       return
@@ -134,7 +168,6 @@ export function AssistantDock() {
     setBusy(true)
     setPlan(null)
     setStepIndex(0)
-    setStepValues({})
     try {
       const response = await api.assistantChatStream(
         {
@@ -168,10 +201,9 @@ export function AssistantDock() {
       if (mode === 'action' && response.action_plan?.steps?.length) {
         setPlan(response.action_plan)
         setStepIndex(0)
-        setStepValues({})
       } else if (mode === 'action') {
         push(
-          'No actionable steps yet - try naming the connectors or agents you want set up.',
+          'No actionable steps yet - try naming the connections or agents you want set up.',
           'info',
         )
       }
@@ -190,24 +222,16 @@ export function AssistantDock() {
   const currentStep: ActionStep | null =
     plan && plan.steps[stepIndex] ? plan.steps[stepIndex] : null
 
-  const credentialFields = (currentStep?.fields || []).filter((field) => !field.is_oauth)
-  const isOauthOnly =
-    currentStep?.type === 'connect_connector' &&
-    (currentStep.fields || []).some((field) => field.is_oauth) &&
-    credentialFields.length === 0
-
   const advancePlan = (note?: string) => {
     if (note) appendAssistantNote(note)
     const next = stepIndex + 1
     if (plan && next < plan.steps.length) {
       setStepIndex(next)
-      setStepValues({})
     } else {
       push('Action plan complete', 'success')
       appendAssistantNote('All set - the planned connections and agent steps are done.')
       setPlan(null)
       setStepIndex(0)
-      setStepValues({})
     }
   }
 
@@ -225,25 +249,12 @@ export function AssistantDock() {
       return
     }
 
-    if (isOauthOnly) {
-      push('This connector needs OAuth - finish it under Connectors, then continue.', 'warning')
-      return
-    }
-
     setStepBusy(true)
     try {
       if (currentStep.type === 'connect_connector') {
-        const missing = credentialFields
-          .filter((field) => field.required)
-          .filter((field) => !(stepValues[field.key] || '').trim())
-        if (missing.length) {
-          const first = missing[0]!
-          push(`Fill in ${first.label || first.key}`, 'warning')
-          return
-        }
-        await api.connect(currentStep.slug, stepValues)
-        push(`${currentStep.title || currentStep.slug} connected`, 'success')
-        advancePlan(`Connected **${currentStep.title || currentStep.slug}**.`)
+        // The same connect screen as everywhere else: sign in where the
+        // integration allows it, guided steps where it takes a key.
+        setConnecting(await api.connector(currentStep.slug))
       } else if (currentStep.type === 'configure_agent') {
         const config = currentStep.config || {}
         await api.configureAgent(currentStep.slug, {
@@ -275,13 +286,13 @@ export function AssistantDock() {
         <section
           className="assistant-dock-panel"
           role="dialog"
-          aria-label="Willy"
+          aria-label="AI assistant"
           aria-modal="false"
         >
           <header className="assistant-dock-header">
             <div className="assistant-dock-brand">
               <div className="assistant-dock-heading">
-                <strong>Willy</strong>
+                <strong>AI Assistant</strong>
                 {plan ? (
                   <span className="assistant-dock-sub">
                     Action {stepIndex + 1}/{plan.steps.length}
@@ -293,7 +304,7 @@ export function AssistantDock() {
             <button
               type="button"
               className="assistant-dock-close"
-              aria-label="Close Willy"
+              aria-label="Close assistant"
               onClick={() => setOpen(false)}
             >
               <span aria-hidden="true">×</span>
@@ -338,13 +349,20 @@ export function AssistantDock() {
                     }${isPending ? ' assistant-bubble-pending' : ''}`}
                   >
                     <div className="assistant-bubble-role">
-                      {message.role === 'user' ? 'You' : 'Willy'}
+                      {message.role === 'user' ? 'You' : 'Assistant'}
                     </div>
                     <div className="assistant-bubble-body">
                       {message.role === 'assistant' ? (
                         message.content ? (
                           <div className="assistant-md">
-                            <ReactMarkdown>{message.content}</ReactMarkdown>
+                            <ReactMarkdown
+                              allowedElements={ASSISTANT_MD_ELEMENTS}
+                              unwrapDisallowed
+                              skipHtml
+                              urlTransform={noUrls}
+                            >
+                              {message.content}
+                            </ReactMarkdown>
                           </div>
                         ) : busy ? (
                           <Loading
@@ -370,7 +388,7 @@ export function AssistantDock() {
               {plan && currentStep ? (
                 <>
                   <div className="assistant-plan-banner" role="status">
-                    Enter credentials below - Willy will connect and configure each step
+                    Enter credentials below and the assistant will connect and configure each step
                     for you.
                   </div>
                   <div ref={stepPanelRef} className="assistant-dock-step">
@@ -396,57 +414,9 @@ export function AssistantDock() {
                       <Tag tone="outline">{currentStep.type.replace(/_/g, ' ')}</Tag>
                     </div>
                     {currentStep.type === 'connect_connector' ? (
-                      <div className="assistant-step-fields">
-                        {credentialFields.map((field) => (
-                          <Field
-                            key={field.key}
-                            label={field.label || field.key}
-                            required={field.required}
-                            hint={field.help || undefined}
-                            htmlFor={`dock-${field.key}`}
-                          >
-                            <input
-                              id={`dock-${field.key}`}
-                              className="input"
-                              type={field.secret ? 'password' : 'text'}
-                              autoComplete="off"
-                              placeholder={field.placeholder || `Enter ${field.label || field.key}`}
-                              value={stepValues[field.key] || ''}
-                              onChange={(event) =>
-                                setStepValues((current) => ({
-                                  ...current,
-                                  [field.key]: event.target.value,
-                                }))
-                              }
-                              onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                  event.preventDefault()
-                                  void runStep()
-                                }
-                              }}
-                            />
-                          </Field>
-                        ))}
-                        {isOauthOnly ? (
-                          <p className="muted small">
-                            This connector uses OAuth - finish signing in under{' '}
-                            <Link to="/connectors" onClick={() => setOpen(false)}>
-                              Connectors
-                            </Link>
-                            , then skip this step.
-                          </p>
-                        ) : null}
-                        {(currentStep.fields || []).some((field) => field.is_oauth) &&
-                        credentialFields.length > 0 ? (
-                          <p className="muted small">
-                            Also needs OAuth - complete that in{' '}
-                            <Link to="/connectors" onClick={() => setOpen(false)}>
-                              Connectors
-                            </Link>{' '}
-                            after saving these fields.
-                          </p>
-                        ) : null}
-                      </div>
+                      <p className="muted small">
+                        Opens the connect screen: sign in, or follow the short steps there.
+                      </p>
                     ) : null}
                     {currentStep.type === 'configure_agent' && currentStep.config ? (
                       <ul className="assistant-config-preview">
@@ -470,7 +440,7 @@ export function AssistantDock() {
                       <button
                         type="button"
                         className="btn btn-primary"
-                        disabled={stepBusy || isOauthOnly}
+                        disabled={stepBusy}
                         onClick={() => void runStep()}
                       >
                         {stepBusy
@@ -490,7 +460,7 @@ export function AssistantDock() {
                 <div
                   className="assistant-query-modes"
                   role="radiogroup"
-                  aria-label="Willy mode"
+                  aria-label="Assistant mode"
                 >
                   <button
                     type="button"
@@ -517,8 +487,8 @@ export function AssistantDock() {
                   type="text"
                   placeholder={
                     mode === 'action'
-                      ? 'What should Willy set up?'
-                      : 'Ask Willy…'
+                      ? 'What should the assistant set up?'
+                      : 'Ask the assistant…'
                   }
                   value={draft}
                   disabled={busy}
@@ -545,27 +515,29 @@ export function AssistantDock() {
       ) : null}
 
       <div className="assistant-dock-anchor">
-        {!open ? (
-          <button
-            type="button"
-            className="assistant-ask-me"
-            onClick={() => setOpen(true)}
-            aria-label="Ask Willy"
-          >
-            <span className="assistant-ask-me-dot" aria-hidden="true" />
-            <span className="assistant-ask-me-text">Ask Willy</span>
-          </button>
-        ) : null}
         <button
           type="button"
-          className="assistant-dock-launcher"
-          aria-label={open ? 'Hide Willy' : 'Open Willy'}
+          className="assistant-launch"
+          aria-label={open ? 'Hide AI assistant' : 'Open AI assistant'}
           aria-expanded={open}
           onClick={() => setOpen((current) => !current)}
         >
-          <WillyBot compact />
+          <AssistantIcon size={16} />
+          <span>{open ? 'Close assistant' : 'AI Assistant'}</span>
         </button>
       </div>
+      {connecting ? (
+        <ConnectDialog
+          key={connecting.slug}
+          connector={connecting}
+          onClose={() => setConnecting(null)}
+          onConnected={async () => {
+            const name = connecting.name
+            setConnecting(null)
+            advancePlan(`Connected **${name}**.`)
+          }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -578,7 +550,7 @@ function RecommendationsBlock({ payload }: { payload: AssistantChatResponse }) {
     <div className="assistant-recs">
       {connectors.length ? (
         <div>
-          <div className="assistant-recs-label">Connectors</div>
+          <div className="assistant-recs-label">Integrations</div>
           <ul className="assistant-recs-list">
             {connectors.map((item) => (
               <li key={`c-${item.slug}`}>

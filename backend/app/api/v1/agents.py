@@ -1,7 +1,10 @@
 """AI Agents hub — the fleet, its switches, and manual runs."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from fastapi import APIRouter, BackgroundTasks, Query
+from pydantic import ValidationError
 from sqlalchemy import desc, select
 
 from app.agents.base.registry import get_agent as lookup_agent
@@ -11,8 +14,12 @@ from app.core.config import settings
 from app.core.exceptions import ConflictError, InvalidInputError, NotFoundError
 from app.core.rbac import Module
 from app.models.agent import AgentRecord, AgentRun, AgentStatus
+from app.models.history import AuditSnapshot, SnapshotKind
+from app.models.workspace import Organization
 from app.schemas.common import ActionResult, Toast
 from app.schemas.workspace import (
+    AgentActivityOut,
+    AgentResultsOut,
     AgentConfigRequest,
     AgentOptionsOut,
     LlmConnectorOut,
@@ -21,8 +28,15 @@ from app.schemas.workspace import (
     AgentRunOut,
     AutonomyRequest,
 )
-from app.services import audit, connectors as connector_service, views
+from app.schemas.safety import PracticeRequest, PracticeSummaryOut
+from app.services import audit, connectors as connector_service, history, views
+from app.services.history import store as history_store
 from app.core.logging import get_logger
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.agents.base.plain import SettingField
 
 log = get_logger(__name__)
 
@@ -102,24 +116,38 @@ def _llm_options(db: DbSession, org) -> list[LlmConnectorOut]:  # noqa: ANN001
     from app.models.portal import FeatureKind
     from app.services import portal_features
 
+    from app.services import entitlements
+
     bundle = connector_service.build_connector_bundle(db, org)
     out: list[LlmConnectorOut] = []
+    # Unverified types hidden in Portal Admin are not offered, unless connected.
+    hidden = portal_features.hidden_connector_slugs(db)
     for spec in connector_registry.all_specs():
         if not portal_features.is_enabled(db, FeatureKind.CONNECTOR, spec.slug):
+            continue
+        if spec.slug in hidden and spec.slug not in bundle.instances:
             continue
         if not supports_agent_llm(spec.slug):
             continue
         if Capability.COMPLETE not in spec.capabilities:
             continue
         connected = spec.slug in bundle.instances
+        # Agents share one AI model list; the plan's rule for writing with AI
+        # applies to every agent alike, so it is asked without an agent.
+        policy = entitlements.connector_policy(db, org, "", Capability.COMPLETE)
+        locked = not policy.permits(spec.slug)
         out.append(
             LlmConnectorOut(
                 slug=spec.slug,
                 name=spec.name,
-                available=connected,
-                reason=""
+                available=connected and not locked,
+                reason=policy.locked_reason
+                if locked
+                else ""
                 if connected
                 else f"Connect {spec.name} under Connectors first.",
+                locked=locked,
+                locked_reason=policy.locked_reason if locked else "",
             )
         )
     return out
@@ -135,11 +163,22 @@ def options(current: CurrentUserDep, db: DbSession) -> AgentOptionsOut:
     )
 
 
+@router.get("/activity", response_model=AgentActivityOut)
+def activity(current: CurrentUserDep, db: DbSession) -> AgentActivityOut:
+    """What the fleet is doing right now, and its most recent runs."""
+    current.require_view(Module.AGENTS)
+    return AgentActivityOut(**views.agent_activity(db, tenant_id=current.tenant_id))
+
+
 @router.get("/{slug}", response_model=AgentOut)
 def get_agent(slug: str, current: CurrentUserDep, db: DbSession) -> AgentOut:
     current.require_view(Module.AGENTS)
     record = _record(db, current.tenant_id, slug)
-    return views.agent_out(record, can_write=current.can_write(Module.AGENTS))
+    return views.agent_out(
+        record,
+        can_write=current.can_write(Module.AGENTS),
+        env=views.guide_env(db, current.tenant_id),
+    )
 
 
 @router.get("/{slug}/runs", response_model=list[AgentRunOut])
@@ -157,13 +196,73 @@ def list_runs(
         .order_by(desc(AgentRun.started_at))
         .limit(limit)
     ).scalars()
-    return [AgentRunOut.model_validate(run) for run in runs]
+    name = _record(db, current.tenant_id, slug).name
+    return [views.run_out(run, agent_name=name) for run in runs]
+
+
+@router.get("/{slug}/results", response_model=AgentResultsOut)
+def get_results(slug: str, current: CurrentUserDep, db: DbSession) -> AgentResultsOut:
+    """What this agent has produced: its pages, issues, pitches, ads, blocks …"""
+    from dataclasses import asdict
+
+    from app.services.agent_results import results_for
+    from app.services.encryption import OrgCipher
+
+    current.require_view(Module.AGENTS)
+    _record(db, current.tenant_id, slug)
+    results = results_for(
+        db, slug=slug, tenant_id=current.tenant_id, cipher=OrgCipher.for_org(current.organization)
+    )
+    if results is None:
+        raise NotFoundError("This agent has no results view")
+    data = asdict(results)
+    data["metrics"] = [{"label": label, "value": value} for label, value in results.metrics]
+    return AgentResultsOut(**data)
+
+
+@router.get("/{slug}/runs/{run_id}", response_model=AgentRunOut)
+def get_run(slug: str, run_id: str, current: CurrentUserDep, db: DbSession) -> AgentRunOut:
+    """One run: its timeline and every change it applied or proposed."""
+    current.require_view(Module.AGENTS)
+    record = _record(db, current.tenant_id, slug)
+    run = db.execute(
+        select(AgentRun).where(
+            AgentRun.tenant_id == current.tenant_id,
+            AgentRun.agent_slug == slug,
+            AgentRun.id == run_id,
+        )
+    ).scalar_one_or_none()
+    if run is None:
+        raise NotFoundError("That run was not found")
+    return views.run_out(
+        run,
+        agent_name=record.name,
+        events=views.run_events(db, tenant_id=current.tenant_id, run_id=run.id),
+    )
 
 
 def _validate_config(
-    db: DbSession, current: CurrentUserDep, slug: str, payload: AgentConfigRequest
-) -> list[str]:
-    """Check a submitted configuration. Returns warnings; raises on errors.
+    db: DbSession,
+    current: CurrentUserDep,
+    slug: str,
+    payload: AgentConfigRequest,
+    record: AgentRecord | None = None,
+) -> tuple[list[str], dict[str, str] | None]:
+    """Check a submitted configuration for the caller's workspace (see :func:`_check_config`)."""
+    return _check_config(db, current.organization, slug, payload, record)
+
+
+def _check_config(
+    db: Session,
+    org: Organization,
+    slug: str,
+    payload: AgentConfigRequest,
+    record: AgentRecord | None = None,
+) -> tuple[list[str], dict[str, str] | None]:
+    """Check a configuration; raises on errors.
+
+    Returns the warnings, and the connector choices to store (``None`` when
+    the request did not send any, which keeps the saved ones).
 
     All of it at submit time, which is the point: the dialog used to accept
     anything of the right shape, and the consequences turned up hours later as
@@ -185,6 +284,7 @@ def _validate_config(
     """
     problems: list[str] = []
     warnings: list[str] = []
+    choices: dict[str, str] | None = None
 
     if payload.schedule not in views.AGENT_SCHEDULES:
         problems.append("Schedule must be one of: " + ", ".join(views.AGENT_SCHEDULES))
@@ -208,7 +308,7 @@ def _validate_config(
                 )
             else:
                 llm_opts = {
-                    option.slug: option for option in _llm_options(db, current.organization)
+                    option.slug: option for option in _llm_options(db, org)
                 }
                 option = llm_opts.get(choice)
                 if option is None:
@@ -221,6 +321,27 @@ def _validate_config(
                         f"{option.name} is not connected yet. "
                         f"{option.reason}"
                     )
+        elif payload.strict_model:
+            problems.append(
+                "This agent doesn't write with an AI model, so \"Always use the model "
+                "I picked\" doesn't apply to it. Switch it off."
+            )
+
+        if payload.connectors is not None:
+            from app.agents.base.choice import saved_choices
+            from app.services import agent_requirements, portal_features
+
+            from app.services import entitlements
+
+            choices, choice_problems = agent_requirements.clean_choices(
+                agent,
+                payload.connectors,
+                usable=(usable := connector_service.build_connector_bundle(db, org).connected),
+                enabled=set(portal_features.offered_connector_slugs(db, connected=usable)),
+                saved=saved_choices(record.settings if record is not None else None),
+                policy=entitlements.lookup(db, org),
+            )
+            problems.extend(choice_problems)
 
     if problems:
         raise InvalidInputError(
@@ -240,7 +361,7 @@ def _validate_config(
     # workspace where nothing is connected yet.
     unavailable = {
         option.value: option.reason
-        for option in _notify_options(db, current.organization)
+        for option in _notify_options(db, org)
         if not option.available
     }
     if payload.notify_channel in unavailable:
@@ -248,7 +369,7 @@ def _validate_config(
             f"{payload.notify_channel} notifications cannot be delivered. "
             f"{unavailable[payload.notify_channel]} Or choose None."
         )
-    return warnings
+    return warnings, choices
 
 
 def _assert_configured(record: AgentRecord) -> None:
@@ -294,6 +415,7 @@ def resume(
     current.require_write(Module.AGENTS)
     record = _record(db, current.tenant_id, slug)
     _assert_configured(record)
+    _assert_not_halted(db, current)
     record.status = AgentStatus.RUNNING.value
     record.consecutive_failures = 0
     record.last_error = ""
@@ -324,6 +446,7 @@ def set_autonomy(
     audit.record_user_action(
         db, user=current.user, action=f"{record.name} {verb}", module="agents", ip_address=ip
     )
+    record_config_version(db, current.organization, record, actor=current.user)
     db.commit()
     return ActionResult(
         toast=Toast(
@@ -347,9 +470,11 @@ def set_global_autonomy(
     current.require_write(Module.AGENTS)
     current.organization.global_autonomy = payload.autonomous
 
-    records = db.execute(
-        select(AgentRecord).where(AgentRecord.tenant_id == current.tenant_id)
-    ).scalars()
+    records = list(
+        db.execute(
+            select(AgentRecord).where(AgentRecord.tenant_id == current.tenant_id)
+        ).scalars()
+    )
     for record in records:
         record.autonomy = payload.autonomous
 
@@ -361,11 +486,329 @@ def set_global_autonomy(
     audit.record_user_action(
         db, user=current.user, action=message.lower(), module="agents", ip_address=ip
     )
+    # The agents' switch is half of the workspace policy, and each agent's
+    # own switch moved with it: both are kept as versions.
+    from app.api.v1.onboarding import record_policy_version
+
+    record_policy_version(db, current.organization, actor=current.user)
+    for record in records:
+        record_config_version(db, current.organization, record, actor=current.user)
     db.commit()
     return ActionResult(toast=Toast(message=message))
 
 
+# ── Practice mode and the stop switches ────────────────────────────────────
+def _assert_not_halted(db: DbSession, current: CurrentUserDep) -> None:
+    """Refuse to start or run an agent while a stop switch is on."""
+    from app.services import agent_safety
+
+    reason = agent_safety.halt_reason(db, current.organization)
+    if reason:
+        raise ConflictError(reason)
+
+
+def _apply_practice_choice(record: AgentRecord, choice: bool | None, *, first: bool) -> None:
+    """Store a spending agent's practice switch.
+
+    An explicit choice is stored as given. Without one, a first (new)
+    configuration starts in practice mode; an existing one keeps what it had.
+    """
+    from app.agents.base import safety
+    from app.services import agent_safety
+
+    if not safety.is_spending_agent(record.slug):
+        return
+    if choice is None:
+        if first:
+            agent_safety.default_practice(record)
+        return
+    record.settings = {**(record.settings or {}), safety.PRACTICE_SETTING: bool(choice)}
+
+
+@router.post("/{slug}/practice", response_model=AgentOut)
+def set_practice(
+    slug: str,
+    payload: PracticeRequest,
+    current: CurrentUserDep,
+    db: DbSession,
+    ip: ClientIp,
+) -> AgentOut:
+    """Switch one spending agent's practice mode on or off."""
+    from app.agents.base import safety
+
+    current.require_write(Module.AGENTS)
+    record = _record(db, current.tenant_id, slug)
+    if not safety.is_spending_agent(slug):
+        raise InvalidInputError(
+            f"{record.name} does not spend money or change ad accounts, so it has no "
+            "practice mode."
+        )
+    _apply_practice_choice(record, payload.on, first=False)
+    audit.record_user_action(
+        db,
+        user=current.user,
+        action=(
+            f"switched on practice mode for {record.name}"
+            if payload.on
+            else f"switched off practice mode for {record.name}"
+        ),
+        module="agents",
+        ip_address=ip,
+    )
+    record_config_version(db, current.organization, record, actor=current.user)
+    db.commit()
+    return views.agent_out(
+        record,
+        can_write=current.can_write(Module.AGENTS),
+        env=views.guide_env(db, current.tenant_id),
+    )
+
+
+@router.get("/{slug}/practice-summary", response_model=PracticeSummaryOut)
+def practice_summary(slug: str, current: CurrentUserDep, db: DbSession) -> PracticeSummaryOut:
+    """What this agent would have changed in practice mode this week."""
+    from app.agents.base import safety
+    from app.services import agent_safety
+
+    current.require_view(Module.AGENTS)
+    _record(db, current.tenant_id, slug)
+    if not safety.is_spending_agent(slug):
+        raise NotFoundError("This agent has no practice mode")
+    return PracticeSummaryOut(
+        **agent_safety.practice_summary(db, tenant_id=current.tenant_id, slug=slug)
+    )
+
+
 # ── Configuration ──────────────────────────────────────────────────────────
+def _setting_rule(field: SettingField) -> str:
+    """What a valid value for ``field`` looks like, in plain words."""
+    if field.kind in ("integer", "number"):
+        noun = "a whole number" if field.kind == "integer" else "a number"
+        if field.minimum is not None and field.maximum is not None:
+            return f"{field.label} must be {noun} from {field.minimum:g} to {field.maximum:g}."
+        if field.minimum is not None:
+            return f"{field.label} must be {noun} of at least {field.minimum:g}."
+        if field.maximum is not None:
+            return f"{field.label} must be {noun} of at most {field.maximum:g}."
+        return f"{field.label} must be {noun}."
+    return f"{field.label} must be {field.max_length} characters or fewer."
+
+
+def _apply_strict_choice(record: AgentRecord, choice: bool | None) -> None:
+    """Store "Always use the model I picked"; ``None`` keeps the saved value."""
+    from app.orchestration.runner import STRICT_MODEL_SETTING
+
+    if choice is None:
+        return
+    saved = dict(record.settings or {})
+    if choice:
+        saved[STRICT_MODEL_SETTING] = True
+    else:
+        saved.pop(STRICT_MODEL_SETTING, None)
+    record.settings = saved
+
+
+def _apply_config(
+    slug: str, record: AgentRecord, payload: AgentConfigRequest, choices: dict[str, str] | None
+) -> Any:  # noqa: ANN401 - the agent implementation, or None
+    """Write a configuration already checked by :func:`_check_config` onto ``record``.
+
+    Shared by a save and by restoring an earlier version. Returns the agent
+    implementation (None when this build lacks it) so the caller can let it
+    react. Flushes nothing and commits nothing.
+    """
+    record.schedule = payload.schedule
+    record.scope = payload.scope.strip()
+    record.notify_channel = payload.notify_channel
+    agent = lookup_agent(slug)
+    if agent is not None and agent.spec.requires_llm:
+        record.llm_connector = (payload.llm_connector or "").strip()
+    else:
+        record.llm_connector = ""
+    record.max_actions_per_day = payload.max_actions_per_day
+    if payload.settings:
+        from app.agents.base.plain import guide_for
+
+        declared = {spec.key: spec for spec in (guide_for(slug).settings if guide_for(slug) else ())}
+        unknown = sorted(set(payload.settings) - set(declared))
+        if unknown:
+            raise InvalidInputError(f"{record.name} has no setting called {', '.join(unknown)}")
+        saved = dict(record.settings or {})
+        for key, raw in payload.settings.items():
+            try:
+                value = declared[key].clean(raw)
+            except ValueError as exc:
+                # The message is written from the declared field, never from
+                # the exception text.
+                log.info("Agent %s setting %s rejected (%s)", slug, key, type(exc).__name__)
+                raise InvalidInputError(_setting_rule(declared[key])) from None
+            if value:
+                saved[key] = value
+            else:
+                saved.pop(key, None)
+        # A new dict, so the JSONB column is seen as changed.
+        record.settings = saved
+    if choices is not None:
+        from app.agents.base.choice import CHOICES_KEY
+
+        saved = dict(record.settings or {})
+        if choices:
+            saved[CHOICES_KEY] = choices
+        else:
+            saved.pop(CHOICES_KEY, None)
+        # A selection supersedes the older setting it replaces (the social
+        # manager's "networks"): one source of truth from this save on.
+        for use in agent.spec.connector_use if agent is not None else ():
+            if use.replaces_setting and use.capability.value in (payload.connectors or {}):
+                saved.pop(use.replaces_setting, None)
+        record.settings = saved
+    _apply_practice_choice(record, payload.practice_mode, first=not record.configured)
+    _apply_strict_choice(record, payload.strict_model if agent is not None and agent.spec.requires_llm else False)
+    record.configured = True
+
+    # The new cadence takes effect from now rather than from the old timer.
+    from app.orchestration.runner import SCHEDULE_INTERVALS
+    from app.db.base import utcnow
+
+    interval = SCHEDULE_INTERVALS.get(payload.schedule)
+    if interval and record.status == AgentStatus.RUNNING.value:
+        record.next_run_at = utcnow() + interval
+    return agent
+
+
+# ── Versions of an agent's settings (history kind ``agent_config``) ────────
+def _versioned_setting_keys(slug: str) -> set[str]:
+    """The ``AgentRecord.settings`` keys that are configuration, not agent state.
+
+    Agents also keep working state in ``settings`` (``ctx.set_setting``);
+    that is never versioned and never overwritten by a restore.
+    """
+    from app.agents.base import safety
+    from app.agents.base.choice import CHOICES_KEY
+    from app.agents.base.plain import guide_for
+    from app.orchestration.runner import STRICT_MODEL_SETTING
+
+    guide = guide_for(slug)
+    declared = {spec.key for spec in guide.settings} if guide else set()
+    return declared | {safety.PRACTICE_SETTING, STRICT_MODEL_SETTING, CHOICES_KEY}
+
+
+def config_document(record: AgentRecord) -> dict[str, Any]:
+    """One agent's configuration as a version document (``history.config.FIELDS``)."""
+    stored = record.settings or {}
+    return {
+        "schedule": record.schedule,
+        "scope": record.scope or "",
+        "notify_channel": record.notify_channel,
+        "llm_connector": record.llm_connector or "",
+        "max_actions_per_day": record.max_actions_per_day,
+        "autonomy": bool(record.autonomy),
+        "settings": {
+            key: stored[key] for key in sorted(_versioned_setting_keys(record.slug)) if key in stored
+        },
+    }
+
+
+def record_config_version(
+    db: Session,
+    org: Organization,
+    record: AgentRecord,
+    *,
+    actor: Any,  # noqa: ANN401 - the User who made the change
+    summary: str | None = None,
+) -> AuditSnapshot | None:
+    """Keep this agent's configuration as its next version; never fails the save."""
+    return history_store.guarded(
+        db,
+        SnapshotKind.AGENT_CONFIG,
+        lambda: history.record_version(
+            db, org, SnapshotKind.AGENT_CONFIG, record.id, config_document(record),
+            actor=actor, summary=summary,
+        ),
+    )
+
+
+#: Shown when a stored version no longer passes today's rules.
+_RESTORE_INVALID = (
+    "This version can't be restored because some of its settings are no longer "
+    "valid. Open the agent's settings and choose them again."
+)
+
+
+def _request_from_document(record: AgentRecord, document: dict[str, Any]) -> AgentConfigRequest:
+    """Rebuild a configuration request from a stored version, re-validated."""
+    from app.agents.base import safety
+    from app.agents.base.choice import CHOICES_KEY
+    from app.agents.base.plain import guide_for
+    from app.orchestration.runner import STRICT_MODEL_SETTING
+
+    stored = document.get("settings")
+    stored = stored if isinstance(stored, dict) else {}
+    guide = guide_for(record.slug)
+    # Every declared setting is sent, "" for one the version did not have,
+    # so the restore removes values set since.
+    settings: dict[str, Any] = {spec.key: stored.get(spec.key, "") for spec in (guide.settings if guide else ())}
+    practice = stored.get(safety.PRACTICE_SETTING)
+    choices = stored.get(CHOICES_KEY)
+    if not isinstance(choices, dict):
+        # No selection in the version means "automatic" for an agent that
+        # offers one; an agent that offers none has nothing to change.
+        agent = lookup_agent(record.slug)
+        choices = {} if agent is not None and agent.spec.connector_use else None
+    try:
+        return AgentConfigRequest.model_validate(
+            {
+                "schedule": document.get("schedule"),
+                "scope": document.get("scope") or "",
+                "notify_channel": document.get("notify_channel"),
+                "llm_connector": document.get("llm_connector") or "",
+                "max_actions_per_day": document.get("max_actions_per_day"),
+                "settings": settings,
+                "connectors": choices,
+                "practice_mode": practice if isinstance(practice, bool) else None,
+                "strict_model": stored.get(STRICT_MODEL_SETTING) is True,
+            }
+        )
+    except ValidationError:
+        log.info("Agent %s version not restorable: failed validation", record.slug)
+        raise InvalidInputError(_RESTORE_INVALID) from None
+
+
+@history.register_restorer(SnapshotKind.AGENT_CONFIG)
+def restore_config(
+    db: Session,
+    org: Organization,
+    subject_id: str,
+    document: dict[str, Any],
+    *,
+    user: Any,  # noqa: ANN401 - the User restoring
+) -> dict[str, Any]:
+    """Write a stored version of one agent's settings back (``history.restore``).
+
+    The agent is loaded through a tenant-filtered query and the version is
+    checked against today's rules, exactly as a save is. The history service
+    records the new version and the audit entry, and the caller commits.
+    """
+    record = db.execute(
+        select(AgentRecord).where(AgentRecord.tenant_id == org.id, AgentRecord.id == subject_id)
+    ).scalar_one_or_none()
+    if record is None:
+        raise NotFoundError("That agent was not found")
+    # Also refuses an agent switched off for this workspace.
+    record = _record(db, org.id, record.slug)
+    payload = _request_from_document(record, document)
+    _, choices = _check_config(db, org, record.slug, payload, record)
+    agent = _apply_config(record.slug, record, payload, choices)
+    autonomy = document.get("autonomy")
+    if isinstance(autonomy, bool):
+        record.autonomy = autonomy
+    if agent is not None:
+        from app.orchestration.runner import build_context
+
+        agent.on_configure(build_context(db, record, org, trigger="config"), payload.model_dump())
+    return config_document(record)
+
+
 @router.put("/{slug}/config", response_model=AgentOut)
 def configure(
     slug: str,
@@ -376,26 +819,8 @@ def configure(
 ) -> AgentOut:
     current.require_write(Module.AGENTS)
     record = _record(db, current.tenant_id, slug)
-    warnings = _validate_config(db, current, slug, payload)
-
-    record.schedule = payload.schedule
-    record.scope = payload.scope.strip()
-    record.notify_channel = payload.notify_channel
-    agent = lookup_agent(slug)
-    if agent is not None and agent.spec.requires_llm:
-        record.llm_connector = (payload.llm_connector or "").strip()
-    else:
-        record.llm_connector = ""
-    record.max_actions_per_day = payload.max_actions_per_day
-    record.configured = True
-
-    # The new cadence takes effect from now rather than from the old timer.
-    from app.orchestration.runner import SCHEDULE_INTERVALS
-    from app.db.base import utcnow
-
-    interval = SCHEDULE_INTERVALS.get(payload.schedule)
-    if interval and record.status == AgentStatus.RUNNING.value:
-        record.next_run_at = utcnow() + interval
+    warnings, choices = _validate_config(db, current, slug, payload, record)
+    agent = _apply_config(slug, record, payload, choices)
 
     # Let the agent react to its own configuration change.
     from app.orchestration.runner import build_context
@@ -413,8 +838,9 @@ def configure(
         module="agents",
         ip_address=ip,
     )
+    record_config_version(db, current.organization, record, actor=current.user)
     db.commit()
-    out = views.agent_out(record, can_write=True)
+    out = views.agent_out(record, can_write=True, env=views.guide_env(db, current.tenant_id))
     out.warnings = warnings
     return out
 
@@ -458,7 +884,16 @@ def reset_config(
     record.schedule = spec.default_schedule
     record.notify_channel = settings.default_notify_channel
     record.llm_connector = ""
+    # Which connector it uses goes with the rest of the configuration.
+    from app.agents.base.choice import CHOICES_KEY
+
+    if CHOICES_KEY in (record.settings or {}):
+        record.settings = {k: v for k, v in (record.settings or {}).items() if k != CHOICES_KEY}
+    # So does keeping to that model.
+    _apply_strict_choice(record, False)
     record.max_actions_per_day = spec.default_max_actions_per_day
+    # The next configuration is a new one, and starts in practice mode.
+    _apply_practice_choice(record, True, first=True)
     record.metric_label = "Not started yet"
     record.last_error = ""
     record.consecutive_failures = 0
@@ -470,8 +905,11 @@ def reset_config(
         module="agents",
         ip_address=ip,
     )
+    record_config_version(
+        db, current.organization, record, actor=current.user, summary="Agent settings removed"
+    )
     db.commit()
-    return views.agent_out(record, can_write=True)
+    return views.agent_out(record, can_write=True, env=views.guide_env(db, current.tenant_id))
 
 
 # ── Manual run ─────────────────────────────────────────────────────────────
@@ -547,6 +985,7 @@ def run_now(
     current.require_write(Module.AGENTS)
     record = _record(db, current.tenant_id, slug)
     _assert_configured(record)
+    _assert_not_halted(db, current)
 
     if _already_running(db, current.tenant_id, slug):
         return ActionResult(

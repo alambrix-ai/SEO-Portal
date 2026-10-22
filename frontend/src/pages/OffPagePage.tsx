@@ -4,28 +4,41 @@
 import { useState } from 'react'
 
 import { api } from '@/api/client'
-import type { ActionResult } from '@/api/types'
+import type { ActionResult, BacklinkOut } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
+import { VersionHistory } from '@/components/AuditHistory'
+import { PageTabs } from '@/components/PageTabs'
 import { useToasts } from '@/components/Toasts'
 import {
+  Dialog,
   EmptyState,
+  Field,
   ErrorState,
   Loading,
+  PageHeader,
   SectionHeading,
-  Tag,
   statusTone,
+  Tag,
 } from '@/components/ui'
 import { useResource } from '@/hooks/useResource'
 
+/** One line each on what the comparison words mean, for a non-technical reader. */
+const BACKLINK_COMPARE_HELP =
+  'Compare this scan with an earlier one. New: a site suggested for the first time. Fixed: a site that moved forward, for example from pitched to won. Worse: a site that turned you down, or a link you had won that is gone.'
+const COMPETITOR_COMPARE_HELP =
+  'Compare this scan with an earlier one. New: a competitor link spotted for the first time. Fixed: a competitor link you have since answered with a pitch. Worse: always 0 here, as nothing in this scan can get worse.'
+
 export function OffPagePage() {
-  const { canWrite } = useAuth()
+  const { canView, canWrite } = useAuth()
   const { push, fromResult, fromError } = useToasts()
+  const [view, setView] = useState<'opportunities' | 'history'>('opportunities')
   const { data, loading, error, reload } = useResource(
     (signal) => api.offpage(signal),
     [],
     'offpage',
   )
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [editingContact, setEditingContact] = useState<BacklinkOut | null>(null)
 
   const writable = canWrite('offpage')
 
@@ -51,15 +64,46 @@ export function OffPagePage() {
 
   return (
     <>
+      <PageHeader
+        title="Off-Page & PR"
+        description="Backlink opportunities, outreach and competitor link monitoring."
+      />
+      {canView('offpage') ? (
+        <PageTabs
+          value={view}
+          options={[
+            { value: 'opportunities', label: 'Opportunities' },
+            { value: 'history', label: 'Scan history' },
+          ]}
+          onChange={setView}
+        />
+      ) : null}
+      {view === 'history' && canView('offpage') ? (
+        <>
+          {/* Scans are read-only records: the server marks them not
+              restorable, so the kit shows no restore button. */}
+          <VersionHistory
+            kind="backlink_scan"
+            title="Backlink scans"
+            description={BACKLINK_COMPARE_HELP}
+          />
+          <VersionHistory
+            kind="competitor_scan"
+            title="Competitor scans"
+            description={COMPETITOR_COMPARE_HELP}
+          />
+        </>
+      ) : (
+      <>
       <SectionHeading
-        title="Backlink node discovery"
-        description="Scored on authority and topical fit together - a well-matched mid-authority placement beats a mismatched large one."
+        title="Sites that could link to you"
+        description="Suggested link partners. Add a publisher's email to have pitches emailed to them; without one, pitches come to your team as drafts."
       />
 
       {data.backlinks.length === 0 ? (
         <EmptyState
           title="No placement targets yet"
-          description="Backlink Node Discovery builds its topic model from your synced pages and search queries. Sync a CMS, then let it run."
+          description="The Backlink Node Discovery agent works out what your site is about from your pages and the searches people find you with. Connect your website on the Integrations screen, then let the agent run."
         />
       ) : (
         <div className="table-scroll">
@@ -71,6 +115,7 @@ export function OffPagePage() {
                 <th>Relevance</th>
                 <th>Placement Type</th>
                 <th>Status</th>
+                <th>Publisher email</th>
                 <th />
               </tr>
             </thead>
@@ -78,11 +123,27 @@ export function OffPagePage() {
               {data.backlinks.map((target) => (
                 <tr key={target.id}>
                   <td>{target.domain}</td>
-                  <td>{target.authority}</td>
-                  <td>{target.relevance.toFixed(2)}</td>
+                  <td>{target.authority_measured === false ? <span className="muted">Not measured</span> : target.authority}</td>
+                  <td>{Math.round(target.relevance * 100)}%</td>
                   <td>{target.placement_type}</td>
                   <td>
                     <Tag tone={statusTone(target.status)}>{target.status_label}</Tag>
+                  </td>
+                  <td>
+                    {target.has_contact ? (
+                      <span className="nowrap">{target.contact_email_masked}</span>
+                    ) : (
+                      <span className="muted">None</span>
+                    )}
+                    {writable ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setEditingContact(target)}
+                      >
+                        {target.has_contact ? 'Change' : 'Add'}
+                      </button>
+                    ) : null}
                   </td>
                   <td className="table-actions">
                     {target.show_launch ? (
@@ -106,7 +167,7 @@ export function OffPagePage() {
       )}
 
       <SectionHeading
-        title="Competitor link-poaching monitor"
+        title="Sites linking to your competitors"
         description="A publisher that just linked to a competitor has proven it covers this subject and will link out - the best moment to approach it."
         spaced
       />
@@ -114,7 +175,7 @@ export function OffPagePage() {
       {data.alerts.length === 0 ? (
         <EmptyState
           title="No competitor activity detected"
-          description="Set your competitors in the Competitor Link Monitor's Configure dialog, and connect Search Console or Bing Webmaster Tools so it has real backlink data to compare."
+          description="On the Agents screen, open the Competitor Link Monitor's Settings and add your competitors. Then connect Google Search Console or Bing Webmaster Tools on the Integrations screen so it has real link data to compare."
         />
       ) : (
         <div className="stack">
@@ -144,6 +205,91 @@ export function OffPagePage() {
           ))}
         </div>
       )}
+      </>
+      )}
+
+      {editingContact ? (
+        <ContactDialog
+          target={editingContact}
+          onClose={() => setEditingContact(null)}
+          onSaved={async () => {
+            setEditingContact(null)
+            await reload()
+          }}
+        />
+      ) : null}
     </>
+  )
+}
+
+
+/** Add, change or remove the address pitches to this publisher are emailed to. */
+function ContactDialog({
+  target,
+  onClose,
+  onSaved,
+}: {
+  target: BacklinkOut
+  onClose: () => void
+  onSaved: () => Promise<void>
+}) {
+  const { fromResult, fromError } = useToasts()
+  const [email, setEmail] = useState(target.contact_email ?? '')
+  const [busy, setBusy] = useState(false)
+
+  const save = async (value: string | null) => {
+    setBusy(true)
+    try {
+      fromResult(await api.setTargetContact(target.id, value))
+      await onSaved()
+    } catch (caught) {
+      fromError(caught)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog
+      title={`Publisher email for ${target.domain}`}
+      onClose={onClose}
+      actions={
+        <>
+          {target.has_contact ? (
+            <button type="button" className="btn btn-ghost danger" disabled={busy} onClick={() => void save(null)}>
+              Remove
+            </button>
+          ) : null}
+          <div className="dialog-actions-spacer" />
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy || !email.trim()}
+            onClick={() => void save(email.trim())}
+          >
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+        </>
+      }
+    >
+      <Field
+        label="Editor or webmaster email"
+        htmlFor="contact-email"
+        hint="Approved pitches to this site are emailed here, through your email (SMTP) integration. Without an address, pitches come to your team as drafts."
+      >
+        <input
+          id="contact-email"
+          className="input"
+          type="email"
+          autoComplete="off"
+          placeholder="editor@example.com"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+      </Field>
+    </Dialog>
   )
 }

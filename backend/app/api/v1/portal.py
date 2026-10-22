@@ -5,17 +5,25 @@ surface and cannot reach these routes.
 """
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter
+from fastapi import Path as PathParam
 from pydantic import Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.deps import ClientIp, DbSession, PortalAdminDep
 from app.core.exceptions import InvalidInputError, NotFoundError
+from app.core.logging import get_logger
 from app.core.rbac import ROLE_LABELS, Role
 from app.models.portal import FeatureKind
 from app.models.workspace import Organization, User
 from app.schemas.common import ActionResult, ApiModel, Toast
 from app.services import audit, portal_features
+from app.services.creative.quotas import CreativeLimitsUpdate
+
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -122,6 +130,94 @@ def list_organizations(current: PortalAdminDep, db: DbSession) -> list[PortalOrg
     return out
 
 
+class CreativeLimitsOut(ApiModel):
+    """Creative Studio's monthly limits for one workspace. 0 = no cap."""
+
+    organization_id: str
+    #: Platform defaults from server settings.
+    defaults: dict[str, int]
+    #: Values a portal admin set for this workspace only.
+    overrides: dict[str, int]
+    #: What applies now: each override, else the default.
+    effective: dict[str, int]
+    #: This calendar month (UTC): jobs, images, tokens.
+    usage: dict[str, int]
+    toast: Toast | None = None
+
+
+OrgIdPath = Annotated[str, PathParam(min_length=1, max_length=64)]
+
+
+def _creative_limits(db, org: Organization, current) -> CreativeLimitsOut:  # noqa: ANN001
+    from app.db.session import bind_tenant
+    from app.services.creative import quotas
+
+    bind_tenant(db, org.id)
+    try:
+        used = quotas.usage(db, org.id)
+    finally:
+        bind_tenant(db, current.tenant_id)
+    return CreativeLimitsOut(
+        organization_id=org.id,
+        defaults=quotas.defaults().as_dict(),
+        overrides=quotas.overrides_in(org.settings),
+        effective=quotas.limits_from(org.settings).as_dict(),
+        usage=used.as_dict(),
+    )
+
+
+@router.get("/organizations/{org_id}/creative-limits", response_model=CreativeLimitsOut)
+def read_creative_limits(
+    org_id: OrgIdPath, current: PortalAdminDep, db: DbSession
+) -> CreativeLimitsOut:
+    org = db.get(Organization, org_id)
+    if org is None:
+        raise NotFoundError("That workspace was not found")
+    return _creative_limits(db, org, current)
+
+
+@router.put("/organizations/{org_id}/creative-limits", response_model=CreativeLimitsOut)
+def update_creative_limits(
+    org_id: OrgIdPath,
+    payload: CreativeLimitsUpdate,
+    current: PortalAdminDep,
+    db: DbSession,
+    ip: ClientIp,
+) -> CreativeLimitsOut:
+    """Override Creative Studio's monthly limits for one workspace (portal
+    admin only, audited). ``null`` returns a limit to the platform default."""
+    from app.db.session import bind_tenant
+    from app.services.creative import quotas
+
+    org, changed = quotas.set_overrides(db, org_id, payload)
+    if changed:
+        actor = current.user.email or current.user.name
+        entry = {
+            "actor": actor,
+            "actor_id": current.user.id,
+            "action": "portal changed Creative Studio monthly limits",
+            "module": "portal",
+            "ip_address": ip,
+            # Field names and numbers only.
+            "context": {"organization_id": org.id, "changed": changed},
+        }
+        audit.record(db, tenant_id=current.tenant_id, **entry)
+        if org.id != current.tenant_id:
+            # Also in the workspace's own log, so its admins can see why.
+            bind_tenant(db, org.id)
+            try:
+                audit.record(db, tenant_id=org.id, **entry)
+            finally:
+                bind_tenant(db, current.tenant_id)
+    db.commit()
+    out = _creative_limits(db, org, current)
+    out.toast = Toast(
+        message="Creative Studio limits saved." if changed else "Nothing new to save.",
+        kind="success" if changed else "info",
+    )
+    return out
+
+
 @router.get("/organizations/{org_id}/users", response_model=list[PortalUserOut])
 def list_organization_users(
     org_id: str, current: PortalAdminDep, db: DbSession
@@ -157,6 +253,233 @@ def list_organization_users(
     ]
 
 
+class SignInConnectorOut(ApiModel):
+    slug: str
+    name: str
+    available: bool
+    missing: list[str] = Field(default_factory=list)
+    #: ``missing``, as the setup form labels the values.
+    needs: list[str] = Field(default_factory=list)
+    scopes: list[str] = Field(default_factory=list)
+
+
+class SignInFieldOut(ApiModel):
+    """One value the vendor's console gives you. Never carries a secret:
+    ``preview`` is the value itself only for non-secrets (the client ID),
+    otherwise "Set · ends in 1234"."""
+
+    key: str
+    label: str
+    secret: bool = False
+    multiline: bool = False
+    needed_for: str = ""
+    help: str = ""
+    placeholder: str = ""
+    is_set: bool = False
+    #: portal (saved here) | server (environment) | "" (not set)
+    source: str = ""
+    preview: str = ""
+
+
+class SignInProviderOut(ApiModel):
+    name: str
+    label: str
+    configured: bool
+    #: Register exactly this with the vendor.
+    redirect_uri: str
+    settings_keys: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+    connectors: list[SignInConnectorOut] = Field(default_factory=list)
+    console_url: str = ""
+    note: str = ""
+    #: ready | partial | not_set_up | built_in
+    status: str = "not_set_up"
+    status_detail: str = ""
+    console_label: str = ""
+    steps: list[str] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    permissions_where: str = ""
+    review_note: str = ""
+    fields: list[SignInFieldOut] = Field(default_factory=list)
+    saved_here: bool = False
+    updated_by: str = ""
+    updated_at: str = ""
+    checkable: bool = False
+
+
+class SignInProviderSave(ApiModel):
+    #: ``{field key: value}``. A blank value keeps what is saved.
+    values: dict[str, str] = Field(default_factory=dict)
+
+
+class SignInCheckOut(ApiModel):
+    #: ok | failed | unchecked
+    status: str
+    message: str
+
+
+class SignInProviderSaved(ApiModel):
+    provider: SignInProviderOut
+    check: SignInCheckOut
+    toast: Toast | None = None
+
+
+def _provider_out(status) -> SignInProviderOut:  # noqa: ANN001
+    data = {k: getattr(status, k) for k in status.__slots__}
+    data["connectors"] = [SignInConnectorOut(**c) for c in status.connectors]
+    data["fields"] = [SignInFieldOut(**f) for f in status.fields]
+    return SignInProviderOut(**data)
+
+
+def _read_snapshot(db):  # noqa: ANN001, ANN202
+    """The saved apps, read on this request's session. Before migration
+    0017 has run there is no table: server settings only."""
+    from app.services import platform_oauth_apps
+
+    try:
+        with db.begin_nested():
+            return platform_oauth_apps.read_snapshot(db)
+    except SQLAlchemyError:
+        return platform_oauth_apps.Snapshot()
+
+
+def _statuses(db) -> list:  # noqa: ANN001
+    """Fresh from this request's session (and shared with this worker's
+    cache), so the page shows a save the moment it is made."""
+    from app.services import oauth_flow, platform_oauth_apps
+
+    platform_oauth_apps.prime_cache(_read_snapshot(db))
+    return oauth_flow.provider_statuses()
+
+
+def _one(db, name: str) -> SignInProviderOut:  # noqa: ANN001
+    for status in _statuses(db):
+        if status.name == name:
+            return _provider_out(status)
+    raise NotFoundError("That sign-in provider was not found")
+
+
+def _settable(name: str) -> str:
+    from app.services import provider_setup
+
+    name = (name or "").strip().lower()
+    if provider_setup.setup_for(name) is None:
+        raise NotFoundError("That sign-in provider has nothing to set up")
+    return name
+
+
+@router.get("/sign-in-providers", response_model=list[SignInProviderOut])
+def sign_in_providers(_: PortalAdminDep, db: DbSession) -> list[SignInProviderOut]:
+    """Every sign-in provider: status, setup steps, the redirect URI to
+    register, and the values to enter. Secrets are never returned."""
+    return [_provider_out(status) for status in _statuses(db)]
+
+
+@router.put("/sign-in-providers/{name}", response_model=SignInProviderSaved)
+def save_sign_in_provider(
+    name: str,
+    payload: SignInProviderSave,
+    current: PortalAdminDep,
+    db: DbSession,
+    ip: ClientIp,
+) -> SignInProviderSaved:
+    """Save the platform's app details for one provider (encrypted), then
+    check them with the vendor where it offers a reliable quick check."""
+    from app.connectors.base import oauth_providers
+    from app.services import platform_oauth_apps
+
+    name = _settable(name)
+    label = oauth_providers.PROVIDERS[name].label
+    actor = current.user.email or current.user.name
+    try:
+        changed = platform_oauth_apps.save(db, provider=name, values=payload.values, actor=actor)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise InvalidInputError(
+            "Saving needs the latest database update (migration 0017). Ask whoever runs "
+            "the server to apply it, then try again."
+        ) from exc
+    if changed:
+        audit.record(
+            db,
+            tenant_id=current.tenant_id,
+            actor=actor,
+            actor_id=current.user.id,
+            action=f"portal saved Sign in with {label} ({', '.join(changed)})",
+            module="portal",
+            ip_address=ip,
+            # Which values changed, never the values.
+            context={"provider": name, "changed": changed},
+        )
+    db.commit()
+    platform_oauth_apps.invalidate_cache()
+    provider = _one(db, name)
+    result = platform_oauth_apps.check(name)
+    message = result.message if changed else f"Nothing new to save. {result.message}"
+    return SignInProviderSaved(
+        provider=provider,
+        check=SignInCheckOut(status=result.status, message=message),
+        toast=Toast(
+            message=message,
+            kind={"ok": "success", "failed": "warning"}.get(result.status, "info"),
+        ),
+    )
+
+
+@router.post("/sign-in-providers/{name}/check", response_model=SignInCheckOut)
+def check_sign_in_provider(name: str, _: PortalAdminDep, db: DbSession) -> SignInCheckOut:
+    """Check the values in force (saved here, else server settings)."""
+    from app.services import platform_oauth_apps
+
+    name = _settable(name)
+    platform_oauth_apps.prime_cache(_read_snapshot(db))
+    result = platform_oauth_apps.check(name)
+    return SignInCheckOut(status=result.status, message=result.message)
+
+
+@router.delete("/sign-in-providers/{name}", response_model=SignInProviderSaved)
+def clear_sign_in_provider(
+    name: str, current: PortalAdminDep, db: DbSession, ip: ClientIp
+) -> SignInProviderSaved:
+    """Remove what was saved here for one provider. Values set in the
+    server environment, if any, apply again."""
+    from app.connectors.base import oauth_providers
+    from app.services import platform_oauth_apps
+
+    name = _settable(name)
+    label = oauth_providers.PROVIDERS[name].label
+    try:
+        removed = platform_oauth_apps.clear(db, provider=name)
+    except SQLAlchemyError:
+        db.rollback()
+        removed = False
+    if removed:
+        audit.record(
+            db,
+            tenant_id=current.tenant_id,
+            actor=current.user.email or current.user.name,
+            actor_id=current.user.id,
+            action=f"portal removed Sign in with {label}",
+            module="portal",
+            ip_address=ip,
+            context={"provider": name},
+        )
+    db.commit()
+    platform_oauth_apps.invalidate_cache()
+    provider = _one(db, name)
+    if not removed:
+        message = "Nothing was saved here for this provider."
+    elif provider.configured:
+        message = f"Removed. Sign in with {label} still works from the server settings."
+    else:
+        message = f"Removed. Sign in with {label} is now switched off."
+    return SignInProviderSaved(
+        provider=provider,
+        check=SignInCheckOut(status="unchecked", message=message),
+        toast=Toast(message=message, kind="info"),
+    )
+
+
 @router.get("/features", response_model=list[PortalFeatureOut])
 def list_features(current: PortalAdminDep, db: DbSession) -> list[PortalFeatureOut]:
     return [PortalFeatureOut(**row) for row in portal_features.list_flags(db)]
@@ -183,7 +506,9 @@ def update_feature(
             actor=current.user,
         )
     except ValueError as exc:
-        raise InvalidInputError(str(exc)) from exc
+        # Authored copy only; the exception text is not echoed back.
+        log.info("Portal feature update rejected (%s)", type(exc).__name__)
+        raise InvalidInputError("That feature is not recognised.") from exc
 
     state = "enabled" if payload.enabled else "disabled"
     audit.record(
@@ -203,3 +528,155 @@ def update_feature(
             kind="success" if payload.enabled else "warning",
         )
     )
+
+
+# ── Website analyses (public demo) and workspace analyses ─────────────────
+@router.get("/analyses")
+def list_analyses(
+    current: PortalAdminDep,
+    db: DbSession,
+    source: str = "all",
+    status: str = "",
+    q: str = "",
+    limit: int = 200,
+) -> dict:
+    """Every analysis run on the platform, newest first.
+
+    ``website`` rows come from the marketing site's free analysis (no
+    workspace; visitors are identified only by keyed hashes). ``workspace``
+    rows are analyses run inside a workspace, read workspace by workspace so
+    row-level security still applies.
+    """
+    from app.db.session import bind_tenant
+    from app.models.demo import DemoAnalysis, SiteAnalysis
+
+    limit = max(1, min(limit, 500))
+    needle = q.strip().lower()
+    items: list[dict] = []
+
+    def keep(row) -> bool:  # noqa: ANN001
+        if status and row.status != status:
+            return False
+        return not needle or needle in row.website_url.lower() or needle in (row.business_url or "").lower()
+
+    def common(row) -> dict:  # noqa: ANN001
+        report = row.report or {}
+        overall = report.get("overall") or {}
+        business = ((report.get("ai") or {}).get("strategy") or {}).get("business")
+        took = (
+            round((row.finished_at - row.started_at).total_seconds())
+            if row.finished_at and row.started_at else None
+        )
+        return {
+            "id": row.id,
+            "website": row.website_url,
+            "business_url": row.business_url,
+            "status": row.status,
+            "error": row.error or None,
+            "score": overall.get("score"),
+            "grade": overall.get("grade"),
+            "business_name": str(business.get("name") or "") if isinstance(business, dict) else "",
+            "model": row.model,
+            "seconds": took,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+
+    if source in ("all", "website"):
+        for row in db.scalars(select(DemoAnalysis).order_by(DemoAnalysis.created_at.desc()).limit(limit)):
+            if keep(row):
+                items.append({**common(row), "source": "website", "workspace": None, "workspace_id": None})
+
+    if source in ("all", "workspace"):
+        orgs = list(db.execute(select(Organization)).scalars())
+        for org in orgs:
+            bind_tenant(db, org.id)
+            for row in db.scalars(
+                select(SiteAnalysis).where(SiteAnalysis.tenant_id == org.id)
+                .order_by(SiteAnalysis.created_at.desc()).limit(limit)
+            ):
+                if keep(row):
+                    items.append({
+                        **common(row), "source": "workspace", "workspace": org.name, "workspace_id": org.id,
+                        "requested_by": row.requested_by_name,
+                        "connectors": len((row.context or {}).get("connectors") or []),
+                    })
+        bind_tenant(db, current.tenant_id)
+
+    items.sort(key=lambda i: i["created_at"] or "", reverse=True)
+    day_ago = utcnow_iso_day_ago()
+    return {
+        "items": items[:limit],
+        "totals": {
+            "website": sum(1 for i in items if i["source"] == "website"),
+            "workspace": sum(1 for i in items if i["source"] == "workspace"),
+            "last_24h": sum(1 for i in items if (i["created_at"] or "") >= day_ago),
+            "failed": sum(1 for i in items if i["status"] == "failed"),
+        },
+    }
+
+
+def utcnow_iso_day_ago() -> str:
+    from datetime import timedelta
+
+    from app.db.base import utcnow
+
+    return (utcnow() - timedelta(days=1)).isoformat()
+
+
+@router.get("/analyses/website/{analysis_id}")
+def read_website_analysis(analysis_id: str, current: PortalAdminDep, db: DbSession) -> dict:
+    from app.models.demo import DemoAnalysis
+    from app.services.demo_analysis import service
+
+    row = db.get(DemoAnalysis, analysis_id)
+    if row is None:
+        raise NotFoundError("Analysis not found")
+    return {**service.public_view(row), "source": "website", "model": row.model}
+
+
+@router.get("/analyses/website/{analysis_id}/download")
+def download_website_analysis(analysis_id: str, current: PortalAdminDep, db: DbSession, format: str = "pdf"):  # noqa: A002, ANN201
+    from app.api.v1.site_analysis import report_file
+    from app.models.demo import DemoAnalysis
+
+    row = db.get(DemoAnalysis, analysis_id)
+    if row is None:
+        raise NotFoundError("Analysis not found")
+    return report_file(row.report, format)
+
+
+@router.get("/analyses/workspace/{org_id}/{analysis_id}/download")
+def download_workspace_analysis(org_id: str, analysis_id: str, current: PortalAdminDep, db: DbSession, format: str = "pdf"):  # noqa: A002, ANN201
+    from app.api.v1.site_analysis import report_file
+    from app.db.session import bind_tenant
+    from app.services.demo_analysis import workspace
+
+    org = db.get(Organization, org_id)
+    if org is None:
+        raise NotFoundError("That workspace was not found")
+    bind_tenant(db, org_id)
+    try:
+        row = workspace.get(db, org_id, analysis_id)
+        detail = workspace.detail(db, row)
+        return report_file(
+            detail["report"], format,
+            extra={"comparison": detail["comparison"], "context": row.context, "workspace": org.name},
+        )
+    finally:
+        bind_tenant(db, current.tenant_id)
+
+
+@router.get("/analyses/workspace/{org_id}/{analysis_id}")
+def read_workspace_analysis(org_id: str, analysis_id: str, current: PortalAdminDep, db: DbSession) -> dict:
+    from app.db.session import bind_tenant
+    from app.services.demo_analysis import workspace
+
+    org = db.get(Organization, org_id)
+    if org is None:
+        raise NotFoundError("That workspace was not found")
+    bind_tenant(db, org_id)
+    try:
+        out = workspace.detail(db, workspace.get(db, org_id, analysis_id))
+    finally:
+        bind_tenant(db, current.tenant_id)
+    return {**out, "source": "workspace", "workspace": org.name, "workspace_id": org.id}

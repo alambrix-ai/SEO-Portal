@@ -18,6 +18,9 @@ argon2-cffi==23.1.0
 
 # ── Outbound connector I/O ─────────────────────────────────────────────────
 httpx==0.28.1
+# Pinned with httpx: the egress guard (app/core/egress.py) swaps the pool's
+# network backend through a private httpcore attribute; re-test on upgrade.
+httpcore==1.0.9
 tenacity==9.0.0
 
 # ── Task broker (optional; agents fall back to the in-process scheduler) ───
@@ -29,3 +32,23 @@ anthropic==0.42.0
 
 # ── Willy assistant chat memory (LlamaIndex ChatMemoryBuffer / SimpleChatEngine)
 llama-index-core==0.13.6
+
+# ── Images: Instagram only accepts JPEG, so generated PNGs are converted
+pillow==12.3.0
+# Analysis report PDF download.
+reportlab==5.0.1
+# ── Time zones: python:3.12-slim ships no system zoneinfo database
+tzdata==2026.3
+
+# ── Creative Studio ────────────────────────────────────────────────────────
+# HTML templates for rendered creatives (sandboxed, autoescaped).
+Jinja2==3.1.6
+MarkupSafe==3.0.4
+# Headless Chromium for rendering creatives to PNG/PDF. The browser itself is
+# installed by the Dockerfile (INSTALL_CHROMIUM), not by pip.
+playwright==1.63.0
+pyee==13.0.1
+# Uploaded SVG logos: parsed with defusedxml (no DTDs/entities), sanitised,
+# then rasterised by resvg (no network, no local file reads once sanitised).
+resvg-py==0.5.0
+defusedxml==0.7.1

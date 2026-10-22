@@ -70,7 +70,11 @@ export function RegisterPage() {
       setStep('code')
     } catch (caught) {
       if (caught instanceof ApiError) {
-        setFieldErrors(caught.fields ?? {})
+        const next: Record<string, string> = {}
+        for (const [key, value] of Object.entries(caught.fields ?? {})) {
+          if (typeof value === 'string') next[key] = value
+        }
+        setFieldErrors(next)
         setError(caught.message)
       } else {
         fromError(caught)

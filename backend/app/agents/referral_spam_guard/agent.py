@@ -13,10 +13,11 @@ full human review.
 """
 from __future__ import annotations
 
-import re
+import uuid
 from datetime import timedelta
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.agents.base.context import AgentContext
 from app.agents.base import scope as scope_rules
@@ -28,17 +29,24 @@ from app.agents.base.contracts import (
     BaseAgent,
     Impact,
 )
+from app.agents.base.contracts import ConnectorUse, UseMode
 from app.agents.referral_spam_guard import prompts, rules
 from app.connectors.base.connector import Capability
 from app.connectors.base.interfaces import AnalyticsConnector, TrafficSample
 from app.core.logging import get_logger
 from app.db.base import utcnow
+from app.models.approval import ApprovalItem
 from app.models.seo import ReferralSpamEvent
+from app.models.workspace import Organization
+from app.services.approvals import register_applier
 
 log = get_logger(__name__)
 
-# Ambiguous domains sent to the model per run.
-MAX_LLM_CHECKS = 5
+# Most ambiguous domains sent to the model in one pass. The actual number
+# follows the remaining daily allowance (see llm_check_budget); each one is an
+# LLM call, so this bound keeps a pass's cost predictable.
+MIN_LLM_CHECKS = 5
+MAX_LLM_CHECKS = 10
 
 
 class ReferralSpamGuardAgent(BaseAgent):
@@ -58,6 +66,15 @@ class ReferralSpamGuardAgent(BaseAgent):
         scope_placeholder="Extra domains to always block, comma separated",
         continuous=True,
         requires_llm=True,
+        connector_use=(
+            ConnectorUse(
+                Capability.READ_REFERRERS,
+                UseMode.ONE,
+                question=(
+                    "Which analytics account should this agent check for spam visits?"
+                ),
+            ),
+        ),
     )
 
     def validate_scope(self, scope: str) -> str | None:
@@ -78,13 +95,16 @@ class ReferralSpamGuardAgent(BaseAgent):
 
         verdicts: list[tuple[TrafficSample, str, float]] = []
         ambiguous: list[TrafficSample] = []
+        seen: set[str] = set()
 
         for sample in samples:
             domain = rules.normalise_domain(sample.referrer)
-            if not domain or domain in already_blocked:
+            if not domain or domain in already_blocked or domain in seen:
                 continue
             if rules.is_own_domain(domain, ctx.org.primary_domain):
                 continue
+            # "www.x.com/a" and "x.com/b" are one referrer, and one proposal.
+            seen.add(domain)
 
             category, confidence = rules.classify(sample, extra_blocklist=extra_blocklist)
             if category is rules.Verdict.UNKNOWN:
@@ -92,17 +112,25 @@ class ReferralSpamGuardAgent(BaseAgent):
             elif category is not rules.Verdict.CLEAN:
                 verdicts.append((sample, category.value, confidence))
 
+        rule_matches = len(verdicts)
+
         # Only the genuinely uncertain ones cost a model call.
-        for sample in ambiguous[:MAX_LLM_CHECKS]:
+        to_check = ambiguous[: llm_check_budget(ctx.remaining_actions, rule_matches)]
+        model_flagged = 0
+        for sample in to_check:
             resolved = self._ask_model(ctx, sample)
             if resolved is not None:
                 verdicts.append(resolved)
+                model_flagged += 1
 
         actions = [
             self._block_action(ctx, sample, category, confidence)
             for sample, category, confidence in verdicts
         ]
 
+        # Only blocks that were actually applied are in the event log. This
+        # pass's proposals are reported separately: under review they are
+        # waiting for a person, and counting them as blocked was untrue.
         blocked_today = ctx.db.execute(
             select(func.count())
             .select_from(ReferralSpamEvent)
@@ -111,16 +139,21 @@ class ReferralSpamGuardAgent(BaseAgent):
                 ReferralSpamEvent.at >= utcnow().replace(hour=0, minute=0, second=0, microsecond=0),
             )
         ).scalar_one()
+        label = f"{blocked_today} spam referrers blocked today"
+        if actions:
+            label += f", {len(actions)} more proposed"
 
         return AgentResult(
-            summary=f"assessed {len(samples)} referrers, blocking {len(actions)}",
+            summary=f"assessed {len(samples)} referrers, proposing {len(actions)} blocks",
             actions=actions,
-            metric_label=f"{blocked_today + len(actions)} spam referrers blocked today",
-            metrics={"referral_spam_blocked": len(actions)},
+            metric_label=label,
             detail={
                 "assessed": len(samples),
-                "rule_matches": len(verdicts) - min(len(ambiguous), MAX_LLM_CHECKS),
-                "model_checks": min(len(ambiguous), MAX_LLM_CHECKS),
+                "rule_matches": rule_matches,
+                "model_checks": len(to_check),
+                "model_flagged": model_flagged,
+                "proposed": len(actions),
+                "blocked_today": blocked_today,
             },
         )
 
@@ -175,7 +208,11 @@ class ReferralSpamGuardAgent(BaseAgent):
             title=f"Block referral spam from {domain}",
             impact=Impact.LOW,
             approval_type="Traffic Block",
-            target_kind="referral_spam",
+            target_kind=TARGET_KIND,
+            # One pending item per domain. Without a target id every proposal
+            # had target_id NULL, so under review they all collapsed into one
+            # approval card that kept being overwritten by the next domain.
+            target_id=target_id_for(domain),
             payload={
                 "referrer": domain,
                 "category": category,
@@ -184,7 +221,34 @@ class ReferralSpamGuardAgent(BaseAgent):
             },
             apply=_make_blocker(domain, category, confidence, sample.sessions),
             audit=f"blocked {sample.sessions} sessions of {category.lower()} from {domain}",
+            metrics={"referral_spam_blocked": 1},
         )
+
+
+TARGET_KIND = "referral_spam"
+
+
+def target_id_for(domain: str) -> str:
+    """A stable id for one referrer domain.
+
+    ApprovalItem.target_id is a UUID column, so the domain itself cannot go
+    there; a name-based UUID of it is stable across runs, which is what
+    keeps one pending proposal per domain.
+    """
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{TARGET_KIND}:{domain}"))
+
+
+def llm_check_budget(remaining_actions: int, already_proposed: int) -> int:
+    """How many ambiguous referrers to send to the model this pass.
+
+    Each check is one LLM call that can produce at most one action, so the
+    count follows the daily actions still available after the rule matches
+    (which cost nothing), never fewer than MIN_LLM_CHECKS (the old fixed
+    number: proposals queued for review do not use up the allowance) and
+    never more than MAX_LLM_CHECKS, which bounds a pass's model cost.
+    """
+    room = max(0, remaining_actions - already_proposed)
+    return max(MIN_LLM_CHECKS, min(MAX_LLM_CHECKS, room))
 
 
 def _make_blocker(domain: str, category: str, confidence: float, sessions: int):  # noqa: ANN202
@@ -212,6 +276,33 @@ def _make_blocker(domain: str, category: str, confidence: float, sessions: int):
         ctx.db.flush()
 
     return block
+
+
+@register_applier(TARGET_KIND)
+def apply_block(db: Session, org: Organization, item: ApprovalItem, payload: dict) -> None:
+    """Approving a queued block does exactly what the autonomous path does."""
+    from app.models.agent import AgentRecord
+    from app.orchestration.runner import build_context
+
+    domain = rules.normalise_domain(str(payload.get("referrer") or ""))
+    if not domain:
+        raise ValueError("The approved block has no referrer stored")
+
+    record = db.execute(
+        select(AgentRecord).where(
+            AgentRecord.tenant_id == org.id, AgentRecord.slug == "referral_spam_guard"
+        )
+    ).scalar_one_or_none()
+    if record is None:
+        raise LookupError("Referral Spam Guard is not installed in this workspace")
+
+    ctx = build_context(db, record, org, trigger="approval")
+    _make_blocker(
+        domain,
+        str(payload.get("category") or rules.Verdict.LINK_DROP.value),
+        float(payload.get("confidence") or 0.0),
+        int(payload.get("sessions") or 0),
+    )(ctx)
 
 
 AGENT = ReferralSpamGuardAgent()

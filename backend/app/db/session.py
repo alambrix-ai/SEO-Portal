@@ -36,6 +36,10 @@ def _build_engine() -> Engine:
     }
     if settings.postgres_sslrootcert:
         connect_args["sslrootcert"] = settings.postgres_sslrootcert
+    # The mode the production guardrail checked, so a DATABASE_URL without
+    # its own sslmode cannot fall back to libpq's "prefer".
+    if settings.effective_sslmode:
+        connect_args["sslmode"] = settings.effective_sslmode
     return create_engine(
         settings.sqlalchemy_url,
         pool_size=settings.db_pool_size,
@@ -43,6 +47,9 @@ def _build_engine() -> Engine:
         pool_pre_ping=True,
         pool_recycle=settings.db_pool_recycle_seconds,
         echo=settings.db_echo,
+        # Bound values (tokens, emails, encrypted blobs) stay out of
+        # exception messages and logs.
+        hide_parameters=True,
         connect_args=connect_args,
         future=True,
     )
@@ -216,9 +223,66 @@ def run_per_organization(
     return results
 
 
+#: What the runtime role can do that it must not: be a superuser, bypass
+#: row-level security, or (directly or through a role it belongs to) own the
+#: tables whose protections the owner can switch off.
+_ROLE_CHECK = text(
+    """
+    SELECT r.rolsuper,
+           r.rolbypassrls,
+           EXISTS (
+               SELECT 1
+               FROM pg_class c
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+               WHERE c.relname IN ('audit_log', 'users')
+                 AND n.nspname = ANY (current_schemas(false))
+                 AND pg_has_role(c.relowner, 'MEMBER')
+           ) AS owns_tables
+    FROM pg_roles r
+    WHERE r.rolname = current_user
+    """
+)
+
+
+def privileged_role_problems(conn: Connection) -> list[str]:
+    """Why the connected role is too powerful to serve requests, if it is.
+
+    Empty when the role is an ordinary, non-owning application role.
+    """
+    row = conn.execute(_ROLE_CHECK).first()
+    if row is None:
+        return ["the current database role could not be inspected"]
+    superuser, bypass_rls, owns_tables = (bool(value) for value in row)
+    problems: list[str] = []
+    if superuser:
+        problems.append("it is a superuser")
+    if bypass_rls:
+        problems.append("it has BYPASSRLS")
+    if owns_tables:
+        problems.append("it owns audit_log or users")
+    return problems
+
+
+def check_db_role(conn: Connection) -> None:
+    """Production: refuse a role that defeats row-level security or the
+    append-only audit log, unless ALLOW_PRIVILEGED_DB_ROLE says otherwise."""
+    if not settings.is_production or settings.allow_privileged_db_role:
+        return
+    problems = privileged_role_problems(conn)
+    if problems:
+        raise RuntimeError(
+            "Refusing to start: the database role in DATABASE_URL is too "
+            "powerful (" + "; ".join(problems) + "). Connect as the "
+            "automarket_app role from scripts/bootstrap.sql, or set "
+            "ALLOW_PRIVILEGED_DB_ROLE=true for a throwaway environment."
+        )
+
+
 def check_connection() -> None:
-    """Verify the database is reachable, and warn if the link is unencrypted."""
+    """Verify the database is reachable, that the link is encrypted, and (in
+    production) that the role is not privileged."""
     with engine.connect() as conn:
+        check_db_role(conn)
         version = conn.execute(text("SHOW server_version")).scalar_one()
         row = conn.execute(
             text("SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()")

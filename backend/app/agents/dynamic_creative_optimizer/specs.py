@@ -24,10 +24,23 @@ class PlatformSpec:
     dimensions: tuple[str, ...]
     headline_max: int
     body_max: int
+    #: The platform's ad combines several variants' copy into one ad (a
+    #: Google responsive search ad takes 3-15 headlines and 2-4
+    #: descriptions), so one upload carries every sibling for the page.
+    combines_variants: bool = False
+    #: Variants per page the model must write for this platform.
+    min_variants: int = 1
 
 
 PLATFORMS: dict[str, PlatformSpec] = {
-    "Google Ads": PlatformSpec("google_ads", ("300x250", "728x90", "160x600", "336x280"), 30, 90),
+    "Google Ads": PlatformSpec(
+        "google_ads",
+        ("300x250", "728x90", "160x600", "336x280"),
+        30,
+        90,
+        combines_variants=True,
+        min_variants=3,
+    ),
     "Meta Ads": PlatformSpec("meta_ads", ("1080x1080", "1200x628", "1080x1350"), 40, 125),
     "LinkedIn Ads": PlatformSpec("linkedin_ads", ("1200x627", "300x250"), 70, 150),
     "TikTok Ads": PlatformSpec("tiktok_ads", ("1080x1920",), 40, 100),
@@ -196,6 +209,13 @@ def check_copy(*, headline: str, body_copy: str, platform: str) -> str | None:
     if len(body_copy) > spec.body_max:
         return f"body is {len(body_copy)} chars, {platform} allows {spec.body_max}"
 
+    return check_text(headline=headline, body_copy=body_copy)
+
+
+def check_text(*, headline: str, body_copy: str) -> str | None:
+    """The platform-independent half of :func:`check_copy`: unsupportable
+    claims, an all-caps headline, excess exclamation marks. Creative Studio
+    applies the same rules to copy for formats that are not ad platforms."""
     combined = f"{headline} {body_copy}".lower()
     for claim in _UNSUPPORTABLE:
         if claim in combined:

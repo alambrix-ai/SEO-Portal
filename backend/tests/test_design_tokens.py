@@ -93,3 +93,57 @@ def test_inline_styles_do_not_reference_tokens_without_a_fallback():
             if name not in defined:
                 missing.append((path.name, name))
     assert missing == [], missing
+
+
+# ── Text contrast ────────────────────────────────────────────────────────────
+
+_ROOT_TOKEN = r"^\s*{name}\s*:\s*(#[0-9a-fA-F]{{6}})\s*;"
+
+
+def _hex_token(name: str) -> str:
+    """The `#rrggbb` value a `:root` token is set to in industry.css."""
+    text = _code(STYLES / "industry.css")
+    match = re.search(_ROOT_TOKEN.format(name=re.escape(name)), text, re.M)
+    assert match, f"{name} is not a #rrggbb literal in industry.css"
+    return match.group(1)
+
+
+def _luminance(hex_colour: str) -> float:
+    """WCAG 2.x relative luminance."""
+    channels = [int(hex_colour[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+    linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def _contrast(a: str, b: str) -> float:
+    high, low = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def test_contrast_helper_matches_known_wcag_values():
+    """Guards the maths: black on white is 21:1, and the old subtle grey
+    (#9ca3af) is the 2.5:1 failure this test exists to stop."""
+    assert round(_contrast("#000000", "#ffffff"), 1) == 21.0
+    assert _contrast("#9ca3af", "#ffffff") < 4.5
+
+
+@pytest.mark.skipif(not STYLES.exists(), reason="frontend styles not present")
+@pytest.mark.parametrize("ground", ["--color-surface", "--color-bg"])
+def test_subtle_text_meets_wcag_aa(ground: str):
+    """Subtle text is still body-size text, so it needs 4.5:1 (WCAG 1.4.3)
+    on both white cards and the page background."""
+    ratio = _contrast(_hex_token("--color-text-subtle"), _hex_token(ground))
+    assert ratio >= 4.5, f"--color-text-subtle on {ground} is {ratio:.2f}:1"
+
+
+@pytest.mark.skipif(not STYLES.exists(), reason="frontend styles not present")
+@pytest.mark.parametrize("ground", ["--color-surface", "--color-bg"])
+def test_muted_text_meets_wcag_aa(ground: str):
+    """Muted text carries hints, captions and table metadata at body size, so
+    it needs 4.5:1 too. The old #6b7280 was 4.47:1 on the page background."""
+    ratio = _contrast(_hex_token("--color-text-muted"), _hex_token(ground))
+    assert ratio >= 4.5, f"--color-text-muted on {ground} is {ratio:.2f}:1"
+
+
+def test_the_old_muted_grey_is_the_failure_the_muted_test_catches():
+    assert _contrast("#6b7280", "#f5f6f8") < 4.5

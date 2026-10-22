@@ -88,6 +88,19 @@ def check_pitch(*, subject: str, body: str, brand: str) -> str | None:
 
     return None
 
+def mask_email(address: str | None) -> str:
+    """``e***@example.com`` — enough to recognise, not enough to harvest.
+
+    A publisher's address is personal data (it is encrypted at rest), so
+    anything that shows it to somebody who did not enter it shows this.
+    """
+    value = (address or "").strip()
+    if "@" not in value:
+        return ""
+    local, _, domain = value.rpartition("@")
+    return f"{local[:1]}***@{domain}" if local else f"***@{domain}"
+
+
 def render_email(*, body: str, recipient: str, brand: str, domain: str = "") -> str:
     """Final message text, with the signature the model was told to omit.
 

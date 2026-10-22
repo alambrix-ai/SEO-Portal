@@ -1,0 +1,6 @@
+{#- Google Display banners: one flat canvas, a hairline frame so the ad
+    reads as an ad on a white page. -#}
+{% extends "_base.html.j2" %}
+{% block extra_style %}
+.page::after { content: ""; position: absolute; inset: 0; border: 1px solid {{ palette.text|colour }}; opacity: 0.25; pointer-events: none; }
+{% endblock %}

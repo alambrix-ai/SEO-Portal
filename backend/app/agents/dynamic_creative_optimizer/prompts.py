@@ -56,9 +56,24 @@ def creative_variants(
     limits = "\n".join(
         f"- {name}: headline ≤ {spec.headline_max} characters, "
         f"body ≤ {spec.body_max} characters, sizes {', '.join(spec.dimensions)}"
+        + (
+            f". Write at least {spec.min_variants} variants with different headlines "
+            "and different body copy: they are combined into one ad"
+            if spec.combines_variants
+            else ""
+        )
         for name in platforms
         if (spec := PLATFORMS.get(name)) is not None
     )
+    # No live audience segments is common, and the copy is then written for
+    # the general audience. Inventing a segment name here used to put
+    # "in-market shoppers" on every variant as if it were a real audience.
+    if segments:
+        segment_line = ", ".join(segments)
+        segment_rule = "each aimed at one of the segments above"
+    else:
+        segment_line = "none defined"
+        segment_rule = "written for the page's general audience (leave audience_segment empty)"
     return f"""[TASK:creative_variants]
 Produce ad variants for this product.
 
@@ -66,13 +81,14 @@ PRODUCT: {product.name}
 CATEGORY: {product.category}
 BRAND: {brand}
 LANDING_PAGE: {page_url}
-SEGMENTS: {", ".join(segments)}{price}{features}
+SEGMENTS: {segment_line}{price}{features}
 
 PLATFORM LIMITS. Copy over these is rejected, not truncated:
 {limits}
 
-Write one or two variants per platform, each aimed at one of the segments
-above, and pick the `dimensions` from that platform's sizes listed above.
+Write one or two variants per platform unless a platform above asks for more,
+{segment_rule}, and pick the `dimensions` from that platform's sizes listed
+above.
 
 Count the characters. A headline one character over the limit is a variant
 somebody has to rewrite by hand.

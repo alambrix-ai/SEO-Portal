@@ -20,7 +20,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.connectors.base.connector import Capability, ConnectorSpec, HealthReport
+from app.connectors.base.connector import (
+    Capability,
+    ConnectorSpec,
+    HealthReport,
+    PlatformKey,
+    SetupGuide,
+    resolve_key,
+    uses_platform_key,
+)
 from app.connectors.base.credentials import secret, text
 from app.connectors.base.interfaces import PageSpeedConnector, PageVitals
 from app.core.exceptions import ConnectorError
@@ -30,11 +38,29 @@ from app.db.base import utcnow
 log = get_logger(__name__)
 
 API = "https://www.googleapis.com"
+#: Used when Strategy is blank. Google's own default is desktop, but ranking
+#: is mobile-first, so mobile is the useful answer here.
+DEFAULT_STRATEGY = "mobile"
+
+
+GUIDE = SetupGuide(
+    steps=(
+        'Open the Credentials page in Google Cloud with the button below, and pick (or create) a project.',
+        'Click “Create credentials”, then “API key”. Make sure the PageSpeed Insights API is enabled for the project (APIs & Services → Library).',
+        'Copy the key and paste it here.',
+    ),
+    key_url='https://console.cloud.google.com/apis/credentials',
+    key_url_label='Open Google Cloud credentials',
+    key_field='apiKey',
+    key_pattern='^AIza[0-9A-Za-z_\\-]{30,}$',
+    key_hint='Google API keys start with AIza',
+)
 
 
 class PageSpeedInsightsConnector(PageSpeedConnector):
     spec = ConnectorSpec(
         slug="pagespeed_insights",
+        guide=GUIDE,
         name="PageSpeed Insights",
         category="Analytics",
         description=(
@@ -42,14 +68,25 @@ class PageSpeedInsightsConnector(PageSpeedConnector):
             "the audit's mobile speed checks."
         ),
         fields=(
-            secret("apiKey", "API key", "AIza…"),
+            secret(
+                "apiKey",
+                "API key",
+                "AIza…",
+                required=False,
+                help_text=(
+                    "Optional. Google answers a small number of requests without a "
+                    "key; add one if you audit many pages or see rate-limit errors."
+                ),
+            ),
             text(
                 "strategy",
                 "Strategy",
                 "mobile",
+                required=False,
+                default=DEFAULT_STRATEGY,
                 help_text=(
-                    "mobile or desktop. Mobile is what Google ranks on, so it "
-                    "is the default and usually the right answer."
+                    "mobile or desktop. Leave blank to use mobile, which is what "
+                    "Google ranks on."
                 ),
             ),
         ),
@@ -63,11 +100,33 @@ class PageSpeedInsightsConnector(PageSpeedConnector):
         ),
         docs_url="https://developers.google.com/speed/docs/insights/v5/get-started",
         base_url=API,
+        platform_key=PlatformKey(
+            setting="platform_pagespeed_api_key",
+            field="apiKey",
+            summary=(
+                "Speed results come from Google's public PageSpeed Insights. Nothing "
+                "is read from or changed on your site."
+            ),
+        ),
     )
 
     @property
+    def api_key(self) -> str:
+        """The key to send, or ``""`` to call without one.
+
+        A key is optional: "The API can be used with or without an API key,
+        although a key is recommended for frequent, automated queries."
+        https://developers.google.com/speed/docs/insights/v5/get-started
+        """
+        option = self.spec.platform_key
+        if self.credentials.get("apiKey") or (option is not None and uses_platform_key(self.credentials.values)):
+            return resolve_key(self.credentials, option)
+        return ""
+
+    @property
     def strategy(self) -> str:
-        return self.credentials.require("strategy").strip().lower()
+        raw = (self.credentials.get("strategy") or "").strip().lower()
+        return raw if raw in {"mobile", "desktop"} else DEFAULT_STRATEGY
 
     def read_vitals(self, url: str) -> PageVitals:
         data = self.request(
@@ -76,10 +135,10 @@ class PageSpeedInsightsConnector(PageSpeedConnector):
             params={
                 "url": url,
                 "strategy": self.strategy,
-                "key": self.credentials.require("apiKey"),
                 # Only the performance category — the others are a much slower
                 # call and the audit has its own checks for the rest.
                 "category": "PERFORMANCE",
+                **({"key": key} if (key := self.api_key) else {}),
             },
         )
         experience = (data or {}).get("loadingExperience") or {}
@@ -98,6 +157,33 @@ class PageSpeedInsightsConnector(PageSpeedConnector):
             inp_ms=_percentile(metrics, "INTERACTION_TO_NEXT_PAINT"),
             origin_level_only=bool(experience.get("origin_fallback")),
         )
+
+    #: Google's own page: it always has field data, so the check does not
+    #: depend on the customer's site.
+    VERIFY_URL = "https://developers.google.com/speed"
+
+    def verify_steps(self) -> list:
+        """One PageSpeed run, exactly as the auditor makes it. Free (within
+        Google's daily quota) and read-only."""
+        from app.connectors.base import verify_helpers as vh
+
+        def vitals() -> tuple[str, dict]:
+            result = self.read_vitals(self.VERIFY_URL)
+            measured = any(v is not None for v in (result.lcp_ms, result.cls, result.inp_ms))
+            detail = (
+                f"Ran PageSpeed Insights ({self.strategy}) on an example page and got real-visitor speed figures."
+                if measured
+                else f"Ran PageSpeed Insights ({self.strategy}) on an example page; Google had no real-visitor figures for it."
+            )
+            return detail, {
+                "measured": measured,
+                "origin_level_only": result.origin_level_only,
+                "lcp_ms": result.lcp_ms,
+                "inp_ms": result.inp_ms,
+                "cls": result.cls,
+            }
+
+        return [vh.read_step("run_pagespeed", "Run one speed check on an example page (free)", vitals)]
 
     def check_health(self) -> HealthReport:
         # The API's own documentation URL is a page it will always have data

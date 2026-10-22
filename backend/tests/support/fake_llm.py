@@ -18,13 +18,31 @@ import random
 import re
 
 from app.llm.base import LLMProvider, LLMResponse, LLMUsage
+from app.llm.providers import UnreportedUsage
 
 # Task markers agents put in their prompts (see each agent's ``prompts.py``).
 TASK_MARKER = re.compile(r"\[TASK:([a-z_]+)\]")
 
 
 class FakeLLMProvider(LLMProvider):
+    """``scripted`` replies (text, or a dict sent as JSON) are returned first,
+    in order, before the task handlers take over. ``report_usage=False``
+    behaves like a self-hosted server that sends no token counts. Every call
+    is recorded in ``calls``."""
+
     name = "fake"
+
+    def __init__(
+        self,
+        *,
+        scripted: list[str | dict] | None = None,
+        report_usage: bool = True,
+        model: str = "fake-deterministic",
+    ) -> None:
+        self.scripted: list[str | dict] = list(scripted or [])
+        self.report_usage = report_usage
+        self.model = model
+        self.calls: list[dict] = []
 
     def complete(
         self,
@@ -34,21 +52,26 @@ class FakeLLMProvider(LLMProvider):
         max_tokens: int | None = None,
         temperature: float = 0.2,
         ) -> LLMResponse:
-        rng = random.Random(hashlib.sha256(prompt.encode()).hexdigest())
-        match = TASK_MARKER.search(prompt)
-        task = match.group(1) if match else "generic"
-        payload = _HANDLERS.get(task, _generic)(prompt, rng)
-        text = json.dumps(payload, indent=2)
-        return LLMResponse(
-            text=text,
-            usage=LLMUsage(
+        self.calls.append({"prompt": prompt, "system": system, "max_tokens": max_tokens})
+        if self.scripted:
+            item = self.scripted.pop(0)
+            text = item if isinstance(item, str) else json.dumps(item)
+        else:
+            rng = random.Random(hashlib.sha256(prompt.encode()).hexdigest())
+            match = TASK_MARKER.search(prompt)
+            task = match.group(1) if match else "generic"
+            payload = _HANDLERS.get(task, _generic)(prompt, rng)
+            text = json.dumps(payload, indent=2)
+        usage: LLMUsage = (
+            LLMUsage(
                 input_tokens=max(1, len(prompt) // 4),
                 output_tokens=max(1, len(text) // 4),
                 cost=0.0,
-            ),
-            model="fake-deterministic",
-            stop_reason="end_turn",
+            )
+            if self.report_usage
+            else UnreportedUsage()
         )
+        return LLMResponse(text=text, usage=usage, model=self.model, stop_reason="end_turn")
 
 
 # ── Prompt field extraction ────────────────────────────────────────────────
@@ -281,6 +304,38 @@ def _creative_variants(prompt: str, rng: random.Random) -> dict:
     return {"variants": variants}
 
 
+#: Creative copy that passes every content check: no numbers, no banned or
+#: unprovable words, five to eight words, sentence case.
+_CREATIVE_HEADLINES = (
+    "Discover what makes us different today",
+    "See what sets us apart today",
+    "Made for the way you work",
+    "Try something better",
+)
+
+
+def _creative_copy(prompt: str, rng: random.Random) -> dict:
+    """Copy for one Creative Studio format, within the limits the prompt states."""
+    head_max = int(_field(prompt, "HEADLINE_MAX_CHARS", "40"))
+    body_max = int(_field(prompt, "BODY_MAX_CHARS", "90"))
+    cta_max = int(_field(prompt, "CTA_MAX_CHARS", "18"))
+    claims = int(_field(prompt, "CLAIM_COUNT", "0"))
+    headline = next((h for h in _CREATIVE_HEADLINES if len(h) <= head_max), "Hello")
+    body = ""
+    if body_max > 0:
+        words = "Thoughtfully made and ready whenever you are.".split()
+        while words and len(" ".join(words)) > body_max:
+            words.pop()
+        body = " ".join(words)
+    cta = "Learn more" if len("Learn more") <= cta_max else "Go"
+    return {
+        "headline": headline,
+        "body": body,
+        "cta": cta,
+        "claim_ids": [0] if claims > 0 and body_max > 0 else [],
+    }
+
+
 def _budget_plan(prompt: str, rng: random.Random) -> dict:
     return {
         "rationale": (
@@ -356,6 +411,7 @@ _HANDLERS = {
     "backlink_targets": _backlink_targets,
     "pr_pitch": _pr_pitch,
     "creative_variants": _creative_variants,
+    "creative_copy": _creative_copy,
     "budget_plan": _budget_plan,
     "audience_clusters": _audience_clusters,
     "fraud_assessment": _fraud_assessment,

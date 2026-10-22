@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import re
 
-import re
-
 _DOMAIN_RE = re.compile(r"^(?:https?://)?(?:www\.)?([^/:?#]+)", re.IGNORECASE)
 
 # TLDs and name shapes typical of paid-link networks.

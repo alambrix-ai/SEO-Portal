@@ -22,6 +22,8 @@ import { useState } from 'react'
 import { ApiError, api } from '@/api/client'
 import type { SeoIssueOut } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
+import { TechnicalHistory, VersionHistory } from '@/components/AuditHistory'
+import { PageTabs } from '@/components/PageTabs'
 import { useToasts } from '@/components/Toasts'
 import {
   Blueprint,
@@ -30,6 +32,7 @@ import {
   ErrorState,
   Field,
   Loading,
+  PageHeader,
   SectionHeading,
   Segmented,
   StatTile,
@@ -39,16 +42,21 @@ import { useResource } from '@/hooks/useResource'
 
 type StatusFilter = 'open' | 'fixed' | 'ignored'
 
-const SEVERITY_TONE: Record<string, 'accent' | 'outline' | 'neutral'> = {
-  high: 'accent',
-  medium: 'outline',
+const SEVERITY_TONE: Record<string, 'danger' | 'warning' | 'neutral'> = {
+  high: 'danger',
+  medium: 'warning',
   low: 'neutral',
 }
 
+/** One line on what the comparison words mean, for a non-technical reader. */
+const COMPARE_HELP =
+  'Pick any two audits to see the difference. New: found in the later audit but not the earlier one. Fixed: no longer found. Worse: still there and more serious than before.'
+
 export function TechnicalSeoPage() {
-  const { canWrite } = useAuth()
+  const { canView, canWrite } = useAuth()
   const { push, fromResult, fromError } = useToasts()
 
+  const [view, setView] = useState<'findings' | 'history'>('findings')
   const [status, setStatus] = useState<StatusFilter>('open')
   const [kind, setKind] = useState('')
   const { data, loading, error, reload } = useResource(
@@ -84,6 +92,33 @@ export function TechnicalSeoPage() {
 
   return (
     <>
+      <PageHeader
+        title="Technical SEO"
+        description="Crawl findings with a recommended fix for each. Resolved issues are counted when they stop appearing."
+      />
+      <PageTabs
+        value={view}
+        options={[
+          { value: 'findings', label: 'Findings' },
+          { value: 'history', label: 'History' },
+        ]}
+        onChange={setView}
+      />
+      {view === 'history' ? (
+        <>
+          <TechnicalHistory />
+          {/* Audits are read-only records: the server marks them not
+              restorable, so the kit shows no restore button. */}
+          {canView('seo') ? (
+            <VersionHistory
+              kind="technical_seo"
+              title="Compare this audit with an earlier one"
+              description={COMPARE_HELP}
+            />
+          ) : null}
+        </>
+      ) : (
+      <>
       <div className="grid-tiles">
         <StatTile kicker="Open Issues" value={data.open_count} meta="Across the site" />
         <StatTile kicker="High Severity" value={data.high_count} meta="Fix these first" />
@@ -219,6 +254,8 @@ export function TechnicalSeoPage() {
             </Blueprint>
           ))}
         </div>
+      )}
+      </>
       )}
 
       {ignoring ? (

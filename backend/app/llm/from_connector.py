@@ -1,37 +1,34 @@
 """Build an :class:`LLMProvider` from a connected AI-model connector.
 
 Agents no longer use process-wide ``LLM_PROVIDER`` / ``LLM_MODEL`` keys.
-The operator picks which connected model (OpenAI, Claude, Gemini, Perplexity)
-each agent should write with; this module turns that connector's credentials
+The operator picks which connected model (OpenAI, Claude, Gemini, Perplexity,
+Grok, or the customer's own vLLM or Ollama server) each agent should write with; this module turns that connector's credentials
 into the same provider stack the agents already call via ``ctx.ask``.
 """
 from __future__ import annotations
+
+import re
+from collections.abc import Iterable
 
 from typing import TYPE_CHECKING, Any
 
 from app.connectors.base.connector import Capability
 from app.connectors.base.llm_fields import (
-    ANTHROPIC_DEFAULT_EFFORT,
-    ANTHROPIC_DEFAULT_MAX_TOKENS,
-    GEMINI_DEFAULT_MAX_TOKENS,
-    GEMINI_DEFAULT_TEMPERATURE,
-    GEMINI_DEFAULT_THINKING_LEVEL,
-    OPENAI_DEFAULT_MAX_TOKENS,
-    OPENAI_DEFAULT_TEMPERATURE,
-    PERPLEXITY_DEFAULT_MAX_TOKENS,
-    PERPLEXITY_DEFAULT_TEMPERATURE,
-    PERPLEXITY_DEFAULT_TOP_P,
-    parse_choice,
-    parse_float,
-    parse_int,
+    parse_optional_choice,
+    parse_optional_float,
+    parse_optional_int,
+    without_legacy_autofill,
 )
+from app.core.egress import EgressBlockedError
 from app.core.logging import get_logger
 from app.llm.base import LLMError, LLMProvider
 from app.llm.providers import (
     AnthropicProvider,
     GeminiProvider,
+    GrokProvider,
     OpenAICompatibleProvider,
     OpenAIProvider,
+    SelfHostedOpenAIProvider,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -49,16 +46,16 @@ class PerplexityProvider(OpenAICompatibleProvider):
     def _endpoint(self) -> str:
         return "/chat/completions"
 
-    def _payload(self, prompt: str, *, system: str, max_tokens: int) -> dict[str, Any]:
+    def _payload(self, prompt: str, *, system: str, max_tokens: int | None) -> dict[str, Any]:
         messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-        body: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-        }
+        body: dict[str, Any] = {"model": self.model, "messages": messages}
+        # Every one of these is optional on Perplexity's chat completions;
+        # each is sent only when set.
+        if max_tokens:
+            body["max_tokens"] = max_tokens
         if self.temperature is not None:
             body["temperature"] = self.temperature
         if self.top_p is not None:
@@ -74,7 +71,16 @@ _CONNECTOR_PROVIDERS: dict[str, tuple[type, str]] = {
     "openai": (OpenAIProvider, "https://api.openai.com"),
     "google_gemini": (GeminiProvider, "https://generativelanguage.googleapis.com"),
     "perplexity": (PerplexityProvider, "https://api.perplexity.ai"),
+    # xAI's own address, fixed: GrokProvider adds /v1/chat/completions.
+    "xai_grok": (GrokProvider, "https://api.x.ai"),
+    # The customer's own server: the root comes from the connection and is
+    # validated by the egress guard (SelfHostedOpenAIProvider).
+    "vllm": (SelfHostedOpenAIProvider, ""),
+    "ollama": (SelfHostedOpenAIProvider, ""),
 }
+
+#: Connectors whose address the customer supplies, and whose key is optional.
+SELF_HOSTED: frozenset[str] = frozenset({"vllm", "ollama"})
 
 
 class UnusedLLMProvider(LLMProvider):
@@ -92,7 +98,7 @@ class UnusedLLMProvider(LLMProvider):
         *,
         system: str = "",
         max_tokens: int | None = None,
-        temperature: float = 0.2,
+        temperature: float | None = None,
     ):
         raise LLMError("This agent does not use an AI model.")
 
@@ -101,59 +107,120 @@ def supports_agent_llm(slug: str) -> bool:
     return slug in _CONNECTOR_PROVIDERS
 
 
-def _options_for(slug: str, creds: Any) -> dict[str, Any]:
-    """Vendor-specific generation knobs from the connector's stored values."""
-    get = creds.get
+def effective_llm(
+    choice: str, connected: Iterable[str], *, allow_fallback: bool = True
+) -> tuple[str, bool]:
+    """``(model connector a run uses, whether the saved choice is out of date)``.
+
+    The agent's chosen model when it is connected; otherwise the first
+    connected model in catalogue order, so disconnecting OpenAI does not stop
+    every agent that was set to it while Claude is connected. ``""`` when no
+    model is connected at all. The setup screen, the agent page and the run
+    all call this, so what the console says is what the run does.
+
+    With ``allow_fallback=False`` (strict, an explicit model choice) only the
+    chosen connector is ever returned: when it is not connected the result is
+    ``""`` and the caller must stop, never write with a different model.
+    """
+    from app.connectors.base import registry
+
+    choice = (choice or "").strip()
+    have = set(connected)
+    if choice and choice in have and choice in _CONNECTOR_PROVIDERS:
+        return choice, False
+    if not allow_fallback:
+        return "", bool(choice)
+    for slug in registry.connector_slugs():
+        if slug in have and slug in _CONNECTOR_PROVIDERS:
+            return slug, bool(choice)
+    return "", bool(choice)
+
+
+def _options_for(slug: str, creds: Any) -> dict[str, Any]:  # noqa: ANN401
+    """Vendor-specific settings from the connection — only those the person set.
+
+    A blank setting is ``None`` and is left out of the request, so the
+    vendor's own default applies. Values the old form filled in by itself are
+    read as blank (see ``LEGACY_AUTOFILLED``).
+    """
+    values = without_legacy_autofill(slug, dict(getattr(creds, "values", {}) or {}))
+    get = values.get
+    max_tokens = parse_optional_int(get("maxTokens") or "")
     if slug == "anthropic_claude":
         return {
-            "default_max_tokens": parse_int(
-                get("maxTokens"), default=int(ANTHROPIC_DEFAULT_MAX_TOKENS)
-            ),
-            "effort": parse_choice(
-                get("effort"),
-                allowed={"low", "medium", "high", "xhigh", "max"},
-                default=ANTHROPIC_DEFAULT_EFFORT,
+            "default_max_tokens": max_tokens,
+            "effort": parse_optional_choice(
+                get("effort") or "", allowed={"low", "medium", "high", "xhigh", "max"}
             ),
         }
     if slug == "google_gemini":
         return {
-            "default_max_tokens": parse_int(
-                get("maxTokens"), default=int(GEMINI_DEFAULT_MAX_TOKENS)
-            ),
-            "temperature": parse_float(
-                get("temperature"), default=float(GEMINI_DEFAULT_TEMPERATURE)
-            ),
-            "thinking_level": parse_choice(
-                get("thinkingLevel"),
-                allowed={"low", "medium", "high"},
-                default=GEMINI_DEFAULT_THINKING_LEVEL,
+            "default_max_tokens": max_tokens,
+            "temperature": parse_optional_float(get("temperature") or ""),
+            "thinking_level": parse_optional_choice(
+                get("thinkingLevel") or "", allowed={"low", "medium", "high"}
             ),
         }
     if slug == "openai":
         return {
-            "default_max_tokens": parse_int(
-                get("maxTokens"), default=int(OPENAI_DEFAULT_MAX_TOKENS)
-            ),
-            "temperature": parse_float(
-                get("temperature"), default=float(OPENAI_DEFAULT_TEMPERATURE)
-            ),
+            "default_max_tokens": max_tokens,
+            "temperature": parse_optional_float(get("temperature") or ""),
         }
     if slug == "perplexity":
         return {
-            "default_max_tokens": parse_int(
-                get("maxTokens"), default=int(PERPLEXITY_DEFAULT_MAX_TOKENS)
-            ),
-            "temperature": parse_float(
-                get("temperature"), default=float(PERPLEXITY_DEFAULT_TEMPERATURE)
-            ),
-            "top_p": parse_float(
-                get("topP"),
-                default=float(PERPLEXITY_DEFAULT_TOP_P),
-                minimum=0.0,
-                maximum=1.0,
-            ),
+            "default_max_tokens": max_tokens,
+            "temperature": parse_optional_float(get("temperature") or ""),
+            "top_p": parse_optional_float(get("topP") or "", maximum=1.0),
         }
+    if slug == "xai_grok":
+        return {
+            "default_max_tokens": max_tokens,
+            "temperature": parse_optional_float(get("temperature") or ""),
+        }
+    if slug in SELF_HOSTED:
+        return {"default_max_tokens": max_tokens}
     return {}
+
+
+#: An explicitly chosen model id. Some vendors put the model in the URL path
+#: (Gemini, Anthropic's model lookup), so separators, traversal and query or
+#: fragment characters are refused rather than escaped.
+_MODEL_OVERRIDE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+#: A self-hosted model id (vLLM serves Hugging Face ids such as
+#: ``org/model``). Segments of the strict shape joined by single ``/``: no
+#: leading, trailing or doubled slash, no traversal, no query or fragment.
+#: Safe only because these providers send the model in the request body,
+#: never in a URL path (``SelfHostedOpenAIProvider._payload``).
+_SELF_HOSTED_MODEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*(?:/[A-Za-z0-9][A-Za-z0-9._:-]*)*$")
+#: Longest model id accepted from anyone.
+MAX_MODEL_ID_CHARS = 128
+
+
+def valid_model_id(slug: str, model: object) -> bool:
+    """Whether ``model`` is an acceptable explicit model id for connector ``slug``.
+
+    Provider-aware: ``/`` is allowed only for the self-hosted connectors
+    (:data:`SELF_HOSTED`), whose id goes in the request body only. Every
+    other connector keeps the strict shape, because some put the model in a
+    URL path.
+    """
+    if not isinstance(model, str) or not model or len(model) > MAX_MODEL_ID_CHARS:
+        return False
+    if ".." in model:
+        return False
+    pattern = _SELF_HOSTED_MODEL if (slug or "").strip() in SELF_HOSTED else _MODEL_OVERRIDE
+    return pattern.fullmatch(model) is not None
+
+
+def _checked_model_override(model: str, pretty: str, slug: str = "") -> str:
+    """``model`` stripped and validated for ``slug``, or :class:`LLMError`."""
+    value = (model or "").strip() if isinstance(model, str) else ""
+    if not valid_model_id(slug, value):
+        raise LLMError(
+            f"That model name cannot be used with {pretty}. Choose a model "
+            "from the list and try again."
+        )
+    return value
 
 
 def provider_from_connector(
@@ -161,11 +228,18 @@ def provider_from_connector(
     connectors: dict[str, BaseConnector],
     *,
     names: dict[str, str] | None = None,
+    model_override: str | None = None,
 ) -> LLMProvider:
     """Resolve a connected model into an :class:`LLMProvider`.
 
     Raises :class:`LLMError` with operator-facing wording when the choice is
     missing, disconnected, or incomplete — same skip class as a missing CMS.
+
+    ``model_override`` is an explicit model chosen for this one call (for
+    example in Creative Studio). It replaces the connection's saved model and
+    is strict: it is validated, used exactly, and never swapped for the saved
+    model or another connector when it is unusable. The caller is still
+    responsible for checking it against the model allow-list.
     """
     choice = (slug or "").strip()
     label_map = names or {}
@@ -178,7 +252,8 @@ def provider_from_connector(
     if entry is None:
         raise LLMError(
             "That AI model connector cannot be used for writing. "
-            "Pick OpenAI, Anthropic Claude, Google Gemini, or Perplexity."
+            "Pick OpenAI, Anthropic Claude, Google Gemini, Perplexity, Grok, "
+            "or your own model server."
         )
 
     instance = connectors.get(choice)
@@ -194,17 +269,52 @@ def provider_from_connector(
         )
 
     klass, base_url = entry
-    try:
-        api_key = instance.credentials.require("apiKey")
-        model = instance.credentials.require("model")
-    except Exception as exc:  # noqa: BLE001 - credential helpers raise domain errors
+    if choice in SELF_HOSTED:
+        # Optional key; the address is the connection's own, validated by
+        # the provider through the egress guard.
+        api_key = instance.credentials.get("apiKey") or ""
+        base_url = instance.base_url
+        if not base_url:
+            raise LLMError(
+                f"{pretty} has no server address. Open Connectors and finish the connection."
+            )
+    else:
+        try:
+            api_key = instance.credentials.require("apiKey")
+        except Exception as exc:  # noqa: BLE001 - credential helpers raise domain errors
+            raise LLMError(
+                f"{pretty} is missing its API key. Open Connectors and finish the connection."
+            ) from exc
+    # The model is the one picked from the vendor's list. There is no default
+    # to fall back to: a connection without one is asked to choose.
+    if model_override is not None:
+        model = _checked_model_override(model_override, pretty, choice)
+    else:
+        model = (instance.credentials.get("model") or "").strip()
+    if not model:
         raise LLMError(
-            f"{pretty} is missing its API key or model name. "
-            "Open Connectors and finish the connection."
-        ) from exc
+            f"Choose a model for {pretty}. Open Connectors, open {pretty} and "
+            "pick one from the list."
+        )
+    if model_override is None and not valid_model_id(choice, model):
+        # The saved model is checked like an explicit one: some vendors put
+        # it in a URL path, so a malformed value must never reach a request.
+        log.warning("Agent LLM from connector %s: saved model id refused", choice)
+        raise LLMError(
+            f"The model saved for {pretty} cannot be used. Open Connectors, "
+            f"open {pretty} and pick one from the list."
+        )
 
     options = _options_for(choice, instance.credentials)
-    provider = klass(api_key=api_key, model=model, base_url=base_url, **options)
+    try:
+        provider = klass(
+            api_key=api_key, model=model, base_url=base_url, vendor_label=pretty, **options
+        )
+    except EgressBlockedError as exc:
+        # The guard's own sentence ("That address points to a private or
+        # internal network…") is written for people; the address is not logged.
+        log.warning("Agent LLM from connector %s refused by the egress guard: %s", choice, exc.reason)
+        raise LLMError(f"{pretty}: {exc.message}") from exc
     log.info(
         "Agent LLM from connector %s (%s / %s) options=%s",
         choice,

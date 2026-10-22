@@ -74,6 +74,36 @@ def enabled_connector_slugs(db: Session) -> frozenset[str]:
     )
 
 
+def hidden_connector_slugs(db: Session | None = None) -> frozenset[str]:  # noqa: ARG001
+    """Connector types withheld from customers because they are unverified.
+
+    Empty unless Portal Admin -> Verification has "Hide unverified
+    connectors" on. A workspace that already *connected* one keeps it (its
+    agents keep working and it can still be disconnected); it is only no
+    longer offered. Callers apply that exception with :func:`offered_connector_slugs`.
+    """
+    from app.services import verification
+
+    if not verification.hide_unverified():
+        return frozenset()
+    return frozenset(
+        spec.slug
+        for spec in connector_registry.all_specs()
+        if not verification.is_verified(None, spec.slug)
+    )
+
+
+def offered_connector_slugs(
+    db: Session, *, connected: frozenset[str] | set[str] = frozenset()
+) -> frozenset[str]:
+    """What a workspace's catalogue offers: enabled, and not hidden as
+    unverified — except the ones this workspace already has connected."""
+    hidden = hidden_connector_slugs(db)
+    return frozenset(
+        slug for slug in enabled_connector_slugs(db) if slug not in hidden or slug in connected
+    )
+
+
 def enabled_agent_slugs(db: Session) -> frozenset[str]:
     return frozenset(
         agent.spec.slug

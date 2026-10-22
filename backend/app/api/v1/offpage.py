@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import desc, select
 
 from app.api.deps import ClientIp, CurrentUserDep, DbSession
@@ -9,10 +10,28 @@ from app.core.exceptions import ConflictError, NotFoundError
 from app.core.rbac import Module
 from app.models.offpage import BacklinkStatus, BacklinkTarget, CompetitorAlert
 from app.schemas.common import ActionResult, Toast
-from app.schemas.workspace import OffPageWorkspaceOut
+from app.schemas.workspace import BacklinkOut, OffPageWorkspaceOut
 from app.services import audit, views
 
 router = APIRouter(prefix="/offpage", tags=["off-page"])
+
+
+class TargetContactIn(BaseModel):
+    """The publisher's contact address. ``null`` or ``""`` clears it."""
+
+    email: EmailStr | None = Field(default=None, max_length=254)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _blank_is_none(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
+
+
+class TargetContactOut(ActionResult):
+    target: BacklinkOut
 
 
 @router.get("", response_model=OffPageWorkspaceOut)
@@ -89,6 +108,60 @@ def launch_outreach(
     )
 
 
+@router.put("/targets/{target_id}/contact", response_model=TargetContactOut)
+def set_target_contact(
+    target_id: str,
+    payload: TargetContactIn,
+    current: CurrentUserDep,
+    db: DbSession,
+    ip: ClientIp,
+) -> TargetContactOut:
+    """Set or clear the address pitches to this publisher are emailed to.
+
+    Nothing else ever sets it — discovery deliberately does not guess
+    addresses — so until a person enters one, an approved pitch is delivered
+    to the team as a draft rather than to the publication.
+    """
+    current.require_write(Module.OFFPAGE)
+    target = db.get(BacklinkTarget, target_id)
+    if target is None or target.tenant_id != current.tenant_id:
+        raise NotFoundError("That target is no longer in the list")
+
+    email = str(payload.email) if payload.email else None
+    previous = (target.contact_email or "").strip() or None
+    target.contact_email = email
+    db.flush()
+
+    # The address itself is personal data and stays out of the audit log.
+    if email is None:
+        action = f"cleared the contact address for {target.domain}"
+    elif previous is None:
+        action = f"added a contact address for {target.domain}"
+    else:
+        action = f"changed the contact address for {target.domain}"
+    audit.record_user_action(
+        db,
+        user=current.user,
+        action=action,
+        module="offpage",
+        ip_address=ip,
+        context={"target_id": target.id, "has_contact": email is not None},
+    )
+    db.commit()
+
+    return TargetContactOut(
+        target=views.backlink_out(target, can_write=True),
+        toast=Toast(
+            message=(
+                f"Contact address saved. Approved pitches to {target.domain} will be emailed to it."
+                if email
+                else f"Contact address removed. Pitches to {target.domain} will go to your team as drafts."
+            ),
+            kind="success",
+        ),
+    )
+
+
 @router.post("/alerts/{alert_id}/counter-pitch", response_model=ActionResult)
 def launch_counter_pitch(
     alert_id: str, current: CurrentUserDep, db: DbSession, ip: ClientIp
@@ -100,6 +173,13 @@ def launch_counter_pitch(
         raise NotFoundError("That alert no longer exists")
     if alert.counter_launched:
         raise ConflictError("A counter-pitch has already gone out for this one")
+    if alert.counter_pitch_id:
+        # Answered with a draft to the team because the publisher has no
+        # address on file; running again would not draft another.
+        raise ConflictError(
+            f"A draft counter-pitch for {alert.source_domain} already went to your team. "
+            "Add the publisher's contact address to its target to pitch them directly."
+        )
 
     from app.orchestration.runner import run_agent_by_slug
 

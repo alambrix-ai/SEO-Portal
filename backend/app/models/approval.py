@@ -31,6 +31,12 @@ class ApprovalStatus(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
     EXPIRED = "expired"
+    #: What a spending agent in practice mode would have done — recorded with
+    #: its full plan, never sent, and not something anyone can approve.
+    PRACTISED = "practised"
+    #: A reviewer asked for changes, so this version is closed and a revised
+    #: one takes its place. Never applied.
+    SUPERSEDED = "superseded"
 
 
 class ApprovalItem(Base, TimestampMixin, TenantScopedMixin):

@@ -1,0 +1,334 @@
+/*
+ * Version history kit (components/AuditHistory.tsx: VersionHistory,
+ * VersionList, CompareView, RestoreButton, RetentionSettings).
+ *
+ * Good and bad news are never told by colour alone: every tone here sits next
+ * to a word ("Fixed", "Worse", "better") and, for numbers, a ▲/▼.
+ */
+
+/* ── Version list ─────────────────────────────────────────────────────────── */
+.vh {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.vh-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--color-border);
+}
+.vh-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+.vh-item:focus-within {
+  background: var(--color-surface-subtle);
+}
+.vh-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.vh-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.vh-num {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.vh-meta {
+  color: var(--color-neutral-600);
+}
+.vh-summary {
+  overflow-wrap: anywhere;
+}
+.vh-more {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+/* ── Compare picker ───────────────────────────────────────────────────────── */
+.vh-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.vh-picker-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.vh-picker-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.vh-picker-field .input {
+  width: 100%;
+}
+
+/* ── Comparison body ──────────────────────────────────────────────────────── */
+.vh-compare,
+.vh-compare-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.vh-sentence {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+.vh-counts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.vh-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-surface);
+  font-size: 12.5px;
+  color: var(--color-neutral-700);
+}
+.vh-count-num {
+  font-weight: 700;
+}
+.vh-count.is-new {
+  border-color: var(--color-accent-300);
+  background: var(--color-accent-100);
+  color: var(--color-accent-800);
+}
+.vh-count.is-good {
+  border-color: var(--color-accent-2-300);
+  background: var(--color-accent-2-100);
+  color: var(--color-accent-2-800);
+}
+.vh-count.is-bad {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+.vh-count.is-changed {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+.vh-count.is-same {
+  color: var(--color-neutral-600);
+}
+
+.vh-measures {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+.vh-measure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+.vh-measure-label {
+  font-size: 12.5px;
+  color: var(--color-neutral-600);
+}
+.vh-measure-values {
+  font-size: 15px;
+}
+.vh-verdict {
+  font-size: 13px;
+  font-weight: 600;
+}
+.vh-verdict.is-good {
+  color: var(--color-accent-2-700);
+}
+.vh-verdict.is-bad {
+  color: #b91c1c;
+}
+.vh-verdict.is-changed {
+  color: #92400e;
+}
+.vh-verdict.is-same {
+  color: var(--color-neutral-600);
+  font-weight: 500;
+}
+
+.vh-group {
+  border-left: 3px solid var(--color-border-strong);
+  padding-left: 12px;
+}
+.vh-group.is-bad {
+  border-left-color: #dc2626;
+}
+.vh-group.is-good {
+  border-left-color: var(--color-accent-2-600);
+}
+.vh-group.is-new {
+  border-left-color: var(--color-accent-600);
+}
+.vh-group.is-changed {
+  border-left-color: #d97706;
+}
+.vh-group-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.vh-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vh-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-wrap: anywhere;
+}
+
+/* ── One version ─────────────────────────────────────────────────────────── */
+.vh-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.vh-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.vh-fields {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 2fr;
+  border-top: 1px solid var(--color-border);
+}
+.vh-field {
+  display: contents;
+}
+.vh-field dt,
+.vh-field dd {
+  margin: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.vh-field dt {
+  color: var(--color-neutral-600);
+  padding-right: 12px;
+}
+.vh-field dd {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.vh-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+}
+
+/* ── Restore notes ───────────────────────────────────────────────────────── */
+.vh-notes {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.vh-notes-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+/* ── Retention settings ──────────────────────────────────────────────────── */
+.vh-retention {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+.vh-retention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.vh-retention-set {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  min-width: 0;
+}
+.vh-retention-name {
+  padding: 0 4px;
+  font-weight: 600;
+}
+.vh-retention-inputs {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.vh-retention-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.vh-number {
+  width: 96px;
+}
+.vh-retention-actions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .vh-item {
+    flex-direction: column;
+  }
+  .vh-fields {
+    grid-template-columns: 1fr;
+  }
+  .vh-field dt {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+}

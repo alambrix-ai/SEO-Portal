@@ -1,0 +1,419 @@
+/* Connect drawer: sign-in, account picker, guided key steps. */
+
+.btn-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  min-height: 0;
+  color: var(--color-accent-900, var(--color-text));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  align-self: flex-start;
+}
+.btn-link:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.connect-badge {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill, 999px);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.connect-sign-in,
+.connect-signed-in,
+.connect-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.connect-provider-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--color-border-strong, var(--color-border));
+  border-radius: var(--radius-md);
+  background: #fff;
+  color: #1f1f1f;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.connect-provider-btn:hover:not(:disabled) {
+  background: var(--color-surface-subtle);
+}
+.connect-provider-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.connect-access {
+  color: var(--color-text);
+}
+
+.connect-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.connect-row .btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.connect-signed-in-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-success-soft);
+  font-size: 13.5px;
+  overflow-wrap: anywhere;
+}
+.connect-signed-in-line svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--color-success);
+}
+
+.connect-also {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.connect-admin-note {
+  padding: 8px 12px;
+  border: 1px dashed var(--color-border-strong, var(--color-border));
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+}
+
+.connect-manual-toggle {
+  display: flex;
+}
+
+/* Choose step */
+.connect-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.connect-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.connect-choice.is-selected {
+  border-color: var(--color-accent-900, var(--color-text));
+  background: var(--color-surface-subtle);
+}
+.connect-choice input {
+  margin-top: 3px;
+}
+.connect-choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.connect-choice-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.connect-choice-detail {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Guided key steps */
+.connect-step-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.connect-step {
+  display: flex;
+  gap: 12px;
+}
+.connect-step-number {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-strong, var(--color-border));
+  font-size: 12px;
+  font-weight: 600;
+}
+.connect-step-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.connect-step-body > p {
+  margin: 2px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.connect-step-body .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.connect-step-body .field {
+  width: 100%;
+}
+.connect-key-check {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.connect-key-check.is-ok {
+  color: var(--color-success);
+}
+.connect-key-check.is-warning {
+  color: #b45309;
+}
+
+/* Sign-in providers (Portal Admin) */
+.signin-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.signin-provider {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface, transparent);
+  display: flex;
+  flex-direction: column;
+  scroll-margin-top: 80px;
+}
+.signin-provider-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.signin-provider-head > svg {
+  flex: none;
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease;
+}
+.signin-provider.is-open .signin-provider-head > svg {
+  transform: rotate(180deg);
+}
+.signin-provider-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+}
+.signin-unlocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.signin-unlock {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill, 999px);
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.signin-provider-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 16px 16px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 14px;
+}
+.signin-summary {
+  margin: 0 0 10px;
+}
+.signin-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.signin-permissions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.signin-permissions code {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.signin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
+.signin-textarea {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  min-height: 96px;
+  resize: vertical;
+}
+@media (max-width: 640px) {
+  .signin-provider-head {
+    flex-wrap: wrap;
+  }
+  .signin-unlocks {
+    order: 3;
+    flex-basis: 100%;
+  }
+}
+.signin-provider-name {
+  font-weight: 600;
+  font-size: 14.5px;
+}
+.signin-uri {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.signin-uri code {
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.signin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.signin-table th,
+.signin-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-top: 1px solid var(--color-border);
+  vertical-align: top;
+}
+.signin-table td code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* Phase 2B: questions asked before a sign-in (Shopify store, Salesforce sandbox). */
+.connect-sign-in-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.connect-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.connect-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+/* Sign-in not switched on yet */
+.connect-pending .btn-sm {
+  align-self: flex-start;
+}
+.connect-pending-done {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-success);
+}
+.connect-admin-setup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.connect-developer-link {
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+}
+.connect-pending .connect-provider-btn:disabled {
+  opacity: 1;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  border-style: dashed;
+  cursor: not-allowed;
+}
+.connect-pending .connect-provider-btn:disabled svg {
+  filter: grayscale(1);
+  opacity: 0.6;
+}

@@ -25,11 +25,13 @@ the smaller grant and the one to prefer.
 from __future__ import annotations
 
 import base64
+import re
 from collections import deque
 
-from app.connectors.base.connector import Capability, ConnectorSpec
-from app.connectors.base.credentials import secret, text
+from app.connectors.base.connector import Capability, ConnectorSpec, OAuthBinding, OAuthChoice
+from app.connectors.base.credentials import from_platform_sign_in, secret, text
 from app.connectors.base.git_base import GitHostConnector, RepoFile
+from app.connectors.base.oauth import OAuthTokenMixin
 from app.core.config import settings
 from app.core.exceptions import ConnectorError
 from app.core.logging import get_logger
@@ -39,8 +41,30 @@ log = get_logger(__name__)
 API = "https://api.bitbucket.org"
 
 
+def parse_repositories(data: dict) -> list[OAuthChoice]:
+    """Repositories out of ``GET /2.0/repositories?role=member``."""
+    out: list[OAuthChoice] = []
+    for row in data.get("values") or []:
+        full = str(row.get("full_name") or "")
+        if not full:
+            continue
+        branch = str((row.get("mainbranch") or {}).get("name") or "")
+        workspace = str((row.get("workspace") or {}).get("name") or full.split("/", 1)[0])
+        out.append(
+            OAuthChoice(
+                id=full,
+                label=full,
+                detail=" · ".join(
+                    part for part in (f"Workspace {workspace}",
+                                      f"deploys from {branch}" if branch else "") if part
+                ),
+                values={"repository": full, **({"branch": branch} if branch else {})},
+            )
+        )
+    return out
 
-class BitbucketConnector(GitHostConnector):
+
+class BitbucketConnector(OAuthTokenMixin, GitHostConnector):
     spec = ConnectorSpec(
         slug="bitbucket",
         name="Bitbucket",
@@ -78,7 +102,11 @@ class BitbucketConnector(GitHostConnector):
                 "branch",
                 "Deploy branch",
                 "main",
-                help_text="The branch your site deploys from. Pull requests target it.",
+                required=False,
+                help_text=(
+                    "The branch your site deploys from. Pull requests target it. "
+                    "Leave blank to use your repository's main branch."
+                ),
             ),
             text(
                 "contentPath",
@@ -91,6 +119,17 @@ class BitbucketConnector(GitHostConnector):
                 ),
             ),
             text("urlPrefix", "URL prefix", "", required=False),
+            text(
+                "articlesPath",
+                "Articles folder",
+                "content/blog",
+                required=False,
+                help_text=(
+                    "Where new articles are added as Markdown files, each in its own pull "
+                    "request, for example content/blog or _posts. Leave empty to use the "
+                    "content folder."
+                ),
+            ),
         ),
         capabilities=frozenset(
             {
@@ -98,6 +137,7 @@ class BitbucketConnector(GitHostConnector):
                 Capability.READ_PAGE,
                 Capability.WRITE_PAGE,
                 Capability.INJECT_SCHEMA,
+                Capability.CREATE_PAGE,
             }
         ),
         requirements=(
@@ -108,9 +148,32 @@ class BitbucketConnector(GitHostConnector):
         ),
         docs_url="https://developer.atlassian.com/cloud/bitbucket/rest/",
         base_url=API,
+        # Bitbucket takes the scopes from the OAuth consumer's own settings
+        # (Repositories: Write, Pull requests: Write); the authorize request
+        # carries none. These are listed for Portal Admin and the docs.
+        oauth=OAuthBinding(
+            provider="bitbucket",
+            scopes=("repository:write", "pullrequest:write"),
+            platform_fields=frozenset({"token", "username"}),
+            token_fields=frozenset({"token", "username", "accessToken", "refreshToken"}),
+            access_summary=(
+                "Lets agents read the pages in the repository you pick and open a pull "
+                "request for each change. Nothing is merged or published without you."
+            ),
+            choice_noun="repository",
+            choice_fields=("repository",),
+        ),
     )
 
+    token_url = "https://bitbucket.org/site/oauth2/access_token"
+
+    @property
+    def _signed_in(self) -> bool:
+        return from_platform_sign_in(self.credentials.values) and not self.credentials.get("token")
+
     def auth_headers(self) -> dict[str, str]:
+        if self._signed_in:
+            return {"Authorization": f"Bearer {self.access_token}"}
         token = self.credentials.require("token")
         user = self.credentials.get("username")
         if user:
@@ -118,9 +181,48 @@ class BitbucketConnector(GitHostConnector):
             return {"Authorization": f"Basic {encoded}"}
         return {"Authorization": f"Bearer {token}"}
 
+    # ── Sign-in ────────────────────────────────────────────────────────────
+    def list_oauth_choices(self) -> list[OAuthChoice]:
+        """Repositories the signed-in account is a member of."""
+        choices: list[OAuthChoice] = []
+        page: str | None = "/2.0/repositories"
+        params: dict | None = {"role": "member", "pagelen": 100, "sort": "-updated_on"}
+        for _ in range(10):
+            if not page:
+                break
+            data = self.request("GET", page, params=params) or {}
+            choices.extend(parse_repositories(data))
+            page, params = data.get("next"), None
+        return choices
+
     @property
     def _repo_path(self) -> str:
         return f"/2.0/repositories/{self.repository}"
+
+    #: The repository's main branch, read once when no branch is configured.
+    _default_branch: str = ""
+
+    @property
+    def branch(self) -> str:
+        """The configured deploy branch, else the repository's main branch.
+
+        Blank is not a guess at ``main``: the repository object carries
+        ``mainbranch.name`` (``GET /2.0/repositories/{workspace}/{repo_slug}``).
+        https://developer.atlassian.com/cloud/bitbucket/rest/api-group-repositories/#api-repositories-workspace-repo-slug-get
+        """
+        configured = (self.credentials.get(self.default_branch_field) or "").strip()
+        if configured:
+            return configured
+        if not self._default_branch:
+            row = self.request("GET", self._repo_path, params={"fields": "mainbranch.name"}) or {}
+            found = str((row.get("mainbranch") or {}).get("name") or "").strip()
+            if not found:
+                raise ConnectorError(
+                    f"Bitbucket did not report a main branch for {self.repository}. "
+                    "Enter the deploy branch on this integration."
+                )
+            self._default_branch = found
+        return self._default_branch
 
     # ── Diagnosis ──────────────────────────────────────────────────────────
     def diagnose(self, error: Exception) -> str | None:
@@ -233,12 +335,59 @@ class BitbucketConnector(GitHostConnector):
 
     def _probe(self) -> str:
         row = self.request("GET", self._repo_path)
+        if not self._default_branch:
+            self._default_branch = str(((row or {}).get("mainbranch") or {}).get("name") or "").strip()
         name = (row or {}).get("full_name") or self.repository
         # Bitbucket does not report effective permissions on the repository
         # object, so writability cannot be checked without writing. The token
         # scopes are the operator's to get right; a failed pull request will
         # say so plainly when it happens.
         return f"{name} reachable on {self.branch}"
+
+    # ── Live checks ────────────────────────────────────────────────────────
+    def _pull_number(self, url: str, branch: str) -> str:
+        """The pull request id from its link, else looked up by source branch."""
+        match = re.search(r"/pull-requests/(\d+)", url or "")
+        if match:
+            return match.group(1)
+        data = self.request(
+            "GET",
+            f"{self._repo_path}/pullrequests",
+            params={"q": f'source.branch.name="{branch}"', "state": "OPEN"},
+        ) or {}
+        rows = data.get("values") or []
+        return str(rows[0].get("id") or "") if rows else ""
+
+    def _read_pull_request(self, number: str) -> str:
+        """The pull request's state, lower case (``open``, ``declined``, ``merged``)."""
+        row = self.request("GET", f"{self._repo_path}/pullrequests/{number}") or {}
+        return str(row.get("state") or "").lower()
+
+    def _close_pull_request(self, number: str) -> None:
+        """Decline it: ``POST …/pullrequests/{id}/decline``."""
+        self.request("POST", f"{self._repo_path}/pullrequests/{number}/decline")
+
+    def _delete_branch(self, name: str) -> None:
+        """``DELETE …/refs/branches/{name}``; already gone is fine."""
+        try:
+            self.request("DELETE", f"{self._repo_path}/refs/branches/{name}")
+        except ConnectorError as exc:
+            if getattr(exc, "http_status", None) != 404:
+                raise
+
+    def verify_steps(self) -> list:
+        """Read the repository, its deploy branch and content; open and decline one PR.
+
+        The same checks as GitHub's (see ``git_verify_steps``): branch,
+        commit and pull request through this connector's own primitives, then
+        the pull request is declined and the branch deleted, whatever failed
+        in between. Needs a test repository: a pull request notifies
+        reviewers and runs pipelines.
+        """
+        from app.connectors.base import verify_helpers as vh
+        from app.connectors.github.connector import git_verify_steps
+
+        return git_verify_steps(self, vh)
 
 
 CONNECTOR_CLASS = BitbucketConnector

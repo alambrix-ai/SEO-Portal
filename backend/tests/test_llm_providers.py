@@ -58,12 +58,13 @@ def test_the_provider_is_whichever_one_the_env_names(monkeypatch, choice, expect
     assert isinstance(get_provider(), expected)
 
 
-def test_an_unknown_provider_is_refused_and_lists_the_real_ones(monkeypatch):
+def test_an_unknown_provider_is_refused_and_points_at_the_connectors(monkeypatch):
+    """Agents write with the AI integration chosen on each agent, not an env var."""
     _configure(monkeypatch, llm_provider="llama", llm_model="m")
     with pytest.raises(LLMError) as caught:
         get_provider()
-    for name in PROVIDERS:
-        assert name in str(caught.value)
+    assert "connector" in str(caught.value)
+    assert "llama" not in PROVIDERS
 
 
 def test_there_is_no_default_model(monkeypatch):
@@ -73,7 +74,7 @@ def test_there_is_no_default_model(monkeypatch):
     to a customer's site with a model nobody chose.
     """
     _configure(monkeypatch, llm_provider="anthropic", llm_model="", anthropic_api_key="k")
-    with pytest.raises(LLMError, match="LLM_MODEL"):
+    with pytest.raises(LLMError, match="no model name set"):
         get_provider()
 
 
@@ -81,7 +82,7 @@ def test_a_missing_key_names_the_setting_and_the_provider(monkeypatch):
     _configure(monkeypatch, llm_provider="gemini", llm_model="m", gemini_api_key="")
     with pytest.raises(LLMError) as caught:
         get_provider()
-    assert "GEMINI_API_KEY" in str(caught.value)
+    assert "Gemini" in str(caught.value) and "API key" in str(caught.value)
     # And it does not fall back to a provider that does have a key.
     assert "Anthropic" not in str(caught.value)
 
@@ -164,18 +165,20 @@ def test_openai_and_grok_share_the_chat_completions_shape():
 
     for klass in (OpenAIProvider, GrokProvider):
         provider = _mock(klass(api_key="k", model="m", base_url="https://api.test"), handler)
-        response = provider.complete("hi", system="sys")
+        response = provider.complete("hi", system="sys", max_tokens=100)
         assert response.text == "ok"
         assert response.usage.input_tokens == 10
 
 
-def test_gemini_puts_the_key_in_the_query_and_the_system_in_its_own_field():
+def test_gemini_puts_the_key_in_a_header_and_the_system_in_its_own_field():
     def handler(request: httpx.Request) -> httpx.Response:
         import json
 
         body = json.loads(request.content)
         assert "generateContent" in request.url.path
-        assert request.url.params["key"] == "k"
+        # The key travels in Google's header, never in the URL.
+        assert request.headers["x-goog-api-key"] == "k"
+        assert "key=" not in str(request.url)
         assert body["systemInstruction"]["parts"][0]["text"] == "sys"
         return httpx.Response(
             200,
@@ -226,7 +229,8 @@ def test_an_unknown_model_says_so_instead_of_trying_another():
     with pytest.raises(LLMError) as caught:
         provider.complete("hi")
     assert "gpt-nonexistent" in str(caught.value)
-    assert "LLM_MODEL" in str(caught.value)
+    assert "Choose a model" in str(caught.value)
+    assert "no longer offered by OpenAI" in str(caught.value)
 
 
 def test_a_rejected_key_names_the_setting_to_fix():
@@ -234,7 +238,7 @@ def test_a_rejected_key_names_the_setting_to_fix():
         return httpx.Response(401, json={"error": "bad key"})
 
     provider = _mock(OpenAIProvider(api_key="k", model="m", base_url="https://api.test"), handler)
-    with pytest.raises(LLMError, match="OPENAI_API_KEY"):
+    with pytest.raises(LLMError, match="credentials were rejected"):
         provider.complete("hi")
 
 

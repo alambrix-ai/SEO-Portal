@@ -33,6 +33,7 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // No production sourcemaps: they would publish the full source tree.
+    sourcemap: false,
   },
 })

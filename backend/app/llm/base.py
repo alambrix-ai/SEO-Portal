@@ -68,7 +68,12 @@ def extract_json(text: str) -> Any:
                 return json.loads(candidate[start : end + 1])
             except json.JSONDecodeError:
                 continue
-    raise LLMError(f"Response was not JSON: {text[:200]}")
+    # The model's text is never echoed: it can carry page copy, briefs or
+    # anything an injected prompt asked it to repeat, and this message can
+    # reach logs and the console.
+    raise LLMError(
+        "The AI model's reply was not in the expected format. Try again."
+    )
 
 
 class LLMProvider(ABC):
@@ -83,7 +88,7 @@ class LLMProvider(ABC):
         *,
         system: str = "",
         max_tokens: int | None = None,
-        temperature: float = 0.2,
+        temperature: float | None = None,
     ) -> LLMResponse:
         """Return a single completion for one prompt."""
 
@@ -94,7 +99,7 @@ class LLMProvider(ABC):
         system: str = "",
         schema_hint: str = "",
         max_tokens: int | None = None,
-        temperature: float = 0.2,
+        temperature: float | None = None,
     ) -> tuple[Any, LLMUsage]:
         """Return ``(parsed_json, usage)``.
 

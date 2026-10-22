@@ -1,0 +1,128 @@
+/* Connector verification: the customer-facing "Beta" pill, and Portal Admin → Verification. */
+
+.beta-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border-strong, var(--color-border));
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-surface);
+  color: var(--color-text-muted, var(--color-neutral-700));
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 16px;
+  vertical-align: middle;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.verify-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+  padding: var(--space-4, 16px);
+  margin-bottom: var(--space-4, 16px);
+}
+
+.verify-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 10px 0;
+  cursor: pointer;
+}
+.verify-toggle input {
+  margin-top: 3px;
+}
+.verify-toggle .block {
+  display: block;
+  margin-top: 2px;
+}
+
+.verify-banner {
+  padding: 10px 12px;
+  margin-bottom: var(--space-3, 12px);
+  border: 1px solid #fde68a;
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.verify-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.verify-reason {
+  display: inline-block;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.verify-table .table-actions {
+  white-space: nowrap;
+}
+.verify-table .table-actions .btn + .btn {
+  margin-left: 6px;
+}
+
+.verify-report-row td {
+  background: var(--color-neutral-50, transparent);
+}
+.verify-report-meta {
+  margin-bottom: 8px;
+}
+.verify-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.verify-step {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+.verify-step-copy {
+  min-width: 0;
+}
+.verify-evidence {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted, var(--color-neutral-700));
+}
+
+@media (max-width: 640px) {
+  .verify-step {
+    grid-template-columns: 1fr;
+  }
+  .verify-reason {
+    max-width: 220px;
+  }
+}
+
+.verify-advanced {
+  margin-top: 12px;
+}
+.verify-advanced summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.verify-advanced textarea {
+  width: 100%;
+  font-family: var(--font-mono, monospace);
+  font-size: 12.5px;
+}

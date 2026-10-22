@@ -245,15 +245,25 @@ def check_broken_links(
     ]
 
 
-def check_orphans(pages: list[PageSnapshot], *, domain: str = "") -> list[Finding]:
+def check_orphans(
+    pages: list[PageSnapshot],
+    *,
+    domain: str = "",
+    linkers: list[PageSnapshot] | None = None,
+) -> list[Finding]:
     """Pages nothing links to.
 
     Computed across the whole set, because "orphan" is a property of the site
     rather than of the page. The home page is excluded: it is reached
     directly, and flagging it every run would be a permanent false positive.
+
+    ``linkers`` are further pages whose links count but which are not
+    themselves reported — the rest of the site, when only part of it is
+    being audited. Without them a section linked only from the home page was
+    reported as orphaned whenever the scope left the home page out.
     """
     inbound: dict[str, int] = defaultdict(int)
-    for page in pages:
+    for page in [*pages, *(linkers or [])]:
         source = normalise_url(page.url)
         for target in set(links_in(page.body, domain=domain)):
             if target != source:
@@ -495,19 +505,30 @@ def check_vitals(page: PageSnapshot) -> list[Finding]:
 
 # ── The whole audit ────────────────────────────────────────────────────────
 def audit(
-    pages: list[PageSnapshot], *, domain: str = "", thin_words: int = DEFAULT_THIN_WORDS
+    pages: list[PageSnapshot],
+    *,
+    domain: str = "",
+    thin_words: int = DEFAULT_THIN_WORDS,
+    rest_of_site: list[PageSnapshot] | None = None,
 ) -> list[Finding]:
     """Every finding across the crawled set, worst first.
 
     Site-wide checks (orphans, duplicate titles) need the whole set, which is
     why the audit is one call over all pages rather than a loop of
     per-page audits.
+
+    ``rest_of_site`` is every crawled page outside the audited set. Nothing
+    is reported about those pages, but they exist: a link to one is not
+    broken, and a link from one means its target is not an orphan. Leaving
+    them out reported every link from /blog to /pricing as broken whenever
+    the scope was /blog/*.
     """
     live = [page for page in pages if not page.excluded]
     if not live:
         return []
+    others = list(rest_of_site or [])
 
-    known = {normalise_url(page.url) for page in live}
+    known = {normalise_url(page.url) for page in [*live, *others]}
     findings: list[Finding] = []
 
     for page in live:
@@ -523,7 +544,7 @@ def audit(
         findings.extend(check_head_tags(page))
         findings.extend(check_vitals(page))
 
-    findings.extend(check_orphans(live, domain=domain))
+    findings.extend(check_orphans(live, domain=domain, linkers=others))
     findings.extend(check_duplicate_titles(live))
 
     rank = {Severity.HIGH: 0, Severity.MEDIUM: 1, Severity.LOW: 2}

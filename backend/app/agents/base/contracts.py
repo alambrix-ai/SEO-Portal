@@ -31,6 +31,8 @@ class AgentCategory(StrEnum):
     SEO_AEO = "SEO & AEO"
     OFF_PAGE = "Off-Page"
     ADS = "Ads"
+    LOCAL = "Local business"
+    CONTENT = "Content & Social"
 
 
 class Impact(StrEnum):
@@ -64,6 +66,16 @@ class AgentAction:
     apply: Any = None
     # Human-readable line for the audit log.
     audit: str = ""
+    # Counters that become true only when this change goes live ("1 page
+    # optimised", "1 spam referrer blocked"). Recorded when it is applied —
+    # automatically by the runner, or later when a person approves it — so
+    # the dashboard never counts proposals that are waiting or were refused.
+    metrics: dict[str, int | float] = field(default_factory=dict)
+    # Connector slugs this action writes through when applied ("google_ads").
+    # Declared by the spending agents so the runner can hold a write through
+    # a connector that has not been verified against a live account
+    # (app.agents.base.safety). Empty means it reaches no vendor.
+    writes_via: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -84,6 +96,71 @@ class AgentResult:
     @classmethod
     def skip(cls, reason: str) -> AgentResult:
         return cls(summary=reason, skipped=True, skip_reason=reason)
+
+
+class UseMode(StrEnum):
+    """How an agent uses the connectors that can serve one capability.
+
+    Declared per agent (``AgentSpec.connector_use``) next to the code that
+    does the lookup, and read by the setup screen, the configuration
+    validator and the runtime — so what the screen says about "which one
+    this agent uses" is the same rule the run follows.
+    """
+
+    #: Picks a single connector. With two or more connected the operator
+    #: chooses which (``AgentContext.with_capability`` / ``candidates``);
+    #: unchosen, the automatic rule in ``ConnectorUse.automatic`` applies.
+    ONE = "one"
+    #: Works across every connected connector with the capability
+    #: (``AgentContext.all_with_capability``). There is nothing to choose.
+    ALL = "all"
+    #: Works on pages already collected (``SeoPage.cms_slug`` says which
+    #: website each came from) and writes back to that same website. With
+    #: ``multi`` the operator may limit it to some of the connected websites
+    #: (``AgentContext.page_sources``); nothing chosen means every one.
+    PAGE_SOURCE = "page_source"
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorUse:
+    """One capability an agent looks up, and whether it uses one or all."""
+
+    capability: Capability
+    mode: UseMode
+    #: ONE: the question the setup screen asks, e.g. "Which website should
+    #: this agent publish to?".
+    question: str = ""
+    #: ALL: the plural noun for "Uses all your connected …", e.g. "ad platforms".
+    group: str = ""
+    #: ONE: other capabilities served by the same chosen connector (Review
+    #: Responder reads and replies through the same profile).
+    also: tuple[Capability, ...] = ()
+    #: ONE: True when, with nothing chosen, the agent tries each connected
+    #: one in turn rather than taking the first (``AgentContext.candidates``).
+    tries_in_turn: bool = False
+    #: ONE + tries_in_turn: what "works" means, completing "…and uses the
+    #: first one that …", e.g. "returns pages it can work on".
+    automatic: str = ""
+    #: Any mode: a further sentence that is true of this use, shown as is.
+    note: str = ""
+    #: ONE / PAGE_SOURCE: the operator may choose several (stored as a
+    #: list). ONE + multi means "use every chosen one" — e.g. collect pages
+    #: from each selected website; without it, at most one may be chosen.
+    multi: bool = False
+    #: PAGE_SOURCE: the selection is the one made for this other capability
+    #: of the same agent, rather than a second question (On-Page SEO Sync
+    #: rewrites only pages from the websites it was told to collect from).
+    follows: Capability | None = None
+    #: With a selection: what the agent does with it, as a clause with
+    #: ``{names}``, e.g. "collects pages from {names}". Default "uses {names}".
+    selected: str = ""
+    #: PAGE_SOURCE with nothing selected: what it does, as a clause, e.g.
+    #: "audits every page On-Page SEO Sync has collected".
+    everything: str = ""
+    #: An agent setting this selection supersedes. It is still read while no
+    #: selection is saved (so older configurations keep working), and saving
+    #: a selection removes it, leaving one source of truth.
+    replaces_setting: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +196,26 @@ class AgentSpec:
     # When True the Configure dialog asks which connected AI model to use,
     # and a run is skipped until that connector is chosen and healthy.
     requires_llm: bool = False
+    # Every capability the agent looks connectors up by (other than the AI
+    # model, which ``requires_llm`` covers), each marked as using one
+    # connector or all of them. The ONE entries are what the operator may
+    # choose between; see :class:`ConnectorUse`.
+    connector_use: tuple[ConnectorUse, ...] = ()
+    # Runs only when a job asks for it (Creative Studio, for instance), with
+    # that job's payload on ``AgentContext.job`` — never on a schedule. Not
+    # part of the fleet: ``registry.all_agents()`` leaves it out, so it is not
+    # installed in a workspace and has no card in the Agents hub.
+    on_demand: bool = False
+
+    def use_for(self, capability: Capability) -> ConnectorUse | None:
+        """The declaration covering ``capability`` (directly or via ``also``)."""
+        for use in self.connector_use:
+            if use.capability is capability:
+                return use
+        for use in self.connector_use:
+            if capability in use.also:
+                return use
+        return None
 
 
 class BaseAgent(ABC):
@@ -197,7 +294,9 @@ class BaseAgent(ABC):
             )
             return f"Waiting on a connector that can {needed}"
 
-        if self.spec.requires_llm:
+        # A model named for this one run (a job's choice) was already resolved
+        # strictly when the context was built; the saved choice does not apply.
+        if self.spec.requires_llm and getattr(ctx, "llm_override", None) is None:
             choice = (getattr(ctx.record, "llm_connector", None) or "").strip()
             if not choice:
                 return (
@@ -229,6 +328,14 @@ _PHRASING: dict[Capability, str] = {
     Capability.BLOCK_PLACEMENT: "block placements",
     Capability.READ_FIRST_PARTY_SIGNALS: "read first-party signals",
     Capability.SEND_NOTIFICATION: "send notifications",
+    Capability.READ_LOCAL_RANKINGS: "check your position in Google Maps searches",
+    Capability.READ_REVIEWS: "read your Google reviews",
+    Capability.REPLY_REVIEW: "reply to your Google reviews",
+    Capability.CREATE_PAGE: "publish new pages",
+    Capability.PUBLISH_SOCIAL: "post to social media",
+    Capability.CREATE_EMAIL_CAMPAIGN: "create email campaigns",
+    Capability.CREATE_SEARCH_CAMPAIGN: "create search campaigns",
+    Capability.GENERATE_IMAGE: "create images",
 }
 
 

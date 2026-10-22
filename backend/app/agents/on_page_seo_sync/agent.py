@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.agents.base.context import AgentContext
@@ -31,12 +31,13 @@ from app.agents.base.contracts import (
     BaseAgent,
     Impact,
 )
+from app.agents.base.contracts import ConnectorUse, UseMode
 from app.agents.on_page_seo_sync import prompts
 from app.connectors.base.connector import Capability
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.base import utcnow
-from app.models.approval import ApprovalItem, ApprovalType
+from app.models.approval import ApprovalItem, ApprovalStatus, ApprovalType
 from app.models.seo import PageStatus, SeoPage
 from app.models.workspace import Organization
 from app.services.approvals import register_applier, register_rejecter
@@ -48,8 +49,9 @@ log = get_logger(__name__)
 ANALYSIS_TTL = timedelta(days=7)
 # A page is only worth rewriting above this gap score.
 REWRITE_THRESHOLD = 45
-# Pages analysed per run. Each one is an LLM call, so the cap bounds both
-# latency and spend per run rather than relying on the daily action limit.
+# The fewest pages analysed per run. Each one is an LLM call; the actual
+# batch grows with the daily allowance up to pages.MAX_ITEMS_PER_RUN — see
+# pages.batch_size for the rule.
 ANALYSE_PER_RUN = 6
 
 
@@ -66,6 +68,29 @@ class OnPageSeoSyncAgent(BaseAgent):
         default_max_actions_per_day=20,
         scope_placeholder="/blog/* or leave blank for the whole site",
         requires_llm=True,
+        connector_use=(
+            ConnectorUse(
+                Capability.LIST_PAGES,
+                UseMode.ONE,
+                question=(
+                    "Which websites should this agent collect and improve pages from?"
+                ),
+                multi=True,
+                tries_in_turn=True,
+                selected="collects pages from {names}",
+                automatic=(
+                    "has pages it can work on, preferring one it can write changes back "
+                    "to"
+                ),
+            ),
+            ConnectorUse(
+                Capability.WRITE_PAGE,
+                UseMode.PAGE_SOURCE,
+                follows=Capability.LIST_PAGES,
+                selected="rewrites only pages collected from {names}",
+                note="Each rewrite is saved to the website its page was read from.",
+            ),
+        ),
     )
 
     def validate_scope(self, scope: str) -> str | None:
@@ -77,21 +102,30 @@ class OnPageSeoSyncAgent(BaseAgent):
         # inside a connector, and a run with no pages says which step
         # discarded them. See app/agents/base/pages.py.
         ctx.progress("Looking for pages to work on")
-        found = pages.harvest(ctx, limit=200, need_usable=True)
-        if not found.ok:
-            return AgentResult.skip(found.reason)
+        # Every website chosen in this agent's settings, each on its own; with
+        # none chosen, the first source that has pages it can work on.
+        harvested = pages.harvest_each(ctx, limit=200, need_usable=True, prefer_writable=True)
+        if not harvested.ok:
+            return AgentResult.skip(harvested.reason)
 
-        ctx.progress(f"Syncing {len(found.usable_pages)} pages", total=len(found.pages))
-        synced = self._sync_pages(ctx, found)
-        read = self._read_bodies(ctx, found)
+        synced = read = 0
+        for found in harvested.found:
+            name = ctx.connector_name(found.source_slug)
+            ctx.progress(f"Syncing {len(found.usable_pages)} pages from {name}", total=len(found.pages))
+            synced += self._sync_pages(ctx, found)
+            read += self._read_bodies(ctx, found)
 
         total = ctx.db.execute(
             select(SeoPage).where(SeoPage.tenant_id == ctx.tenant_id)
         ).scalars()
         page_count = len(list(total))
 
+        released = self._release_stranded(ctx)
         analysed = self._analyse_pages(ctx)
         actions = self._propose_rewrites(ctx)
+        read_only_slugs = set(pages.read_only_sources())
+        source_slugs = [found.source_slug for found in harvested.found]
+        read_only_names = [ctx.connector_name(s) for s in source_slugs if s in read_only_slugs]
 
         # Pages whose rewrite is already with a person. Counted because a
         # pass that finds nothing new is the *normal* state once the work is
@@ -105,26 +139,35 @@ class OnPageSeoSyncAgent(BaseAgent):
             )
         ).scalar_one()
 
+        summary = self._summary(
+            source=_and([ctx.connector_name(s) for s in source_slugs]),
+            synced=synced,
+            read=read,
+            analysed=analysed,
+            proposed=len(actions),
+            awaiting=awaiting,
+            read_only_source=_and(read_only_names),
+        )
+        if harvested.problems:
+            # One website failing is reported, not hidden behind the others.
+            summary += ". Not collected: " + " ".join(harvested.problems)
         return AgentResult(
-            summary=self._summary(
-                source=ctx.connector_name(found.source_slug),
-                synced=synced,
-                read=read,
-                analysed=analysed,
-                proposed=len(actions),
-                awaiting=awaiting,
-            ),
+            summary=summary,
             actions=actions,
             metric_label=f"{page_count} pages synced",
             metrics={"pages_optimised": len(actions)},
             detail={
-                "source": found.source_slug,
-                "listed": found.listed,
-                "in_scope": len(found.pages),
+                "source": source_slugs[0],
+                "sources": source_slugs,
+                "source_problems": harvested.problems,
+                "listed": sum(found.listed for found in harvested.found),
+                "in_scope": sum(len(found.pages) for found in harvested.found),
                 "synced": synced,
                 "bodies_read": read,
                 "analysed": analysed,
                 "proposed": len(actions),
+                "released": released,
+                "read_only_source": bool(read_only_names) and len(read_only_names) == len(source_slugs),
             },
         )
 
@@ -137,13 +180,43 @@ class OnPageSeoSyncAgent(BaseAgent):
         analysed: int,
         proposed: int,
         awaiting: int,
+        read_only_source: str = "",
     ) -> str:
         """What happened, and where things stand if nothing did.
 
         The distinction matters because "analysed 0, 0 rewrites proposed" is
         both what a broken agent reports and what a finished one reports, and
-        those need to read differently.
+        those need to read differently. So does a source that can be read but
+        never written: without saying so, a crawler-only workspace looked
+        like one whose pages were all in perfect shape.
         """
+        sentence = OnPageSeoSyncAgent._progress_sentence(
+            source=source,
+            synced=synced,
+            read=read,
+            analysed=analysed,
+            proposed=proposed,
+            awaiting=awaiting,
+        )
+        if read_only_source:
+            sentence += (
+                f". {read_only_source} can read these pages but cannot "
+                f"publish to them, so no rewrites are proposed for them — "
+                f"connect the CMS or repository the site is built from to "
+                f"have them rewritten"
+            )
+        return sentence
+
+    @staticmethod
+    def _progress_sentence(
+        *,
+        source: str,
+        synced: int,
+        read: int,
+        analysed: int,
+        proposed: int,
+        awaiting: int,
+    ) -> str:
         did = []
         if synced:
             did.append(f"synced {synced} pages from {source}")
@@ -229,7 +302,7 @@ class OnPageSeoSyncAgent(BaseAgent):
                 # returned one, so a listing endpoint that omits content does
                 # not wipe what a previous full read captured.
                 if node.body:
-                    page.body_encrypted = body_cipher
+                    _store_body(ctx, page, node.body, encrypted=body_cipher)
                 page.last_crawled_at = now
             touched += 1
 
@@ -298,7 +371,7 @@ class OnPageSeoSyncAgent(BaseAgent):
 
             if not full.body:
                 continue
-            row.body_encrypted = ctx.cipher.encrypt(full.body, context=Ctx.PAGE_BODY)
+            _store_body(ctx, row, full.body)
             # From the read, not from the listing, which had neither.
             row.word_count = full.word_count or len(full.body.split())
             if full.schema_types:
@@ -311,25 +384,91 @@ class OnPageSeoSyncAgent(BaseAgent):
         ctx.db.flush()
         return read
 
-    def _analyse_pages(self, ctx: AgentContext) -> int:
-        """Score the semantic gap on the pages most in need of a look."""
-        cutoff = utcnow() - ANALYSIS_TTL
-        candidates = list(
+    def _release_stranded(self, ctx: AgentContext) -> int:
+        """Put back pages marked as awaiting approval that nobody is holding.
+
+        A proposed rewrite marks its page ``queued`` before the runner decides
+        what to do with it. When the runner queues it, there is an approval
+        item; when the daily cap holds it back, or publishing under autonomy
+        fails, or the item expires, there is not — and the page sat "awaiting
+        approval" forever, excluded from analysis and from proposals both.
+        So ``queued`` is only true while a pending item exists for the page;
+        a page without one goes back to flagged (or live, if its rewrite is
+        gone) and is offered again.
+        """
+        open_item = (
+            select(ApprovalItem.id)
+            .where(
+                ApprovalItem.tenant_id == ctx.tenant_id,
+                ApprovalItem.status == ApprovalStatus.PENDING.value,
+                ApprovalItem.target_kind == "seo_page",
+                ApprovalItem.target_id == SeoPage.id,
+            )
+            .exists()
+        )
+        stranded = list(
             ctx.db.execute(
-                select(SeoPage)
-                .where(
+                select(SeoPage).where(
                     SeoPage.tenant_id == ctx.tenant_id,
-                    SeoPage.status.in_([PageStatus.LIVE.value, PageStatus.FLAGGED.value]),
+                    SeoPage.status == PageStatus.QUEUED.value,
+                    ~open_item,
                 )
-                .order_by(SeoPage.last_synced_at.asc().nulls_first())
-                .limit(ANALYSE_PER_RUN * 3)
             ).scalars()
         )
-        stale = [
-            page
-            for page in candidates
-            if page.last_synced_at is None or page.last_synced_at < cutoff
-        ][:ANALYSE_PER_RUN]
+        for page in stranded:
+            page.status = (
+                PageStatus.FLAGGED.value
+                if page.proposed_body_encrypted
+                else PageStatus.LIVE.value
+            )
+        if stranded:
+            ctx.db.flush()
+        return len(stranded)
+
+    @staticmethod
+    def _in_reach(ctx: AgentContext, stmt):  # noqa: ANN001, ANN205 - a Select
+        """Limit a page query to the agent's scope and to pages it can write.
+
+        The scope used to apply to the sync alone, so analysis — an LLM call
+        per page — and the rewrites it produced went to every page in the
+        workspace, including the ones the operator had scoped out.
+        """
+        in_scope = scope_rules.sql_filter(ctx.scope or "", SeoPage.url)
+        if in_scope is not None:
+            stmt = stmt.where(in_scope)
+        writable = pages.writable_rows(SeoPage.cms_slug)
+        if writable is not None:
+            stmt = stmt.where(writable)
+        # Only pages from the websites chosen in this agent's settings.
+        chosen = pages.source_filter(ctx, SeoPage.cms_slug, Capability.WRITE_PAGE)
+        if chosen is not None:
+            stmt = stmt.where(chosen)
+        return stmt
+
+    def _analyse_pages(self, ctx: AgentContext) -> int:
+        """Score the semantic gap on the pages most in need of a look.
+
+        Eligible: live or flagged pages with a body, not analysed within the
+        TTL. A rewritten page is not re-analysed for its own sake — the copy
+        is what this agent wrote — but it returns to live, and so to this
+        list, as soon as a sync sees its content changed (see _store_body).
+        A page with no body yet is left out rather than stamped as analysed,
+        so it is picked up on the first run after a read supplies one.
+        """
+        cutoff = utcnow() - ANALYSIS_TTL
+        stmt = select(SeoPage).where(
+            SeoPage.tenant_id == ctx.tenant_id,
+            SeoPage.status.in_([PageStatus.LIVE.value, PageStatus.FLAGGED.value]),
+            SeoPage.body_encrypted != "",
+            or_(SeoPage.last_synced_at.is_(None), SeoPage.last_synced_at < cutoff),
+        )
+        stale = list(
+            ctx.db.execute(
+                self._in_reach(ctx, stmt)
+                .order_by(SeoPage.last_synced_at.asc().nulls_first())
+                .limit(pages.batch_size(ctx, floor=ANALYSE_PER_RUN))
+            ).scalars()
+        )
 
         industry = ctx.industry
         analysed = 0
@@ -343,8 +482,7 @@ class OnPageSeoSyncAgent(BaseAgent):
             )
             body = ctx.cipher.decrypt(page.body_encrypted, context=Ctx.PAGE_BODY)
             if not body:
-                # Nothing to analyse yet; a later full read will supply it.
-                page.last_synced_at = utcnow()
+                # Undecryptable. Not stamped: nothing was analysed.
                 continue
 
             try:
@@ -390,13 +528,13 @@ class OnPageSeoSyncAgent(BaseAgent):
 
     def _propose_rewrites(self, ctx: AgentContext) -> list[AgentAction]:
         """Turn every flagged page into one high-impact action."""
+        stmt = select(SeoPage).where(
+            SeoPage.tenant_id == ctx.tenant_id,
+            SeoPage.status == PageStatus.FLAGGED.value,
+        )
         flagged = list(
             ctx.db.execute(
-                select(SeoPage)
-                .where(
-                    SeoPage.tenant_id == ctx.tenant_id,
-                    SeoPage.status == PageStatus.FLAGGED.value,
-                )
+                self._in_reach(ctx, stmt)
                 .order_by(SeoPage.gap_score.desc())
                 .limit(max(ctx.remaining_actions, 1) * 2)
             ).scalars()
@@ -435,10 +573,32 @@ class OnPageSeoSyncAgent(BaseAgent):
             )
             # Queued items are marked so the SEO table shows "Awaiting
             # approval" rather than re-offering the same rewrite next run.
+            # If the runner holds it back instead, _release_stranded undoes
+            # this on the next pass.
             page.status = PageStatus.QUEUED.value
 
         ctx.db.flush()
         return actions
+
+
+def _store_body(
+    ctx: AgentContext, page: SeoPage, body: str, *, encrypted: str | None = None
+) -> None:
+    """Store a freshly read body, noticing when a rewritten page was edited.
+
+    ``rewritten`` means "the copy on the site is the copy this agent wrote",
+    and such a page was never analysed again. Once the live copy differs that
+    is no longer true: the page goes back to live, which makes it eligible
+    for analysis again once its TTL has passed.
+    """
+    if page.status == PageStatus.REWRITTEN.value:
+        before = ctx.cipher.decrypt(page.body_encrypted, context=Ctx.PAGE_BODY)
+        if before and before != body:
+            page.status = PageStatus.LIVE.value
+    page.body_encrypted = (
+        encrypted if encrypted is not None
+        else ctx.cipher.encrypt(body, context=Ctx.PAGE_BODY)
+    )
 
 
 # ── Applying a rewrite ─────────────────────────────────────────────────────
@@ -529,3 +689,10 @@ def revert_page_rewrite(
 
 
 AGENT = OnPageSeoSyncAgent()
+
+
+def _and(names: list[str]) -> str:
+    """``A``, ``A and B``, ``A, B and C``."""
+    if len(names) <= 1:
+        return "".join(names)
+    return f"{', '.join(names[:-1])} and {names[-1]}"

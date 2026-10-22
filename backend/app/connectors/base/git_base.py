@@ -34,7 +34,6 @@ from datetime import datetime
 
 from app.connectors.base import content_files as cf
 from app.connectors.base.connector import HealthReport
-from app.core.config import settings
 from app.connectors.base.interfaces import CmsConnector, RemotePage
 from app.core.exceptions import ConnectorConfigError, ConnectorError
 from app.core.logging import get_logger
@@ -340,10 +339,84 @@ class GitHostConnector(CmsConnector):
             ),
         )
 
+    @property
+    def articles_root(self) -> str:
+        """Where new articles go: the articles folder, else the content folder."""
+        return (self.credentials.get("articlesPath") or "").strip().strip("/") or self.content_root
+
+    def create_page(
+        self,
+        *,
+        title: str,
+        body_html: str,
+        slug: str,
+        meta_title: str = "",
+        meta_description: str = "",
+        status: str = "draft",
+        body_markdown: str = "",
+    ) -> tuple[str, str]:
+        """Open a pull request that adds one new Markdown article.
+
+        Returns ``(file path, pull request URL)``. The file gets front matter
+        (title, description, date) and the body as Markdown when the caller
+        supplies it, otherwise the HTML (which Markdown passes through). A
+        file already at that path is never overwritten. As with every write
+        here, nothing is live until somebody merges the pull request.
+
+        A Jekyll ``_posts`` folder requires the date in the filename, so it
+        gets one there.
+        """
+        if status != "draft":
+            raise ValueError("Only drafts are created; a pull request is never merged here")
+        safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in (slug or "").lower()).strip("-")
+        if not safe:
+            raise ConnectorError("The article has no usable slug for a file name.")
+        today = utcnow().date().isoformat()
+        folder = self.articles_root
+        name = f"{today}-{safe}.md" if folder.rsplit("/", 1)[-1] == "_posts" else f"{safe}.md"
+        path = f"{folder}/{name}" if folder else name
+
+        try:
+            self._read_file(path)
+        except ConnectorConfigError:
+            raise
+        except ConnectorError:
+            pass  # not there: the expected case
+        else:
+            raise ConnectorError(f"{path} already exists in {self.repository}; it was not overwritten.")
+
+        import json
+
+        def quoted(value: str) -> str:
+            return json.dumps(value, ensure_ascii=False)
+
+        front = ["---", f"title: {quoted(title)}"]
+        if meta_description:
+            front.append(f"description: {quoted(meta_description)}")
+        front.append(f"date: {today}")
+        front.append("---")
+        body = (body_markdown or body_html).strip()
+        text = "\n".join(front) + "\n\n" + body + "\n"
+        url = self._open_proposal(
+            path=path,
+            text=text,
+            revision="",
+            summary=f"Add article: {title}"[:200],
+            detail="A new article was drafted for review. Nothing is live until this is merged.",
+        )
+        return path, url
+
     def _propose(
         self, *, path: str, text: str, revision: str, summary: str, detail: str
     ) -> bool:
         """Branch, commit, open a pull request. The whole write path."""
+        self._open_proposal(path=path, text=text, revision=revision, summary=summary, detail=detail)
+        return True
+
+    def _open_proposal(
+        self, *, path: str, text: str, revision: str, summary: str, detail: str
+    ) -> str:
+        """:meth:`_propose`, returning the pull request's URL."""
         head = self._branch_head()
         branch = self._branch_name(path)
 
@@ -365,7 +438,7 @@ class GitHostConnector(CmsConnector):
             branch=branch,
             path=path,
             text=text,
-            message=f"{summary}\n\nOpened by AutoMarket AI.",
+            message=f"{summary}\n\nOpened by Synaprank.ai.",
             revision=revision,
         )
         url = self._open_pull_request(
@@ -376,18 +449,18 @@ class GitHostConnector(CmsConnector):
                 f"- Page: `{self.url_for(path)}`\n"
                 f"- File: `{path}`\n"
                 f"- Branch: `{branch}` onto `{self.branch}`\n\n"
-                "Opened automatically by AutoMarket AI. Nothing is live until "
+                "Opened automatically by Synaprank.ai. Nothing is live until "
                 "this is merged — review it as you would any other change to "
                 "this file.\n"
             ),
         )
         log.info("%s: opened %s", self.slug, url or branch)
-        return True
+        return url
 
     def _branch_name(self, path: str, *, unique: bool = False) -> str:
         slug = path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
         safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in slug).strip("-").lower()
-        name = f"automarket/{safe or 'content'}"
+        name = f"synaprank/{safe or 'content'}"
         if unique:
             name = f"{name}-{utcnow().strftime('%Y%m%d%H%M%S')}"
         return name

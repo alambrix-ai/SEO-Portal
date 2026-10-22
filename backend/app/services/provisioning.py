@@ -14,6 +14,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents.base import safety
 from app.agents.base.registry import all_agents
 from app.connectors.base import registry as connector_registry
 from app.core.logging import get_logger
@@ -32,6 +33,9 @@ _INITIAL_SHARE = {
     AdChannel.META.value: 20,
     AdChannel.LINKEDIN.value: 20,
     AdChannel.TIKTOK.value: 20,
+    # Added after launch. Starts at 0 so the split still totals 100; the
+    # budget engine moves money to it once it has measured results.
+    AdChannel.MICROSOFT.value: 0,
     AdChannel.DSP.value: 20,
 }
 
@@ -93,6 +97,14 @@ def install_agents(db: Session, org: Organization) -> int:
                 # scheduler never sees it.
                 next_run_at=None,
                 actions_today_date=now.date().isoformat(),
+                # Agents that spend money start in practice mode: they plan
+                # changes and record them, and send nothing until a person
+                # switches it off (app.agents.base.safety).
+                settings=(
+                    {safety.PRACTICE_SETTING: True}
+                    if safety.is_spending_agent(spec.slug)
+                    else {}
+                ),
             )
         )
         added += 1

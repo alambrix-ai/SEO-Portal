@@ -41,13 +41,19 @@ plaintext is encrypted at rest and never appears in a WHERE clause.
 from __future__ import annotations
 
 import re
+import threading
+import time
+from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
+from app.core import client_ip
 from app.core.config import settings
 from app.core.crypto import (
     email_index,
@@ -62,7 +68,7 @@ from app.core.exceptions import (
     InvalidInputError,
     NotFoundError,
 )
-from app.core.logging import get_logger
+from app.core.logging import get_logger, log_failure
 from app.core.rbac import ROLE_LABELS, Role
 from app.core.security import (
     codes_match,
@@ -84,6 +90,15 @@ from app.services import audit, email as email_service
 from app.services.encryption import OrgCipher
 
 log = get_logger(__name__)
+
+#: Audit ``module`` for sign-in security events. Not an RBAC module on
+#: purpose: these rows belong in the Admin audit log, not in every admin's
+#: activity feed and notification badge (both filter to RBAC modules).
+AUTH_AUDIT_MODULE = "auth"
+
+#: Hands a mail send to the caller to run later, e.g. FastAPI's
+#: ``BackgroundTasks.add_task``. Called as ``schedule(func, **kwargs)``.
+MailScheduler = Callable[..., None]
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _FREEMAIL_DOMAINS = frozenset(
@@ -125,6 +140,31 @@ class CodeChallenge:
     expires_in: int
     # Seconds until another code may be requested for this address.
     resend_in: int
+
+
+#: The one answer to a code that did not get anyone in, whatever the reason:
+#: wrong, expired, superseded, already used, burned after too many tries, an
+#: unknown or closed address, or a sign-in pause. Separate messages told a
+#: caller how many guesses were left and whether an address was locked, which
+#: is exactly what someone guessing at an account wants to know.
+CODE_REJECTED_MESSAGE = (
+    "That code didn't work. Check you typed the newest code we emailed you, "
+    "or ask for a new one."
+)
+
+
+class CodeRejected(AuthError):
+    """A sign-in or sign-up code was refused. Always :data:`CODE_REJECTED_MESSAGE`.
+
+    ``counted`` is True only when the refusal used up an attempt on a live,
+    issued code. Only those count towards the account's sign-in pause: a
+    stale or superseded code costs an attacker nothing to send, so counting
+    it would let anyone pause anyone's account.
+    """
+
+    def __init__(self, *, counted: bool = False) -> None:
+        super().__init__(CODE_REJECTED_MESSAGE)
+        self.counted = counted
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -365,6 +405,34 @@ def revoke_all_sessions(db: Session, user: User, reason: str) -> int:
     return count
 
 
+def revoke_sessions_everywhere(db: Session, user: User, reason: str) -> int:
+    """Revoke every live session this person has, in every workspace.
+
+    One mailbox can hold seats in several workspaces, each its own ``users``
+    row. "Sign out everywhere" means the person, not the seat, so every seat
+    behind the address is covered — including deactivated ones, which should
+    have nothing live but are swept anyway. ``refresh_tokens`` and
+    ``workspace_memberships`` sit outside row-level security (see
+    ``app.db.rls``), so no tenant needs pinning here.
+    """
+    seat_ids = {
+        m.user_id for m in list_memberships(db, email_index_value=user.email_index)
+    }
+    seat_ids.add(user.id)
+    tokens = db.execute(
+        select(RefreshToken).where(
+            RefreshToken.user_id.in_(seat_ids), RefreshToken.revoked_at.is_(None)
+        )
+    ).scalars()
+    now = utcnow()
+    count = 0
+    for token in tokens:
+        token.revoked_at = now
+        token.revoked_reason = reason
+        count += 1
+    db.flush()
+    return count
+
 
 # ── One-time codes ─────────────────────────────────────────────────────────
 # This is the credential system. Everything that makes a six-digit number safe
@@ -389,6 +457,21 @@ def _last_request(db: Session, index: str, purpose: CodePurpose) -> LoginCode | 
     ).scalars().first()
 
 
+def _deliver_code_quietly(
+    send: Callable[..., bool], purpose: str, mail: dict[str, object]
+) -> None:
+    """Run a deferred code mail, after the response has gone.
+
+    Nobody is left to tell by then, so a failure is logged (type and hash,
+    never the address or the code) rather than raised into the server's
+    background-task handler, which would print the raw message.
+    """
+    try:
+        send(**mail)
+    except Exception as exc:  # noqa: BLE001 - logged; the user can ask again
+        log_failure(log, "Could not send a code email", exc, purpose=purpose)
+
+
 def issue_code(
     db: Session,
     *,
@@ -398,6 +481,7 @@ def issue_code(
     deliver: bool = True,
     ip_address: str | None = None,
     user_agent: str = "",
+    schedule_mail: MailScheduler | None = None,
 ) -> CodeChallenge:
     """Mail a fresh code, unless one was just sent.
 
@@ -407,6 +491,10 @@ def issue_code(
     that do not, so a caller reading the ``resend_in`` they get back cannot use
     it to enumerate accounts. Such a row is born burned and can never be
     redeemed.
+
+    ``schedule_mail`` defers the send until after the response. Mail delivery
+    takes seconds and is skipped for unknown addresses, so sending inline
+    would let response *timing* reveal what the response body does not.
     """
     index = email_index(address)
     now = utcnow()
@@ -445,9 +533,17 @@ def issue_code(
     if deliver:
         minutes = settings.login_code_ttl_minutes
         if purpose is CodePurpose.SIGN_IN:
-            email_service.send_login_code(to=address, name=name, code=code, minutes=minutes)
+            send: Callable[..., bool] = email_service.send_login_code
+            mail: dict[str, object] = {
+                "to": address, "name": name, "code": code, "minutes": minutes
+            }
         else:
-            email_service.send_signup_code(to=address, code=code, minutes=minutes)
+            send = email_service.send_signup_code
+            mail = {"to": address, "code": code, "minutes": minutes}
+        if schedule_mail is None:
+            send(**mail)
+        else:
+            schedule_mail(_deliver_code_quietly, send, purpose.value, mail)
 
     return CodeChallenge(
         expires_in=int(_code_ttl().total_seconds()),
@@ -455,12 +551,74 @@ def issue_code(
     )
 
 
-def consume_code(db: Session, *, address: str, purpose: CodePurpose, submitted: str) -> None:
-    """Redeem a code, or raise :class:`AuthError` saying why not.
+def _claim_attempt(db: Session, record: LoginCode, *, cap: int, now: datetime) -> int | None:
+    """Use up one attempt on a live code, atomically. Returns the new count.
+
+    One ``UPDATE … SET attempts = attempts + 1 … RETURNING`` with the
+    liveness and the cap in its WHERE clause. Reading the counter in Python
+    and writing it back let parallel guesses each see the same count and all
+    pass the cap; here PostgreSQL serialises them on the row, so at most
+    ``cap`` attempts are ever granted. ``None`` means none was granted: the
+    code was spent, burned, expired or capped, possibly a moment ago by a
+    concurrent request.
+    """
+    attempts = db.execute(
+        update(LoginCode)
+        .where(
+            LoginCode.id == record.id,
+            LoginCode.consumed_at.is_(None),
+            LoginCode.burned_at.is_(None),
+            LoginCode.expires_at > now,
+            LoginCode.attempts < cap,
+        )
+        .values(attempts=LoginCode.attempts + 1)
+        .returning(LoginCode.attempts)
+        .execution_options(synchronize_session=False)
+    ).scalar_one_or_none()
+    if attempts is None:
+        return None
+    set_committed_value(record, "attempts", int(attempts))
+    return int(attempts)
+
+
+def _close_code(db: Session, record: LoginCode, *, column: str, now: datetime) -> bool:
+    """Set ``consumed_at`` or ``burned_at`` once, atomically. False if already closed."""
+    target = getattr(LoginCode, column)
+    closed = db.execute(
+        update(LoginCode)
+        .where(
+            LoginCode.id == record.id,
+            LoginCode.consumed_at.is_(None),
+            LoginCode.burned_at.is_(None),
+        )
+        .values({target: now})
+        .returning(LoginCode.id)
+        .execution_options(synchronize_session=False)
+    ).scalar_one_or_none()
+    if closed is None:
+        return False
+    set_committed_value(record, column, now)
+    return True
+
+
+def consume_code(
+    db: Session,
+    *,
+    address: str,
+    purpose: CodePurpose,
+    submitted: str,
+    issued_after: datetime | None = None,
+) -> None:
+    """Redeem a code, or raise :class:`CodeRejected`.
 
     Only the newest code for the address and purpose is considered — the same
     rule as issuing — and it is spent on success, burned once the attempt cap
-    is reached.
+    is reached. Both the attempt and the spend are single atomic UPDATEs (see
+    :func:`_claim_attempt`), so parallel requests cannot beat the cap or
+    redeem one code twice.
+
+    ``issued_after`` is the sign-in pause's exception: only a code mailed
+    after that moment is considered, and it gets exactly one try.
 
     The caller **must commit** after this raises. The attempt counter is the
     only thing standing between a six-digit code and an exhaustive search, and
@@ -469,83 +627,262 @@ def consume_code(db: Session, *, address: str, purpose: CodePurpose, submitted: 
     """
     code = normalize_code(submitted)
     record = _last_request(db, email_index(address), purpose)
-    stale = AuthError("That code is no longer valid — ask for a new one")
+    now = utcnow()
 
-    if record is None or not record.is_live or record.expires_at <= utcnow():
-        raise stale
+    if record is None or not record.is_live or record.expires_at <= now:
+        raise CodeRejected()
+    if issued_after is not None and record.created_at < issued_after:
+        raise CodeRejected()
 
-    record.attempts += 1
+    cap = 1 if issued_after is not None else settings.login_code_max_attempts
+    attempts = _claim_attempt(db, record, cap=cap, now=now)
+    if attempts is None:
+        raise CodeRejected()
+
     if not codes_match(hash_token(code), record.code_hash):
-        remaining = settings.login_code_max_attempts - record.attempts
-        if remaining <= 0:
-            record.burned_at = utcnow()
+        if attempts >= cap:
+            _close_code(db, record, column="burned_at", now=now)
+        raise CodeRejected(counted=True)
+
+    if not _close_code(db, record, column="consumed_at", now=now):
+        raise CodeRejected()
+
+
+def _set_address_lock(
+    db: Session, user: User, until: datetime | None, *, ip_address: str | None = None
+) -> int:
+    """Apply (``until`` set) or lift (``None``) the sign-in lock on every seat.
+
+    The lock belongs to the address, not the seat. Sign-in resolves an
+    address to one seat, and which one can change (switching workspace,
+    a seat being deactivated); a per-seat lock would let guessing carry on
+    against the next seat. Each seat sits in its own tenant under row-level
+    security, so each is pinned before it is touched and flushed while
+    pinned, and the caller's pin is restored afterwards. Returns the number
+    of seats changed. A new lock is written to each workspace's audit log.
+
+    ``user`` itself is always covered, even when no membership row points at
+    it, so the seat that tripped the lock can never be the one left open.
+    """
+    changed = 0
+    seats: list[tuple[str, str]] = [
+        (m.tenant_id, m.user_id)
+        for m in list_memberships(db, email_index_value=user.email_index)
+    ]
+    if not any(user_id == user.id for _, user_id in seats):
+        seats.append((user.tenant_id, user.id))
+    try:
+        for tenant_id, user_id in seats:
+            bind_tenant(db, tenant_id)
+            seat = user if user_id == user.id else db.get(User, user_id)
+            if seat is None:
+                continue
+            seat.locked_until = until
+            seat.failed_login_count = 0
+            if until is not None:
+                audit.record(
+                    db,
+                    tenant_id=seat.tenant_id,
+                    actor="System",
+                    actor_type="system",
+                    action=(
+                        f"paused sign-in for {seat.name} for "
+                        f"{settings.lockout_minutes} minutes after repeated incorrect codes"
+                    ),
+                    module=AUTH_AUDIT_MODULE,
+                    ip_address=ip_address,
+                    context={"member_id": seat.id, "event": "sign_in_locked"},
+                    flush=False,
+                )
             db.flush()
-            raise AuthError("Too many incorrect codes — ask for a new one")
-        db.flush()
-        raise AuthError(
-            f"That code is not correct — {remaining} "
-            f"{'attempt' if remaining == 1 else 'attempts'} left"
-        )
-
-    record.consumed_at = utcnow()
-    db.flush()
+            changed += 1
+    finally:
+        bind_tenant(db, user.tenant_id)
+    return changed
 
 
-def _note_failed_attempt(db: Session, user: User | None) -> None:
+def _note_failed_attempt(
+    db: Session, user: User | None, *, ip_address: str | None = None
+) -> None:
     """Count a rejected code against the account, locking it after enough.
 
     A per-code attempt cap alone is not sufficient: an attacker can request a
     new code — which they cannot read — and guess a few times against each,
-    indefinitely. The account-level counter is what makes that terminate.
+    indefinitely. The account-level counter is what makes that terminate, and
+    the lock it sets covers every seat behind the address (see
+    :func:`_set_address_lock`). Per-IP throttling is the auth rate limiter's
+    job, in the middleware.
+
+    Only called for a wrong guess at a live, issued code (see
+    :class:`CodeRejected`). The increment is a single atomic
+    ``UPDATE … RETURNING`` and the cap is checked against the value it
+    returns, so parallel wrong guesses cannot overwrite each other's count.
     """
     if user is None:
         return
-    user.failed_login_count += 1
-    if user.failed_login_count >= settings.max_failed_logins:
-        user.locked_until = utcnow() + timedelta(minutes=settings.lockout_minutes)
-        user.failed_login_count = 0
-        log.warning("Locked account %s after repeated incorrect codes", user.id)
+    failed = int(
+        db.execute(
+            update(User)
+            .where(User.id == user.id)
+            .values(failed_login_count=User.failed_login_count + 1)
+            .returning(User.failed_login_count)
+            .execution_options(synchronize_session=False)
+        ).scalar_one()
+    )
+    set_committed_value(user, "failed_login_count", failed)
+    audit.record(
+        db,
+        tenant_id=user.tenant_id,
+        actor=user.name,
+        actor_id=user.id,
+        action="tried to sign in with an incorrect code",
+        module=AUTH_AUDIT_MODULE,
+        ip_address=ip_address,
+        context={"event": "sign_in_failed", "failed_attempts": failed},
+    )
+    if failed >= settings.max_failed_logins:
+        until = utcnow() + timedelta(minutes=settings.lockout_minutes)
+        seats = _set_address_lock(db, user, until, ip_address=ip_address)
+        log.warning(
+            "Locked sign-in for account %s (%d seat(s)) after repeated incorrect codes",
+            user.id,
+            seats,
+        )
 
 
-def _assert_not_locked(user: User) -> None:
+def _address_lock_started(user: User) -> datetime | None:
+    """When the address's current sign-in pause began, or None if it is not paused."""
     now = utcnow()
-    if user.locked_until and user.locked_until > now:
-        minutes = max(1, int((user.locked_until - now).total_seconds() // 60))
-        raise AuthError(f"Too many failed attempts — try again in {minutes} minutes")
+    if user.locked_until is None or user.locked_until <= now:
+        return None
+    return user.locked_until - timedelta(minutes=settings.lockout_minutes)
+
+
+#: Most (address, network) pairs remembered at once. Past this the least
+#: recently seen pair is forgotten, so the table cannot grow without bound.
+SOURCE_FAILURES_MAX_ENTRIES = 10_000
+
+
+class _SourceFailures:
+    """Wrong codes counted per (address, client network), in this process.
+
+    The address-wide pause (:func:`_set_address_lock`) is what bounds
+    guessing, but on its own it hands a denial of service to anyone: send
+    enough wrong codes and the real owner is shut out too. So the pause has
+    one exception — a code mailed after it began may be redeemed once (see
+    :func:`authenticate`) — and this table is what keeps the exception from
+    the source that caused the pause. A network here is the client's IPv4
+    address or its IPv6 /64 (:func:`client_ip.rate_limit_key`).
+
+    Bounded twice: entries expire after ``lockout_minutes``, and at most
+    :data:`SOURCE_FAILURES_MAX_ENTRIES` are kept, least recently seen
+    evicted first. It is per process by design: losing it (a restart, another
+    worker) only loses the per-source refusal, never the attempt caps, which
+    are enforced in the database.
+    """
+
+    def __init__(self, max_entries: int) -> None:
+        self._max_entries = max_entries
+        # key -> (wrong codes, paused until (monotonic) or 0.0, last seen (monotonic))
+        self._entries: OrderedDict[tuple[str, str], tuple[int, float, float]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _window() -> float:
+        return float(settings.lockout_minutes * 60)
+
+    def _live(self, key: tuple[str, str], now: float) -> tuple[int, float, float] | None:
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        _count, paused_until, last_seen = entry
+        if paused_until <= now and now - last_seen > self._window():
+            del self._entries[key]
+            return None
+        return entry
+
+    def is_paused(self, key: tuple[str, str]) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            entry = self._live(key, now)
+            return entry is not None and entry[1] > now
+
+    def note_failure(self, key: tuple[str, str]) -> bool:
+        """Count one wrong code from this source. True when it is now paused."""
+        now = time.monotonic()
+        with self._lock:
+            entry = self._live(key, now)
+            count = (entry[0] if entry is not None else 0) + 1
+            paused_until = entry[1] if entry is not None else 0.0
+            if count >= settings.max_failed_logins:
+                paused_until = now + self._window()
+                count = 0
+            self._entries[key] = (count, paused_until, now)
+            self._entries.move_to_end(key)
+            while len(self._entries) > self._max_entries:
+                self._entries.popitem(last=False)
+            return paused_until > now
+
+    def clear(self, key: tuple[str, str]) -> None:
+        with self._lock:
+            self._entries.pop(key, None)
+
+    def reset(self) -> None:
+        """Forget everything. For tests."""
+        with self._lock:
+            self._entries.clear()
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._entries)
+
+
+_SOURCE_FAILURES = _SourceFailures(SOURCE_FAILURES_MAX_ENTRIES)
+
+
+def _source_key(index: str, ip_address: str | None) -> tuple[str, str]:
+    return index, client_ip.rate_limit_key(ip_address or "")
+
+
+def reset_source_failures() -> None:
+    """Clear the per-source wrong-code table. Test isolation only."""
+    _SOURCE_FAILURES.reset()
 
 
 def request_sign_in_code(
-    db: Session, *, email: str, ip_address: str | None = None, user_agent: str = ""
+    db: Session,
+    *,
+    email: str,
+    ip_address: str | None = None,
+    user_agent: str = "",
+    schedule_mail: MailScheduler | None = None,
 ) -> CodeChallenge:
-    """Start a sign-in for an address that already has an active account.
+    """Start a sign-in. The answer is the same whether or not the address has an account.
 
-    Unknown and deactivated addresses are refused with a clear message so the
-    sign-in screen can tell the operator to create a workspace (or contact an
-    admin) instead of waiting for a code that will never arrive.
+    Unknown and deactivated addresses get a burned code row and no mail
+    (``deliver=False``), so the response body, the resend throttle and —
+    with ``schedule_mail`` — the response time all match a real account's.
+    This reverses an earlier choice to answer "no account found": that
+    answer turned the sign-in form into a lookup tool for which addresses
+    are customers. The screen now says a code was sent *if* the address has
+    an account.
     """
     address = normalize_email(email)
     if "@" not in address:
         raise InvalidInputError("Enter a valid email address")
 
     user = find_user_by_email(db, address)
-    if user is None:
-        raise NotFoundError(
-            "No account found for that email. Create a workspace to get started, "
-            "or ask your admin for an invitation."
-        )
-    if not user.is_active:
-        raise ForbiddenError(
-            "That account is deactivated. Ask a workspace admin to restore access."
-        )
+    seat = user if user is not None and user.is_active else None
 
     return issue_code(
         db,
         address=address,
         purpose=CodePurpose.SIGN_IN,
-        name=user.name or "",
-        deliver=True,
+        name=(seat.name or "") if seat is not None else "",
+        deliver=seat is not None,
         ip_address=ip_address,
         user_agent=user_agent,
+        schedule_mail=schedule_mail,
     )
 
 
@@ -697,33 +1034,56 @@ def authenticate(
 ) -> AuthResult:
     """Finish a sign-in by redeeming the code that was mailed out.
 
-    The pairing of address and code is the whole check. Note the ordering: the
-    lockout is tested before the code is, so an account under attack stays
-    shut even if the attacker happens to guess right, and the code is consumed
-    before any session is minted.
+    The pairing of address and code is the whole check, and every refusal
+    looks the same (:data:`CODE_REJECTED_MESSAGE`) — wrong, stale, unknown
+    address, closed account or paused — so the answer gives nothing away.
+
+    While the address is paused after repeated wrong codes, a code mailed
+    *after* the pause began may still be redeemed, with one try only, unless
+    this caller's own network is the one that caused the pause. That keeps
+    the real owner able to get in (ask for a new code, type it) without
+    giving a guesser more than one try per mailed code, and the resend
+    throttle and rate limiter bound how often a code can be mailed. The code
+    is consumed before any session is minted.
     """
     address = normalize_email(email)
     user = find_user_by_email(db, address)
 
-    if user is None:
-        # An unknown address has no code row either, so this is the same
-        # message consume_code would have produced for a stale code — the
-        # response does not distinguish the two cases.
-        raise AuthError("That code is no longer valid — ask for a new one")
-    if not user.is_active:
-        raise AuthError("This account has been deactivated")
-    _assert_not_locked(user)
+    if user is None or not user.is_active:
+        # An unknown or closed address has no live code either, so this is
+        # the same refusal as a wrong code, and nothing is counted.
+        raise CodeRejected()
+
+    source = _source_key(user.email_index, ip_address)
+    if _SOURCE_FAILURES.is_paused(source):
+        log.info("Refused a sign-in from a network paused for repeated incorrect codes")
+        raise CodeRejected()
 
     try:
-        consume_code(db, address=address, purpose=CodePurpose.SIGN_IN, submitted=code)
-    except AuthError:
-        _note_failed_attempt(db, user)
+        consume_code(
+            db,
+            address=address,
+            purpose=CodePurpose.SIGN_IN,
+            submitted=code,
+            issued_after=_address_lock_started(user),
+        )
+    except CodeRejected as exc:
+        if exc.counted:
+            _SOURCE_FAILURES.note_failure(source)
+            _note_failed_attempt(db, user, ip_address=ip_address)
         # Committed before re-raising: the caller is about to roll this
         # request back, and a rolled-back attempt counter would leave the code
-        # space effectively unlimited. See consume_code.
+        # space effectively unlimited. See consume_code. The audit rows ride
+        # on the same commit.
         db.commit()
         raise
 
+    _SOURCE_FAILURES.clear(source)
+
+    if user.locked_until is not None:
+        # A lock was set (and has expired); lift it on every seat, not just
+        # this one, so a later switch of workspace does not hit a stale lock.
+        _set_address_lock(db, user, None)
     user.failed_login_count = 0
     user.locked_until = None
     user.last_login_at = utcnow()
@@ -731,6 +1091,16 @@ def authenticate(
 
     org = get_organization(db, user.tenant_id)
     tokens = _issue_tokens(db, user, user_agent=user_agent, ip_address=ip_address)
+    audit.record(
+        db,
+        tenant_id=user.tenant_id,
+        actor=user.name,
+        actor_id=user.id,
+        action="signed in",
+        module=AUTH_AUDIT_MODULE,
+        ip_address=ip_address,
+        context={"event": "sign_in_succeeded"},
+    )
     db.flush()
     return AuthResult(user=user, organization=org, tokens=tokens)
 
@@ -745,15 +1115,45 @@ def refresh_session(
     sign in again.
     """
     presented = hash_token(refresh_token)
+    # Row-locked for the rest of the transaction: two requests presenting the
+    # same token at once are serialised, so the second sees the first's
+    # rotation and is treated as reuse instead of minting a second lineage.
     record = db.execute(
-        select(RefreshToken).where(RefreshToken.token_hash == presented)
+        select(RefreshToken)
+        .where(RefreshToken.token_hash == presented)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     ).scalar_one_or_none()
 
     if record is None:
+        log.info("Refused a refresh with an unknown session token")
         raise AuthError("Invalid session — sign in again")
 
     if record.revoked_at is not None or record.replaced_by is not None:
         revoked = _revoke_family(db, record.family_id, "token_reuse_detected")
+        # The workspace's admins should see this: it means a copy of a
+        # session was in someone else's hands. Pinned first, because the
+        # audit log is under row-level security and nothing is pinned yet.
+        bind_tenant(db, record.tenant_id)
+        holder = db.get(User, record.user_id)
+        audit.record(
+            db,
+            tenant_id=record.tenant_id,
+            actor="System",
+            actor_type="system",
+            action=(
+                f"signed {holder.name if holder is not None else 'a member'} out of a "
+                "session that was used twice, which can mean it was copied"
+            ),
+            module=AUTH_AUDIT_MODULE,
+            ip_address=ip_address,
+            context={
+                "event": "refresh_token_reuse",
+                "member_id": record.user_id,
+                "family_id": record.family_id,
+                "revoked": revoked,
+            },
+        )
         # Committed before raising: the request is about to fail, and the
         # caller's rollback would otherwise undo the revocation — leaving the
         # stolen token's replacement still valid, which is the exact outcome
@@ -767,12 +1167,29 @@ def refresh_session(
     if record.expires_at <= utcnow():
         record.revoked_at = utcnow()
         record.revoked_reason = "expired"
+        _audit_session_event(
+            db,
+            record,
+            action="could not renew a session because it had expired",
+            event="refresh_failed",
+            ip_address=ip_address,
+            reason="expired",
+        )
         db.commit()
         raise AuthError("Session expired — sign in again")
 
     bind_tenant(db, record.tenant_id)
     user = db.get(User, record.user_id)
     if user is None or not user.is_active:
+        _audit_session_event(
+            db,
+            record,
+            action="could not renew a session because the account is no longer active",
+            event="refresh_failed",
+            ip_address=ip_address,
+            reason="inactive",
+        )
+        db.commit()
         raise AuthError("This account is no longer active")
 
     tokens = _issue_tokens(
@@ -794,13 +1211,51 @@ def refresh_session(
     return AuthResult(user=user, organization=org, tokens=tokens)
 
 
-def logout(db: Session, *, refresh_token: str) -> None:
+def _audit_session_event(
+    db: Session,
+    record: RefreshToken,
+    *,
+    action: str,
+    event: str,
+    ip_address: str | None,
+    **context: object,
+) -> None:
+    """Write a session event to the owning workspace's audit log.
+
+    Pins the token's tenant first (the audit log is under row-level
+    security). Records ids only — never the token or its hash.
+    """
+    bind_tenant(db, record.tenant_id)
+    holder = db.get(User, record.user_id)
+    audit.record(
+        db,
+        tenant_id=record.tenant_id,
+        actor=holder.name if holder is not None else "A member",
+        actor_id=record.user_id,
+        action=action,
+        module=AUTH_AUDIT_MODULE,
+        ip_address=ip_address,
+        context={"event": event, "family_id": record.family_id, **context},
+    )
+
+
+def logout(db: Session, *, refresh_token: str, ip_address: str | None = None) -> None:
     record = db.execute(
         select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token))
     ).scalar_one_or_none()
-    if record is not None:
-        _revoke_family(db, record.family_id, "logout")
-        db.flush()
+    if record is None:
+        return
+    revoked = _revoke_family(db, record.family_id, "logout")
+    db.flush()
+    if revoked:
+        _audit_session_event(
+            db,
+            record,
+            action="signed out",
+            event="signed_out",
+            ip_address=ip_address,
+            revoked=revoked,
+        )
 
 
 # ── Invitations ────────────────────────────────────────────────────────────
@@ -880,6 +1335,50 @@ def peek_invitation(db: Session, *, token: str) -> tuple[Invitation, Organizatio
     return invitation, get_organization(db, invitation.tenant_id)
 
 
+def seat_for_invitation(
+    previous: User | None,
+    *,
+    invitation: Invitation,
+    typed_name: str,
+    fallback_name: str,
+) -> tuple[User, bool]:
+    """The ``users`` row an accepted invitation should use, and whether it is new.
+
+    * No row for this address in the workspace: a new seat.
+    * A deactivated row: that same row, switched back on with the invited
+      role. Its old sessions stay revoked, its failed-code counter and lock
+      are cleared, and it never keeps ownership — an invitation grants only
+      the role it names.
+    * An active row: refused, because they are already a member.
+    """
+    name = typed_name.strip()
+    if previous is not None:
+        if previous.is_active:
+            raise ConflictError("You are already a member of this workspace — sign in instead")
+        previous.is_active = True
+        previous.role = invitation.role
+        previous.is_owner = False
+        if name:
+            previous.name = name
+        previous.email_verified = True
+        previous.email_verified_at = utcnow()
+        previous.failed_login_count = 0
+        previous.locked_until = None
+        return previous, False
+
+    user = User(
+        tenant_id=invitation.tenant_id,
+        name=name or fallback_name or invitation.email.split("@")[0],
+        email=invitation.email,
+        email_index=invitation.email_index,
+        role=invitation.role,
+        # The address is proven by the fact the invite arrived there.
+        email_verified=True,
+        email_verified_at=utcnow(),
+    )
+    return user, True
+
+
 def accept_invitation(
     db: Session,
     *,
@@ -897,7 +1396,8 @@ def accept_invitation(
     everybody else.
 
     If the address already owns other workspaces, this adds another seat —
-    it does not replace them.
+    it does not replace them. A member deactivated here and invited back gets
+    their old seat back (see :func:`seat_for_invitation`).
     """
     invitation, org = peek_invitation(db, token=token)
     assert_seat_available(db, org)
@@ -919,17 +1419,19 @@ def accept_invitation(
                 prior_name = prior.name
         bind_tenant(db, org.id)
 
-    user = User(
-        tenant_id=org.id,
-        name=prior_name or invitation.email.split("@")[0],
-        email=invitation.email,
-        email_index=invitation.email_index,
-        role=invitation.role,
-        # The address is proven by the fact the invite arrived there.
-        email_verified=True,
-        email_verified_at=utcnow(),
+    # A member who was deactivated and is now invited back still has their
+    # users row: (tenant, email) is unique, so inserting a second one fails.
+    # Bring the old seat back instead.
+    previous_seat = db.execute(
+        select(User).where(
+            User.tenant_id == org.id, User.email_index == invitation.email_index
+        )
+    ).scalar_one_or_none()
+    user, is_new = seat_for_invitation(
+        previous_seat, invitation=invitation, typed_name=full_name, fallback_name=prior_name
     )
-    db.add(user)
+    if is_new:
+        db.add(user)
     try:
         db.flush()
         register_identity(db, user)
@@ -943,7 +1445,10 @@ def accept_invitation(
         tenant_id=org.id,
         actor=user.name,
         actor_id=user.id,
-        action=f"joined the workspace as {ROLE_LABELS[Role(user.role)]}",
+        action=(
+            f"{'joined' if is_new else 'rejoined'} the workspace as "
+            f"{ROLE_LABELS[Role(user.role)]}"
+        ),
         module="admin",
         ip_address=ip_address,
     )
@@ -1177,6 +1682,18 @@ def switch_workspace(
 
     set_last_active(db, user)
     tokens = _issue_tokens(db, user, user_agent=user_agent, ip_address=ip_address)
+    audit.record(
+        db,
+        tenant_id=user.tenant_id,
+        actor=user.name,
+        actor_id=user.id,
+        action="switched into this workspace and was issued a new session",
+        module=AUTH_AUDIT_MODULE,
+        ip_address=ip_address,
+        # No source workspace id: it belongs to another tenant, and this
+        # workspace's admins read this log.
+        context={"event": "workspace_switched"},
+    )
     db.flush()
     return AuthResult(user=user, organization=org, tokens=tokens)
 

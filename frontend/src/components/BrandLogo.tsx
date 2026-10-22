@@ -1,33 +1,26 @@
 /**
- * The Alambrix wordmark.
+ * The Synaprank.ai wordmark.
  *
- * The supplied file is a white monochrome wordmark on transparency - 86%
- * transparent, 12% white, no other ink. Dropped in as an `<img>` it would be
- * invisible against this interface's off-white background, which is the
- * default theme, so something has to give.
+ * Set as type rather than an image: the only supplied artwork carries the
+ * product's former name, and a text mark takes `currentColor`, so it reads
+ * correctly on the light theme and on the dark one without a second asset.
+ * The visible text is hidden from assistive technology and the whole mark is
+ * announced once, by its accessible name.
  *
- * It is drawn as a CSS mask instead: the image supplies the shape and
- * `currentColor` supplies the ink. The mark's geometry is untouched and it
- * takes the same colour as the text beside it, so it reads correctly on the
- * light theme and on the dark one without a second asset, an inverted copy,
- * or a filter that would also wash out anything else in the file.
- *
- * That treatment is right *because* the mark is monochrome. If the brand ever
- * ships a two-colour version this has to become a plain `<img>` and the
- * surfaces behind it have to be dark enough for it - a mask would flatten the
- * second colour away.
+ * `compact` draws the single-letter mark for the collapsed sidebar rail, which
+ * is too narrow for the full name.
  */
-import logoUrl from '@/assets/logo.png'
 
-/** The cropped asset's aspect ratio, so only a height is ever specified. */
-const RATIO = 502 / 160
+export const BRAND_NAME = 'Synaprank.ai'
 
 export function BrandLogo({
   height = 26,
-  title = 'Alambrix',
+  title = BRAND_NAME,
+  compact = false,
 }: {
   height?: number
   title?: string
+  compact?: boolean
 }) {
   return (
     <span
@@ -36,11 +29,16 @@ export function BrandLogo({
       aria-label={title}
       style={{
         height,
-        width: Math.round(height * RATIO),
-        backgroundColor: 'currentColor',
-        WebkitMaskImage: `url(${logoUrl})`,
-        maskImage: `url(${logoUrl})`,
+        lineHeight: `${height}px`,
+        fontSize: Math.round(height * 0.8),
+        fontFamily: 'var(--font-heading)',
+        fontWeight: 700,
+        letterSpacing: '-0.01em',
+        whiteSpace: 'nowrap',
+        color: 'currentColor',
       }}
-    />
+    >
+      <span aria-hidden="true">{compact ? 'S' : BRAND_NAME}</span>
+    </span>
   )
 }

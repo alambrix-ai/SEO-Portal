@@ -16,6 +16,7 @@ import {
   EmptyState,
   ErrorState,
   Loading,
+  PageHeader,
   SectionHeading,
   Tag,
 } from '@/components/ui'
@@ -82,14 +83,18 @@ export function AdsPage() {
   if (error && !data) return <ErrorState message={error} onRetry={reload} />
   if (!data) return null
 
-  const totalTone = data.budget_total === 100 ? 'accent' : 'outline'
+  const totalTone = data.budget_total === 100 ? 'accent-2' : 'warning'
 
   return (
     <>
+      <PageHeader
+        title="Paid Media"
+        description="How your ad budget is split, the ads we wrote for you, your audiences, and protection from fake clicks."
+      />
       <div className="split-11-10">
         <div>
           <div className="row-baseline">
-            <h3 style={{ margin: 0 }}>Predictive budget allocation</h3>
+            <h3 style={{ margin: 0 }}>Budget split by channel</h3>
             <Tag tone={totalTone}>{data.budget_total}% allocated</Tag>
           </div>
 
@@ -99,7 +104,7 @@ export function AdsPage() {
                 <div className="budget-labels">
                   <span>{channel.label}</span>
                   <span className="nowrap">
-                    {draft[channel.channel] ?? channel.percent}% · CAC{' '}
+                    {draft[channel.channel] ?? channel.percent}% · cost per customer{' '}
                     {moneyExact(channel.cac)}
                   </span>
                 </div>
@@ -163,17 +168,17 @@ export function AdsPage() {
               disabled={!writable || busy}
               onClick={() => void run(() => api.rebalanceBudget())}
             >
-              Rebalance to lowest CAC
+              Move budget to the cheapest channels
             </button>
             <span className="small muted">
-              Blended CAC {moneyExact(data.blended_cac)}
+              Average cost per customer {moneyExact(data.blended_cac)}
             </span>
           </div>
         </div>
 
         <div>
           <div className="row-baseline">
-            <h3 style={{ margin: 0 }}>Dynamic Creative Optimization</h3>
+            <h3 style={{ margin: 0 }}>Ad variations</h3>
             <button
               type="button"
               className="btn btn-ghost"
@@ -187,7 +192,7 @@ export function AdsPage() {
           {data.creatives.length === 0 ? (
             <EmptyState
               title="No variants yet"
-              description="The optimizer builds creative from your synced product pages. Connect an ad platform and a CMS, then generate."
+              description="We write ad variations from the product pages on your website. Connect an ad platform and your website on the Integrations screen, then generate."
             />
           ) : (
             <div className="grid-cards-xs">
@@ -233,15 +238,15 @@ export function AdsPage() {
       </div>
 
       <SectionHeading
-        title="Click-fraud & ad-waste controller"
-        description="Detection is heuristic-first and explainable: every block names the signal that triggered it."
+        title="Fake clicks and wasted ad spend"
+        description="We block placements that send fake or low-quality clicks, and every block says why it happened."
         spaced
       />
 
       {data.fraud_log.length === 0 ? (
         <EmptyState
           title="No blocked placements yet"
-          description="Connect an ad platform or DSP seat, and the controller will start sampling traffic quality on its next run."
+          description="Connect an ad platform on the Integrations screen, and we will start checking the quality of your ad clicks on the next run."
         />
       ) : (
         <div className="table-scroll">

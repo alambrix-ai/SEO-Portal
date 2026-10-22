@@ -13,6 +13,16 @@ from tests.conftest import requires_db
 pytestmark = requires_db
 
 
+@pytest.fixture(autouse=True)
+def _forget_sign_in_sources():  # noqa: ANN202
+    """Per-network wrong-code counts live in process memory; start each test clean."""
+    from app.services.auth import reset_source_failures
+
+    reset_source_failures()
+    yield
+    reset_source_failures()
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────
 # Both of these are two calls, because signing up and signing in are two calls:
 # ask for a code, then present it. The code is read out of the captured mail,
@@ -229,12 +239,16 @@ def test_login_and_refresh_rotation(client, clean_db):  # noqa: ANN001
     assert after_reuse.status_code == 401
 
 
-def test_unknown_address_is_told_there_is_no_account(client, clean_db, mailbox):  # noqa: ANN001
-    """Sign-in should say clearly when the address has never registered.
+def test_unknown_address_gets_the_same_answer_as_a_real_one(client, clean_db, mailbox):  # noqa: ANN001
+    """Sign-in must not reveal whether an address has an account.
 
-    Waiting on a code that was never sent is worse UX than disclosing that
-    the address is not a customer — the console guides them to sign up.
+    This reverses an earlier product decision to answer 404 "no account
+    found": that answer made the form a lookup tool for which addresses are
+    customers. Both callers now get the same bytes back; only the real
+    account gets a mail.
     """
+    from app.api.v1.auth import SIGN_IN_CODE_REQUESTED
+
     register(client)
 
     known = client.post(
@@ -243,10 +257,9 @@ def test_unknown_address_is_told_there_is_no_account(client, clean_db, mailbox):
     unknown = client.post(
         "/api/v1/auth/request-code", json={"email": "nobody@example.com"}
     )
-    assert known.status_code == 200
-    assert unknown.status_code == 404
-    detail = (unknown.json().get("detail") or "").lower()
-    assert "no account" in detail
+    assert known.status_code == unknown.status_code == 200
+    assert known.content == unknown.content
+    assert known.json()["detail"] == SIGN_IN_CODE_REQUESTED
 
     assert mailbox.count_for("owner@northgate.example") >= 1
     assert mailbox.count_for("nobody@example.com") == 0
@@ -264,6 +277,8 @@ def test_wrong_code_is_indistinguishable_from_an_unknown_address(client, clean_d
         "/api/v1/auth/login", json={"email": "nobody@example.com", "code": "000000"}
     )
     assert wrong.status_code == unknown.status_code == 401
+    # Same words too: no "attempts left" for the real account.
+    assert wrong.json()["detail"] == unknown.json()["detail"]
 
 
 def test_a_code_works_once(client, clean_db):  # noqa: ANN001
@@ -308,6 +323,7 @@ def test_an_expired_code_is_refused(client, clean_db):  # noqa: ANN001
     from tests.support.mailbox import current
 
     from app.core.config import settings
+    from app.services.auth import CODE_REJECTED_MESSAGE
 
     register(client)
     client.post("/api/v1/auth/request-code", json={"email": "owner@northgate.example"})
@@ -327,7 +343,8 @@ def test_an_expired_code_is_refused(client, clean_db):  # noqa: ANN001
         "/api/v1/auth/login", json={"email": "owner@northgate.example", "code": code}
     )
     assert response.status_code == 401
-    assert "no longer valid" in response.json()["detail"]
+    # The one refusal sentence: an expired code reads like any other.
+    assert response.json()["detail"] == CODE_REJECTED_MESSAGE
     assert settings.login_code_ttl_minutes <= 30
 
 
@@ -375,6 +392,7 @@ def test_repeated_wrong_codes_lock_the_account(client, clean_db):  # noqa: ANN00
     that terminate.
     """
     from app.core.config import settings
+    from app.services.auth import CODE_REJECTED_MESSAGE
 
     register(client)
 
@@ -385,10 +403,12 @@ def test_repeated_wrong_codes_lock_the_account(client, clean_db):  # noqa: ANN00
             json={"email": "owner@northgate.example", "code": "000000"},
         )
 
-    # Even a genuine code cannot get in while the account is locked.
+    # Even a genuine code cannot get in from the network that caused the
+    # pause — and the refusal does not say that a pause exists.
     locked = sign_in(client)
     assert locked.status_code == 401
-    assert "try again in" in locked.json()["detail"]
+    assert locked.json()["detail"] == CODE_REJECTED_MESSAGE
+    assert "try again" not in locked.json()["detail"]
 
 
 def test_a_second_code_request_is_throttled(client, clean_db, monkeypatch, mailbox):  # noqa: ANN001
@@ -438,9 +458,13 @@ def test_a_deactivated_account_cannot_sign_in(client, clean_db, mailbox):  # noq
     requested = client.post(
         "/api/v1/auth/request-code", json={"email": "owner@northgate.example"}
     )
-    assert requested.status_code == 403
-    detail = (requested.json().get("detail") or "").lower()
-    assert "deactivated" in detail
+    unknown = client.post(
+        "/api/v1/auth/request-code", json={"email": "nobody@example.com"}
+    )
+    # The same answer as an unknown address: a closed account is not
+    # announced either.
+    assert requested.status_code == 200
+    assert requested.content == unknown.content
     # No new sign-in code is mailed to a closed account.
     assert mailbox.count_for("owner@northgate.example") == 1  # only the sign-up one
 
@@ -1032,10 +1056,32 @@ def test_unlocking_a_channel_lets_the_split_be_changed_again(client, clean_db): 
 
 def test_ad_spend_is_reported_in_rupees(client, clean_db):  # noqa: ANN001
     """The figures a marketing lead reads off the screen and repeats."""
-    token = register(client)["tokens"]["access_token"]
+    from datetime import timedelta
+
+    from app.db.base import utcnow
+    from app.db.session import bind_tenant
+    from app.models.metrics import DailyMetric
+    from app.models.social import MetricPoint
+
+    body = register(client)
+    token = body["tokens"]["access_token"]
+    org_id = body["session"]["organization"]["id"]
+
+    # No ad account measured: "Not tracked yet", never a fake zero spend.
+    reports = client.get("/api/v1/reports?range=30d", headers=auth(token)).json()
+    assert reports["ad_spend"] is None
+    assert reports["ad_spend_note"] == "Not tracked yet"
+
+    # Once an ad account reports spend, it is shown in rupees.
+    yesterday = utcnow().date() - timedelta(days=1)
+    bind_tenant(clean_db, org_id)
+    clean_db.add(MetricPoint(tenant_id=org_id, day=yesterday, source="google_ads", metric="spend", value=1500.0))
+    clean_db.add(DailyMetric(tenant_id=org_id, day=yesterday, ad_spend=1500.0))
+    clean_db.commit()
 
     reports = client.get("/api/v1/reports?range=30d", headers=auth(token)).json()
     assert reports["ad_spend"].startswith("\u20b9"), reports["ad_spend"]
+    assert reports["ad_spend_note"] == ""
 
 
 def test_the_notification_panel_shows_real_activity(client, clean_db):  # noqa: ANN001
@@ -2170,7 +2216,7 @@ def test_full_autonomy_applies_without_queueing(client, clean_db):  # noqa: ANN0
     token = register(client)["tokens"]["access_token"]
     client.put(
         "/api/v1/onboarding",
-        json={"domain": "northgate.example", "guardrail": "full"},
+        json={"domain": "northgate.example", "guardrail": "full", "confirm": True},
         headers=auth(token),
     )
     client.post("/api/v1/onboarding/complete", headers=auth(token))

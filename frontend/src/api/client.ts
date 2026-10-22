@@ -22,11 +22,16 @@ import type {
   AgentOut,
   AgentRun,
   ApprovalDetail,
+  ApprovalHistoryPage,
+  ApprovalHistoryParams,
   ApprovalOut,
+  AuditExportFile,
+  AuditExportParams,
   AuthResponse,
   CodeChallenge,
   ConnectorOut,
   DashboardOut,
+  EditTextBody,
   HealthStatus,
   InvitationOut,
   InvitationPreview,
@@ -36,12 +41,16 @@ import type {
   OnboardingOut,
   RegistrationPolicy,
   ReportsOut,
+  RequestChangesBody,
+  RevisionOut,
   Role,
   SeoAuditOut,
   SeoPageDetail,
   SeoWorkspace,
   SessionOut,
   Tokens,
+  WorkspacePolicyOut,
+  WorkspacePolicyRequest,
 } from './types'
 
 declare global {
@@ -60,12 +69,15 @@ let policyPromise: Promise<RegistrationPolicy> | null = null
 const ACCESS_KEY = 'automarket.access_token'
 const REFRESH_KEY = 'automarket.refresh_token'
 
+/** Field map on `{code, detail, fields}`. Values are primitives only; nested objects are dropped. */
+export type ApiErrorFields = Record<string, string | boolean | number>
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
-    readonly fields: Record<string, string> = {},
+    readonly fields: ApiErrorFields = {},
   ) {
     super(message)
     this.name = 'ApiError'
@@ -117,6 +129,38 @@ export const tokenStore = {
   },
 }
 
+// ── Path and file-name guards ──────────────────────────────────────────────
+const MAX_SEGMENT_CHARS = 200
+
+/**
+ * One id or slug as a single, encoded path segment. Every value that goes
+ * into a request path passes through here, so a value taken from a link or a
+ * reply ("..", "a/b", "..%2F") can never reach a different route: it is
+ * either refused or encoded so it stays inside its own segment.
+ */
+function seg(value: string | null | undefined): string {
+  const text = typeof value === 'string' ? value : ''
+  if (
+    !text ||
+    text === '.' ||
+    text === '..' ||
+    text.length > MAX_SEGMENT_CHARS ||
+    /[\u0000-\u001f\u007f]/.test(text)
+  ) {
+    throw new ApiError(400, 'invalid_path', 'That link is not valid. Please go back and try again.')
+  }
+  return encodeURIComponent(text)
+}
+
+/**
+ * A download name safe to hand to the browser: the server's name (from
+ * Content-Disposition) reduced to plain characters, with a fallback.
+ */
+export function safeFilename(name: string, fallback: string): string {
+  const base = (name.split(/[\\/]/).pop() ?? '').replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '')
+  return base && base.length <= 120 ? base : fallback
+}
+
 /** Called when the session is unrecoverable, so the app can route to login. */
 let onSessionLost: (() => void) | null = null
 export function setSessionLostHandler(handler: () => void): void {
@@ -126,7 +170,7 @@ export function setSessionLostHandler(handler: () => void): void {
 // ── Core request ───────────────────────────────────────────────────────────
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
-interface RequestOptions {
+export interface RequestOptions {
   method?: Method
   body?: unknown
   /** Set for the auth endpoints, which must not attempt a refresh. */
@@ -167,22 +211,42 @@ async function refreshSession(): Promise<boolean> {
   return refreshInFlight
 }
 
+/** Keep only primitive field values from an untrusted error body. */
+function parseFields(raw: unknown): ApiErrorFields {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const fields: ApiErrorFields = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!key) continue
+    if (typeof value === 'string' || typeof value === 'boolean') {
+      fields[key] = value
+    } else if (typeof value === 'number' && Number.isFinite(value)) {
+      fields[key] = value
+    }
+  }
+  return fields
+}
+
 async function parseError(response: Response): Promise<ApiError> {
   let code = 'error'
   let detail = response.statusText || 'Request failed'
-  let fields: Record<string, string> = {}
+  let fields: ApiErrorFields = {}
   try {
     const body = await response.json()
-    code = body.code ?? code
-    detail = body.detail ?? detail
-    fields = body.fields ?? {}
+    code = typeof body.code === 'string' && body.code ? body.code : code
+    detail = typeof body.detail === 'string' && body.detail ? body.detail : detail
+    fields = parseFields(body.fields)
   } catch {
     /* non-JSON error body */
   }
   return new ApiError(response.status, code, detail, fields)
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+/**
+ * A JSON request with auth and one refresh-and-replay on 401. Exported for the
+ * feature API modules (`api/creative.ts` and friends) so they share this
+ * client rather than growing their own.
+ */
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, skipAuth = false, signal } = options
 
   const send = async (): Promise<Response> => {
@@ -218,8 +282,101 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return (text ? JSON.parse(text) : undefined) as T
 }
 
+/**
+ * A binary download (export file, image), with the same auth and refresh.
+ * `headers` is returned for downloads that page (the audit export's cursor).
+ */
+export async function requestBlob(
+  path: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<{ blob: Blob; filename: string; headers: Headers }> {
+  const send = () => {
+    const token = tokenStore.access
+    return fetch(`${BASE_URL}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: options.signal,
+    })
+  }
+  let response = await send()
+  if (response.status === 401 && (await refreshSession())) response = await send()
+  if (!response.ok) throw await parseError(response)
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = /filename="?([^";]+)"?/.exec(disposition)
+  return {
+    blob: await response.blob(),
+    filename: safeFilename(match?.[1] ?? '', 'download'),
+    headers: response.headers,
+  }
+}
+
+/**
+ * A multipart upload (logo, product photo), with the same auth and refresh.
+ *
+ * No Content-Type is set: the browser writes the multipart boundary itself.
+ * The same FormData is replayed after a refresh, which is safe because a
+ * FormData body (unlike a stream) can be sent more than once.
+ */
+export async function requestForm<T>(
+  path: string,
+  form: FormData,
+  options: { method?: 'POST' | 'PUT'; signal?: AbortSignal } = {},
+): Promise<T> {
+  const { method = 'POST', signal } = options
+
+  const send = async (): Promise<Response> => {
+    const headers: Record<string, string> = {}
+    const token = tokenStore.access
+    if (token) headers.Authorization = `Bearer ${token}`
+    return fetch(`${BASE_URL}${path}`, { method, headers, body: form, signal })
+  }
+
+  let response = await send()
+
+  if (response.status === 401) {
+    const refreshed = await refreshSession()
+    if (refreshed) {
+      response = await send()
+    } else {
+      tokenStore.clear()
+      onSessionLost?.()
+      throw await parseError(response)
+    }
+  }
+
+  if (!response.ok) throw await parseError(response)
+  if (response.status === 204) return undefined as T
+
+  const text = await response.text()
+  return (text ? JSON.parse(text) : undefined) as T
+}
+
+/** The audit export's paging header (`GET /admin/audit/export`). */
+const NEXT_CURSOR_HEADER = 'X-Next-Cursor'
+
 // ── Endpoints ──────────────────────────────────────────────────────────────
 export const api = {
+  // Brand profile and content library
+  brandProfile: (signal?: AbortSignal) =>
+    request<import('./types').BrandProfileState>('/brand-profile', { signal }),
+  generateBrandProfile: (url: string) =>
+    request<import('./types').BrandProfileState>('/brand-profile/generate', { method: 'POST', body: { url } }),
+  updateBrandProfile: (values: Partial<import('./types').BrandProfile>) =>
+    request<import('./types').BrandProfileState>('/brand-profile', { method: 'PUT', body: values }),
+  assets: (filters: { kind?: string; status?: string; agent?: string } = {}, signal?: AbortSignal) => {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter((entry): entry is [string, string] => Boolean(entry[1])),
+    ).toString()
+    return request<import('./types').ContentAsset[]>(`/assets${query ? `?${query}` : ''}`, { signal })
+  },
+  asset: (id: string) => request<import('./types').ContentAssetDetail>(`/assets/${seg(id)}`),
+  updateAsset: (id: string, body: { title?: string; content?: Record<string, unknown>; scheduled_for?: string }) =>
+    request<import('./types').ContentAssetDetail>(`/assets/${seg(id)}`, { method: 'PUT', body }),
+  publishAsset: (id: string) => request<ActionResult>(`/assets/${seg(id)}/publish`, { method: 'POST' }),
+  rejectAsset: (id: string) => request<ActionResult>(`/assets/${seg(id)}/reject`, { method: 'POST' }),
+  exportAsset: (id: string, format: string) =>
+    requestBlob(`/assets/${seg(id)}/export?format=${encodeURIComponent(format)}`),
+  imageBlob: (id: string) => requestBlob(`/assets/images/${seg(id)}`),
+
   // Auth
   //
   // Cached for the life of the page: the sign-in, sign-up and account screens
@@ -294,11 +451,11 @@ export const api = {
   createWorkspace: (payload: { name: string; primary_domain?: string }) =>
     request<AuthResponse>('/workspaces', { method: 'POST', body: payload }),
   switchWorkspace: (organizationId: string) =>
-    request<AuthResponse>(`/workspaces/${organizationId}/switch`, {
+    request<AuthResponse>(`/workspaces/${seg(organizationId)}/switch`, {
       method: 'POST',
     }),
   deleteWorkspace: (organizationId: string) =>
-    request<AuthResponse>(`/workspaces/${organizationId}`, {
+    request<AuthResponse>(`/workspaces/${seg(organizationId)}`, {
       method: 'DELETE',
     }),
 
@@ -339,34 +496,49 @@ export const api = {
     domain: string
     cms: string
     guardrail: string
+    /** Required with guardrail 'full' ("Publish automatically"), after the person confirms. */
+    confirm: boolean
   }>) => request<OnboardingOut>('/onboarding', { method: 'PUT', body: payload }),
+  /**
+   * "Review before publishing" and the agents' switch in one atomic save.
+   * 'full' needs `confirm: true` (422 with `needs_confirmation` otherwise).
+   */
+  setWorkspacePolicy: (body: WorkspacePolicyRequest) =>
+    request<WorkspacePolicyOut>('/onboarding/policy', { method: 'PUT', body }),
   completeOnboarding: () =>
     request<ActionResult>('/onboarding/complete', { method: 'POST' }),
 
   // Agents
   agents: (signal?: AbortSignal) => request<AgentOut[]>('/agents', { signal }),
-  agent: (slug: string) => request<AgentOut>(`/agents/${slug}`),
+  agent: (slug: string) => request<AgentOut>(`/agents/${seg(slug)}`),
   agentOptions: (signal?: AbortSignal) =>
     request<AgentOptions>('/agents/options', { signal }),
-  agentRuns: (slug: string) => request<AgentRun[]>(`/agents/${slug}/runs`),
+  agentRuns: (slug: string, signal?: AbortSignal) =>
+    request<AgentRun[]>(`/agents/${seg(slug)}/runs`, { signal }),
+  agentRun: (slug: string, runId: string) =>
+    request<AgentRun>(`/agents/${seg(slug)}/runs/${seg(runId)}`),
+  agentResults: (slug: string, signal?: AbortSignal) =>
+    request<import('./types').AgentResults>(`/agents/${seg(slug)}/results`, { signal }),
+  agentActivity: (signal?: AbortSignal) =>
+    request<import('./types').AgentActivity>('/agents/activity', { signal }),
   pauseAgent: (slug: string) =>
-    request<ActionResult>(`/agents/${slug}/pause`, { method: 'POST' }),
+    request<ActionResult>(`/agents/${seg(slug)}/pause`, { method: 'POST' }),
   resumeAgent: (slug: string) =>
-    request<ActionResult>(`/agents/${slug}/resume`, { method: 'POST' }),
+    request<ActionResult>(`/agents/${seg(slug)}/resume`, { method: 'POST' }),
   setAgentAutonomy: (slug: string, autonomous: boolean) =>
-    request<ActionResult>(`/agents/${slug}/autonomy`, {
+    request<ActionResult>(`/agents/${seg(slug)}/autonomy`, {
       method: 'POST',
       body: { autonomous },
     }),
   setGlobalAutonomy: (autonomous: boolean) =>
     request<ActionResult>('/agents/autonomy', { method: 'POST', body: { autonomous } }),
   configureAgent: (slug: string, config: AgentConfigRequest) =>
-    request<AgentOut>(`/agents/${slug}/config`, { method: 'PUT', body: config }),
+    request<AgentOut>(`/agents/${seg(slug)}/config`, { method: 'PUT', body: config }),
   /** Remove an agent's configuration and stop it. */
   resetAgentConfig: (slug: string) =>
-    request<AgentOut>(`/agents/${slug}/config`, { method: 'DELETE' }),
+    request<AgentOut>(`/agents/${seg(slug)}/config`, { method: 'DELETE' }),
   runAgent: (slug: string) =>
-    request<ActionResult>(`/agents/${slug}/run`, { method: 'POST' }),
+    request<ActionResult>(`/agents/${seg(slug)}/run`, { method: 'POST' }),
 
   // SEO
   seo: (search = '', signal?: AbortSignal) =>
@@ -374,7 +546,7 @@ export const api = {
       `/seo${search ? `?search=${encodeURIComponent(search)}` : ''}`,
       { signal },
     ),
-  seoPage: (id: string) => request<SeoPageDetail>(`/seo/pages/${id}`),
+  seoPage: (id: string) => request<SeoPageDetail>(`/seo/pages/${seg(id)}`),
 
   /** The Technical SEO screen: findings, counts and what to do. */
   seoAudit: (
@@ -389,26 +561,31 @@ export const api = {
     return request<SeoAuditOut>(`/seo/audit${suffix ? `?${suffix}` : ''}`, { signal })
   },
   ignoreIssue: (id: string, note: string) =>
-    request<ActionResult>(`/seo/audit/${id}/ignore`, { method: 'POST', body: { note } }),
+    request<ActionResult>(`/seo/audit/${seg(id)}/ignore`, { method: 'POST', body: { note } }),
   reopenIssue: (id: string) =>
-    request<ActionResult>(`/seo/audit/${id}/reopen`, { method: 'POST' }),
+    request<ActionResult>(`/seo/audit/${seg(id)}/reopen`, { method: 'POST' }),
   requestPageApproval: (id: string) =>
-    request<ActionResult>(`/seo/pages/${id}/request-approval`, { method: 'POST' }),
+    request<ActionResult>(`/seo/pages/${seg(id)}/request-approval`, { method: 'POST' }),
 
   // Off-page
   offpage: (signal?: AbortSignal) =>
     request<OffPageWorkspace>('/offpage', { signal }),
+  setTargetContact: (targetId: string, email: string | null) =>
+    request<ActionResult>(`/offpage/targets/${seg(targetId)}/contact`, {
+      method: 'PUT',
+      body: { email },
+    }),
   launchOutreach: (targetId: string) =>
-    request<ActionResult>(`/offpage/targets/${targetId}/outreach`, { method: 'POST' }),
+    request<ActionResult>(`/offpage/targets/${seg(targetId)}/outreach`, { method: 'POST' }),
   launchCounterPitch: (alertId: string) =>
-    request<ActionResult>(`/offpage/alerts/${alertId}/counter-pitch`, { method: 'POST' }),
+    request<ActionResult>(`/offpage/alerts/${seg(alertId)}/counter-pitch`, { method: 'POST' }),
 
   // Ads
   ads: (signal?: AbortSignal) => request<AdsWorkspace>('/ads', { signal }),
   setBudget: (channel: string, percent: number) =>
     request<AdsWorkspace>('/ads/budget', { method: 'PUT', body: { channel, percent } }),
   unlockChannel: (channel: string) =>
-    request<ActionResult>(`/ads/budget/${channel}/unlock`, { method: 'POST' }),
+    request<ActionResult>(`/ads/budget/${seg(channel)}/unlock`, { method: 'POST' }),
   rebalanceBudget: () =>
     request<ActionResult>('/ads/budget/rebalance', { method: 'POST' }),
   generateCreatives: () =>
@@ -423,21 +600,76 @@ export const api = {
   connectorCategories: (signal?: AbortSignal) =>
     request<string[]>('/connectors/categories', { signal }),
   connect: (slug: string, values: Record<string, string>, oauth_completed = false) =>
-    request<ConnectorOut>(`/connectors/${slug}/connect`, {
+    request<ConnectorOut>(`/connectors/${seg(slug)}/connect`, {
       method: 'POST',
       body: { values, oauth_completed },
     }),
+  /** The models a connected AI integration's key can use, read live from the vendor. */
+  connectorModels: (slug: string, signal?: AbortSignal) =>
+    request<import('./types').ModelList>(`/connectors/${seg(slug)}/models`, { signal }),
+  /** The same list with the key typed in the dialog, before saving. The key is not stored. */
+  connectorModelsFor: (slug: string, values: Record<string, string>, signal?: AbortSignal) =>
+    request<import('./types').ModelList>(`/connectors/${seg(slug)}/models`, {
+      method: 'POST',
+      body: { values },
+      signal,
+    }),
   disconnect: (slug: string) =>
-    request<ConnectorOut>(`/connectors/${slug}/disconnect`, { method: 'POST' }),
+    request<ConnectorOut>(`/connectors/${seg(slug)}/disconnect`, { method: 'POST' }),
+  connector: (slug: string, signal?: AbortSignal) =>
+    request<ConnectorOut>(`/connectors/${seg(slug)}`, { signal }),
+  /** Where to send the browser to sign in (or, with reuse, connect at once). */
+  oauthStart: (
+    slug: string,
+    body: { return_path: string; site_url?: string; reuse?: boolean; inputs?: Record<string, string> },
+  ) =>
+    request<import('./types').OAuthStartOut>(`/connectors/${seg(slug)}/oauth/start`, {
+      method: 'POST',
+      body,
+    }),
+  /** "Notify my admin": a sign-in this person wants is not switched on yet. */
+  requestSignIn: (slug: string) =>
+    request<ActionResult>(`/connectors/${seg(slug)}/request-sign-in`, { method: 'POST' }),
+  oauthChoices: (slug: string, signal?: AbortSignal) =>
+    request<import('./types').OAuthChoice[]>(`/connectors/${seg(slug)}/oauth/choices`, {
+      signal,
+    }),
+  oauthChoose: (slug: string, choice_id: string) =>
+    request<ConnectorOut>(`/connectors/${seg(slug)}/oauth/choose`, {
+      method: 'POST',
+      body: { choice_id },
+    }),
   // Approvals
   approvals: (signal?: AbortSignal) =>
     request<ApprovalOut[]>('/approvals', { signal }),
   approvalCount: () => request<{ pending: number }>('/approvals/count'),
-  approval: (id: string) => request<ApprovalDetail>(`/approvals/${id}`),
+  approval: (id: string) => request<ApprovalDetail>(`/approvals/${seg(id)}`),
+  /** Items that left the queue, newest decision first; page with `next_cursor`. */
+  listApprovalHistory: (params: ApprovalHistoryParams = {}, signal?: AbortSignal) => {
+    const query = new URLSearchParams()
+    if (params.status) query.set('status', params.status)
+    if (params.type) query.set('type', params.type)
+    if (params.cursor) query.set('cursor', params.cursor)
+    if (params.limit) query.set('limit', String(Math.min(Math.max(1, Math.floor(params.limit)), 100)))
+    const qs = query.toString()
+    return request<ApprovalHistoryPage>(`/approvals/history${qs ? `?${qs}` : ''}`, { signal })
+  },
   approve: (id: string, note = '') =>
-    request<ActionResult>(`/approvals/${id}/approve`, { method: 'POST', body: { note } }),
+    request<ActionResult>(`/approvals/${seg(id)}/approve`, { method: 'POST', body: { note } }),
   reject: (id: string, note = '') =>
-    request<ActionResult>(`/approvals/${id}/reject`, { method: 'POST', body: { note } }),
+    request<ActionResult>(`/approvals/${seg(id)}/reject`, { method: 'POST', body: { note } }),
+  /** "Ask for changes": send it back with feedback for a new version. */
+  requestChanges: (id: string, feedback: string) =>
+    request<RevisionOut>(`/approvals/${seg(id)}/request-changes`, {
+      method: 'POST',
+      body: { feedback } satisfies RequestChangesBody,
+    }),
+  /** "Edit text": correct the wording directly; no AI call is made. */
+  editApprovalText: (id: string, fields: Record<string, string>) =>
+    request<RevisionOut>(`/approvals/${seg(id)}/edit-text`, {
+      method: 'POST',
+      body: { fields } satisfies EditTextBody,
+    }),
 
   // Admin
   admin: (search = '', signal?: AbortSignal) =>
@@ -450,16 +682,41 @@ export const api = {
       `/admin/audit${search ? `?search=${encodeURIComponent(search)}` : ''}`,
     ),
   changeMemberRole: (id: string, role: Role) =>
-    request<import('./types').TeamMemberOut>(`/admin/team/${id}/role`, {
+    request<import('./types').TeamMemberOut>(`/admin/team/${seg(id)}/role`, {
       method: 'PUT',
       body: { role },
     }),
   deactivateMember: (id: string) =>
-    request<ActionResult>(`/admin/team/${id}/deactivate`, { method: 'POST' }),
+    request<ActionResult>(`/admin/team/${seg(id)}/deactivate`, { method: 'POST' }),
   invite: (email: string, role: Role) =>
     request<InvitationOut>('/admin/invitations', { method: 'POST', body: { email, role } }),
   revokeInvitation: (id: string) =>
-    request<ActionResult>(`/admin/invitations/${id}`, { method: 'DELETE' }),
+    request<ActionResult>(`/admin/invitations/${seg(id)}`, { method: 'DELETE' }),
+  /** One page of the activity log as a file; `nextCursor` fetches the next. */
+  downloadAuditExport: async (params: AuditExportParams, signal?: AbortSignal): Promise<AuditExportFile> => {
+    const query = new URLSearchParams({ from: params.from, to: params.to, format: params.format })
+    if (params.cursor) query.set('cursor', params.cursor)
+    const { blob, filename, headers } = await requestBlob(`/admin/audit/export?${query.toString()}`, { signal })
+    return { blob, filename, nextCursor: headers.get(NEXT_CURSOR_HEADER) || null }
+  },
+
+  // Site analysis (in-portal, kept as history)
+  siteAnalyses: (signal?: AbortSignal) =>
+    request<import('./types').SiteAnalysisList>('/analyses', { signal }),
+  siteAnalysis: (id: string, signal?: AbortSignal) =>
+    request<import('./types').SiteAnalysisDetail>(`/analyses/${seg(id)}`, { signal }),
+  startSiteAnalysis: (body: { website_url: string; business_url: string; llm_connector: string }) =>
+    request<import('./types').SiteAnalysisDetail>('/analyses', { method: 'POST', body }),
+  deleteSiteAnalysis: (id: string) => request<{ ok: boolean }>(`/analyses/${seg(id)}`, { method: 'DELETE' }),
+  downloadSiteAnalysis: (id: string, format: 'pdf' | 'html') => requestBlob(`/analyses/${seg(id)}/download?format=${format}`),
+
+  // Audit history (dated snapshots, trends, what changed)
+  history: (kind: import('./types').HistoryKind, signal?: AbortSignal) =>
+    request<import('./types').HistoryList>(`/history/${seg(kind)}`, { signal }),
+  historyEntry: <T = import('./types').SnapshotDetail>(kind: import('./types').HistoryKind, id: string, signal?: AbortSignal) =>
+    request<T>(`/history/${seg(kind)}/${seg(id)}`, { signal }),
+  restoreBrandVersion: (id: string) =>
+    request<import('./types').BrandProfileState>(`/history/brand_profile/${seg(id)}/restore`, { method: 'POST' }),
 
   // Portal Admin (platform operators)
   portalOverview: (signal?: AbortSignal) =>
@@ -470,13 +727,70 @@ export const api = {
     }),
   portalOrganizationUsers: (orgId: string, signal?: AbortSignal) =>
     request<import('./types').PortalUser[]>(
-      `/portal/organizations/${orgId}/users`,
+      `/portal/organizations/${seg(orgId)}/users`,
       { signal },
     ),
+  portalAnalyses: (params: { source?: string; status?: string; q?: string }, signal?: AbortSignal) =>
+    request<import('./types').PortalAnalyses>(
+      `/portal/analyses?${new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString()}`,
+      { signal },
+    ),
+  downloadPortalAnalysis: (row: { source: string; id: string; workspace_id: string | null }, format: 'pdf' | 'html') =>
+    requestBlob(
+      row.source === 'website'
+        ? `/portal/analyses/website/${seg(row.id)}/download?format=${format}`
+        : `/portal/analyses/workspace/${seg(row.workspace_id)}/${seg(row.id)}/download?format=${format}`,
+    ),
+  portalAnalysis: (row: { source: string; id: string; workspace_id: string | null }, signal?: AbortSignal) =>
+    request<import('./types').SiteAnalysisDetail & { source: string; workspace?: string }>(
+      row.source === 'website' ? `/portal/analyses/website/${seg(row.id)}` : `/portal/analyses/workspace/${seg(row.workspace_id)}/${seg(row.id)}`,
+      { signal },
+    ),
+  portalSignInProviders: (signal?: AbortSignal) =>
+    request<import('./types').SignInProvider[]>('/portal/sign-in-providers', { signal }),
+  savePortalSignInProvider: (name: string, values: Record<string, string>) =>
+    request<import('./types').SignInProviderSaved>(`/portal/sign-in-providers/${seg(name)}`, {
+      method: 'PUT',
+      body: { values },
+    }),
+  checkPortalSignInProvider: (name: string) =>
+    request<import('./types').SignInCheck>(`/portal/sign-in-providers/${seg(name)}/check`, {
+      method: 'POST',
+    }),
+  clearPortalSignInProvider: (name: string) =>
+    request<import('./types').SignInProviderSaved>(`/portal/sign-in-providers/${seg(name)}`, {
+      method: 'DELETE',
+    }),
+  portalVerification: (signal?: AbortSignal) =>
+    request<import('./types').VerificationList>('/portal/verification', { signal }),
+  portalVerificationWorkspaces: (slug: string, signal?: AbortSignal) =>
+    request<import('./types').VerificationWorkspace[]>(
+      `/portal/verification/${seg(slug)}/workspaces`,
+      { signal },
+    ),
+  runPortalVerification: (
+    slug: string,
+    body: {
+      workspace_id: string
+      allow_writes: boolean
+      environment: string
+      /** Run-only verify* options; never saved. */
+      options?: Record<string, string>
+    },
+  ) =>
+    request<import('./types').VerificationRunStarted>(
+      `/portal/verification/${seg(slug)}/run`,
+      { method: 'POST', body },
+    ),
+  savePortalVerificationSettings: (hide_unverified_connectors: boolean) =>
+    request<import('./types').VerificationSettings>('/portal/verification/settings', {
+      method: 'PUT',
+      body: { hide_unverified_connectors },
+    }),
   portalFeatures: (signal?: AbortSignal) =>
     request<import('./types').PortalFeature[]>('/portal/features', { signal }),
   setPortalFeature: (kind: string, slug: string, enabled: boolean) =>
-    request<ActionResult>(`/portal/features/${encodeURIComponent(kind)}/${encodeURIComponent(slug)}`, {
+    request<ActionResult>(`/portal/features/${seg(kind)}/${seg(slug)}`, {
       method: 'PUT',
       body: { enabled },
     }),
@@ -593,4 +907,40 @@ export const api = {
 
   // Meta
   health: () => fetch('/health').then((r) => r.json() as Promise<HealthStatus>),
+}
+
+/**
+ * Spending-agent safety: practice mode, limits and the stop switches.
+ * Kept apart from `api` so these shapes sit together.
+ */
+export const safetyApi = {
+  status: (signal?: AbortSignal) =>
+    request<import('./types').SafetyStatus>('/safety', { signal }),
+  saveCaps: (caps: Record<string, number>) =>
+    request<import('./types').SafetyAction>('/safety/caps', { method: 'PUT', body: { caps } }),
+  setPractice: (on: boolean) =>
+    request<import('./types').SafetyAction>('/safety/practice', { method: 'POST', body: { on } }),
+  stopAll: () => request<import('./types').SafetyAction>('/safety/stop', { method: 'POST' }),
+  resumeAll: () => request<import('./types').SafetyAction>('/safety/resume', { method: 'POST' }),
+  setAgentPractice: (slug: string, on: boolean) =>
+    request<AgentOut>(`/agents/${seg(slug)}/practice`, { method: 'POST', body: { on } }),
+  practiceSummary: (slug: string, signal?: AbortSignal) =>
+    request<import('./types').PracticeSummary>(`/agents/${seg(slug)}/practice-summary`, { signal }),
+  practised: (agent = '', signal?: AbortSignal) =>
+    request<ApprovalOut[]>(
+      `/approvals/practice${agent ? `?agent=${encodeURIComponent(agent)}` : ''}`,
+      { signal },
+    ),
+  platform: (signal?: AbortSignal) =>
+    request<import('./types').PlatformSafety>('/safety/platform', { signal }),
+  setEmergencyStop: (on: boolean) =>
+    request<import('./types').PlatformSafetyAction>('/safety/platform/emergency-stop', {
+      method: 'POST',
+      body: { on },
+    }),
+  setPlatformPractice: (on: boolean) =>
+    request<import('./types').PlatformSafetyAction>('/safety/platform/practice', {
+      method: 'POST',
+      body: { on },
+    }),
 }

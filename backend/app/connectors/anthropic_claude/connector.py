@@ -8,13 +8,15 @@ parsed out of prose.
 from __future__ import annotations
 
 from app.connectors.base.aeo_base import AEO_CAPABILITIES, BaseAeoConnector, urls_in_text
-from app.connectors.base.connector import ConnectorSpec, HealthReport
+from app.connectors.base.connector import ConnectorSpec, HealthReport, SetupGuide
 from app.connectors.base.credentials import secret
 from app.connectors.base.llm_fields import anthropic_llm_fields
+from app.connectors.base.llm_models import ModelChoice
+from app.core.config import settings
 from app.core.exceptions import ConnectorError
 from app.core.logging import get_logger
 from app.core.user_messages import message_for_http_status, message_for_unreachable
-from app.db.base import utcnow
+from app.llm.model_catalog import ModelInfo, newest_first, paginate, parse_anthropic_page
 
 log = get_logger(__name__)
 
@@ -22,11 +24,27 @@ log = get_logger(__name__)
 WEB_SEARCH_TOOL = "web_search_20260209"
 
 
-class AnthropicClaudeConnector(BaseAeoConnector):
+GUIDE = SetupGuide(
+    steps=(
+        'Open the API keys page in your Claude Console with the button below, and sign in if asked.',
+        'Click “Create Key”, give it a name such as Synaprank, and create it.',
+        'Copy the key and paste it here. It is shown only once.',
+    ),
+    key_url='https://platform.claude.com/settings/keys',
+    key_url_label='Open your Claude Console API keys',
+    key_field='apiKey',
+    key_pattern='^sk-ant-[A-Za-z0-9_\\-]{20,}$',
+    key_hint='Claude API keys start with sk-ant-',
+)
+
+
+class AnthropicClaudeConnector(ModelChoice, BaseAeoConnector):
     engine = "claude"
+    models_url = "https://platform.claude.com/docs/en/about-claude/models/overview"
 
     spec = ConnectorSpec(
         slug="anthropic_claude",
+        guide=GUIDE,
         name="Anthropic Claude",
         category="AI models",
         description="Writing for agents, and citation checks in Claude web search.",
@@ -36,7 +54,34 @@ class AnthropicClaudeConnector(BaseAeoConnector):
         ),
         capabilities=AEO_CAPABILITIES,
         docs_url="https://docs.anthropic.com/en/api/messages",
+        # The Models API is read over plain HTTP; citation checks use the SDK.
+        base_url="https://api.anthropic.com/v1",
     )
+
+    @property
+    def model_id(self) -> str:
+        """The model picked from the vendor's list. Required; there is no default."""
+        return self.credentials.require("model").strip()
+
+    def auth_headers(self) -> dict[str, str]:
+        return {
+            "x-api-key": self.credentials.require("apiKey"),
+            "anthropic-version": settings.anthropic_api_version,
+        }
+
+    # ── Models: GET /v1/models, paginated (has_more / last_id -> after_id) ──
+    # https://platform.claude.com/docs/en/api/models/list
+    def list_models(self) -> list[ModelInfo]:
+        def page(cursor: str) -> tuple[list[ModelInfo], str]:
+            params: dict[str, str | int] = {"limit": 1000}
+            if cursor:
+                params["after_id"] = cursor
+            return parse_anthropic_page(self.request("GET", "/models", params=params))
+
+        return newest_first(paginate(page))
+
+    def retrieve_model(self, model_id: str) -> None:
+        self.request("GET", f"/models/{model_id}")
 
     def _anthropic(self):  # noqa: ANN202 - the SDK's client type
         # Named deliberately not `_client`: BaseConnector stores an httpx
@@ -52,7 +97,7 @@ class AnthropicClaudeConnector(BaseAeoConnector):
 
     def _ask_with_search(self, query: str) -> list[str]:
         client, anthropic = self._anthropic()
-        model = self.credentials.require("model")
+        model = self.model_id
 
         try:
             message = client.messages.create(
@@ -62,9 +107,9 @@ class AnthropicClaudeConnector(BaseAeoConnector):
                 tools=[{"type": WEB_SEARCH_TOOL, "name": "web_search"}],
             )
         except anthropic.NotFoundError as exc:
-            raise ConnectorError(
-                "That model name was not found. Check the model field and try again."
-            ) from exc
+            from app.llm.model_catalog import stale_model_message
+
+            raise ConnectorError(stale_model_message(model, self.name)) from exc
         except anthropic.RateLimitError as exc:
             raise ConnectorError(
                 message_for_http_status(429, service=self.name)
@@ -109,22 +154,18 @@ class AnthropicClaudeConnector(BaseAeoConnector):
         return urls_in_text("\n".join(text_parts))
 
     def _probe_credentials(self) -> None:
-        client, _ = self._anthropic()
-        client.models.retrieve(self.credentials.require("model"))
+        self.check_models()
+
+    def verify_steps(self) -> list:
+        """List models (GET /v1/models) and one tiny Messages call
+        (POST /v1/messages, max_tokens 16) through the provider agents write
+        with. Read only; nothing is created."""
+        from app.connectors.base.llm_verify import model_list_step, tiny_completion_step
+
+        return [model_list_step(self), tiny_completion_step(self)]
 
     def check_health(self) -> HealthReport:
-        try:
-            self._probe_credentials()
-        except ConnectorError as exc:
-            return HealthReport(ok=False, detail=str(exc), checked_at=utcnow())
-        except Exception as exc:  # noqa: BLE001 - a probe must not raise
-            log.warning("Anthropic health probe failed: %s", exc)
-            return HealthReport(
-                ok=False,
-                detail="Could not verify those credentials. Check the key and model name.",
-                checked_at=utcnow(),
-            )
-        return HealthReport(ok=True, detail="Connection looks good", checked_at=utcnow())
+        return self.model_health()
 
 
 CONNECTOR_CLASS = AnthropicClaudeConnector

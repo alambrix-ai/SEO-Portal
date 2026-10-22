@@ -16,7 +16,7 @@ import { ApiError, api } from '@/api/client'
 import type { RegistrationPolicy } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { useToasts } from '@/components/Toasts'
-import { Blueprint, SectionHeading, Tag } from '@/components/ui'
+import { Blueprint, PageHeader, SectionHeading, Tag } from '@/components/ui'
 
 export function AccountPage() {
   const { session, signOut } = useAuth()
@@ -53,7 +53,10 @@ export function AccountPage() {
 
   return (
     <div style={{ maxWidth: 640 }}>
-      <SectionHeading title="Your account" />
+      <PageHeader
+        title="Account"
+        description="Your profile and sign-in sessions."
+      />
 
       <Blueprint className="card elev-sm">
         <div className="card-kicker">{session.organization.name}</div>

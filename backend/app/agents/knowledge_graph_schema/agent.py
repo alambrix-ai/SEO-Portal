@@ -17,6 +17,7 @@ from datetime import timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.agents.base import pages as page_rules
 from app.agents.base.context import AgentContext
 from app.agents.base.style import humanise_json
 from app.agents.base import scope as scope_rules
@@ -28,6 +29,7 @@ from app.agents.base.contracts import (
     BaseAgent,
     Impact,
 )
+from app.agents.base.contracts import ConnectorUse, UseMode
 from app.agents.knowledge_graph_schema import prompts
 from app.connectors.base.connector import Capability
 from app.connectors.base.interfaces import CmsConnector
@@ -36,12 +38,18 @@ from app.db.base import utcnow
 from app.models.approval import ApprovalItem, ApprovalType
 from app.models.seo import SchemaPatch, SeoPage
 from app.models.workspace import Organization
-from app.services.approvals import register_applier
+from app.services.approvals import register_applier, register_rejecter
 from app.services.encryption import Ctx
 
 log = get_logger(__name__)
 
+# The fewest pages reviewed per run — one model call each. The batch grows
+# with the daily allowance up to pages.MAX_ITEMS_PER_RUN; see
+# pages.batch_size for the rule.
 PAGES_PER_RUN = 5
+#: Agent setting holding when each page was last reviewed, so runs rotate
+#: through the site instead of re-reviewing the same few pages.
+REVIEWED_KEY = "_schema_reviewed_at"
 
 # Which schema types a page's shape implies. Order matters: the first match
 # supplies the page's primary type, the rest are additive.
@@ -67,6 +75,23 @@ class KnowledgeGraphSchemaAgent(BaseAgent):
         default_max_actions_per_day=15,
         scope_placeholder="Product, FAQPage — or blank to infer per page",
         requires_llm=True,
+        connector_use=(
+            ConnectorUse(
+                Capability.WRITE_PAGE,
+                UseMode.PAGE_SOURCE,
+                question="Which websites should this agent add structured data to?",
+                multi=True,
+                selected="adds structured data to collected pages from {names}",
+                everything=(
+                    "adds structured data to collected pages on every website it can "
+                    "write to"
+                ),
+                note=(
+                    "Structured data is saved to the website each page was collected "
+                    "from."
+                ),
+            ),
+        ),
     )
 
     #: Common types, offered as examples. **Not** an allow-list: schema.org
@@ -113,11 +138,16 @@ class KnowledgeGraphSchemaAgent(BaseAgent):
     def _build_patches(self, ctx: AgentContext) -> list[AgentAction]:
         pages = self._pages_to_review(ctx)
         actions: list[AgentAction] = []
+        reviewed = dict(ctx.setting(REVIEWED_KEY) or {})
+        stamp = utcnow().isoformat()
 
         for page in pages:
             body = ctx.cipher.decrypt(page.body_encrypted, context=Ctx.PAGE_BODY)
             if not body:
+                # Not stamped: it has not been reviewed, and should come up
+                # first once a sync has read its content.
                 continue
+            reviewed[page.id] = stamp
 
             wanted = self._wanted_types(ctx, body, page)
             if not wanted:
@@ -139,25 +169,40 @@ class KnowledgeGraphSchemaAgent(BaseAgent):
                 ctx.log_warning("Schema generation failed for %s: %s", page.url, exc)
                 continue
 
-            existing = {
-                patch.schema_type: patch
-                for patch in ctx.db.execute(
-                    select(SchemaPatch).where(
+            patches = list(
+                ctx.db.execute(
+                    select(SchemaPatch)
+                    .where(
                         SchemaPatch.tenant_id == ctx.tenant_id,
                         SchemaPatch.page_id == page.id,
-                        SchemaPatch.status == "injected",
                     )
+                    .order_by(SchemaPatch.created_at.asc())
                 ).scalars()
-            }
+            )
+            # Latest of each, by type. Queued patches count as well as
+            # injected ones: considering only injected ones made every run
+            # write another queued patch, with a new id and so a new
+            # approval card, for the same graph on the same page.
+            injected = {p.schema_type: p for p in patches if p.status == "injected"}
+            queued = {p.schema_type: p for p in patches if p.status == "queued"}
+            rejected = [p for p in patches if p.status == "rejected"]
+            microdata_faq = _has_faq_microdata(body)
 
             for entry in data.get("patches") or []:
                 schema_type = (entry.get("schema_type") or "").strip()
                 json_ld = entry.get("json_ld")
                 if not schema_type or not isinstance(json_ld, dict):
                     continue
+                if schema_type == "FAQPage" and microdata_faq:
+                    # The Q&A section already marks this page up as an
+                    # FAQPage. A second, JSON-LD FAQPage is a duplicate that
+                    # Google reports as an error on the page.
+                    continue
                 # The prose inside the graph publishes to the page too, so
                 # the values are cleaned, not just the wrapper.
                 json_ld = humanise_json(json_ld)
+                if not ctx.org.primary_domain:
+                    json_ld = _without_relative_urls(json_ld)
 
                 problem = prompts.validate_json_ld(json_ld, schema_type)
                 if problem:
@@ -166,21 +211,33 @@ class KnowledgeGraphSchemaAgent(BaseAgent):
                     ctx.log_warning("Rejected %s graph for %s: %s", schema_type, page.url, problem)
                     continue
 
-                superseded = existing.get(schema_type)
+                superseded = injected.get(schema_type)
                 if superseded is not None and self._unchanged(ctx, superseded, json_ld):
                     continue
+                if any(
+                    old.schema_type == schema_type and self._unchanged(ctx, old, json_ld)
+                    for old in rejected
+                ):
+                    # Somebody already said no to exactly this graph.
+                    continue
 
-                patch = SchemaPatch(
-                    tenant_id=ctx.tenant_id,
-                    page_id=page.id,
-                    schema_type=schema_type,
-                    json_ld_encrypted=ctx.cipher.encrypt_json(
-                        json_ld, context=Ctx.SCHEMA_JSONLD
-                    ),
-                    status="queued",
-                    replaces_patch_id=superseded.id if superseded else None,
+                patch = queued.get(schema_type)
+                if patch is None:
+                    patch = SchemaPatch(
+                        tenant_id=ctx.tenant_id,
+                        page_id=page.id,
+                        schema_type=schema_type,
+                        status="queued",
+                    )
+                    ctx.db.add(patch)
+                    queued[schema_type] = patch
+                # One queued patch per page and type, updated in place, so
+                # its id — the approval's target — is stable and the queue
+                # updates the pending card rather than adding another.
+                patch.json_ld_encrypted = ctx.cipher.encrypt_json(
+                    json_ld, context=Ctx.SCHEMA_JSONLD
                 )
-                ctx.db.add(patch)
+                patch.replaces_patch_id = superseded.id if superseded else None
                 ctx.db.flush()
 
                 verb = "Patch" if superseded else "Inject"
@@ -204,19 +261,51 @@ class KnowledgeGraphSchemaAgent(BaseAgent):
                     )
                 )
 
+        if pages:
+            # Only pages that still exist, so the record does not grow forever.
+            alive = set(
+                ctx.db.execute(
+                    select(SeoPage.id).where(SeoPage.tenant_id == ctx.tenant_id)
+                ).scalars()
+            )
+            ctx.set_setting(
+                REVIEWED_KEY, {k: v for k, v in reviewed.items() if k in alive}
+            )
         ctx.db.flush()
         return actions
 
     def _pages_to_review(self, ctx: AgentContext) -> list[SeoPage]:
-        """Pages changed since their graph was written, oldest first."""
-        return list(
-            ctx.db.execute(
-                select(SeoPage)
-                .where(SeoPage.tenant_id == ctx.tenant_id)
-                .order_by(SeoPage.updated_at.desc())
-                .limit(PAGES_PER_RUN)
+        """Pages never reviewed first, then the longest since their review.
+
+        This used to take the five most recently updated pages, and every
+        sync touches every page, so in practice the same five were reviewed
+        each run and the rest of the site never was. Pages synced from a
+        source that cannot write are left out: their graph could never be
+        published.
+        """
+        stmt = select(SeoPage.id).where(SeoPage.tenant_id == ctx.tenant_id)
+        writable = page_rules.writable_rows(SeoPage.cms_slug)
+        if writable is not None:
+            stmt = stmt.where(writable)
+        # Only pages from the websites chosen in this agent's settings.
+        chosen = page_rules.source_filter(ctx, SeoPage.cms_slug, Capability.WRITE_PAGE)
+        if chosen is not None:
+            stmt = stmt.where(chosen)
+        ids = list(ctx.db.execute(stmt.order_by(SeoPage.created_at.asc())).scalars())
+
+        reviewed = ctx.setting(REVIEWED_KEY) or {}
+        # Stable sort: never reviewed ("" sorts first), then oldest review.
+        ids.sort(key=lambda page_id: reviewed.get(page_id, ""))
+        chosen = ids[: page_rules.batch_size(ctx, floor=PAGES_PER_RUN)]
+        if not chosen:
+            return []
+        rows = {
+            row.id: row
+            for row in ctx.db.execute(
+                select(SeoPage).where(SeoPage.id.in_(chosen))
             ).scalars()
-        )
+        }
+        return [rows[page_id] for page_id in chosen if page_id in rows]
 
     def _wanted_types(self, ctx: AgentContext, body: str, page: SeoPage) -> list[str]:
         """Schema types this page should carry.
@@ -225,7 +314,10 @@ class KnowledgeGraphSchemaAgent(BaseAgent):
         copy contains, so a service page does not get a Product graph.
         """
         if ctx.scope:
-            return [t.strip() for t in ctx.scope.split(",") if t.strip()]
+            explicit = [t.strip() for t in ctx.scope.split(",") if t.strip()]
+            if _has_faq_microdata(body):
+                explicit = [t for t in explicit if t != "FAQPage"]
+            return explicit
 
         haystack = f"{page.title} {page.url} {body}".lower()
         wanted = [
@@ -233,10 +325,11 @@ class KnowledgeGraphSchemaAgent(BaseAgent):
             for schema_type, needles in _SIGNALS
             if any(needle in haystack for needle in needles)
         ]
-        # Every page can carry a breadcrumb trail, and an FAQ graph is the
-        # natural companion to whatever the Q&A injector added.
-        if prompts.SECTION_MARKER in body and "FAQPage" not in wanted:
-            wanted.append("FAQPage")
+        # The Q&A injector's section is already FAQPage microdata. Adding an
+        # FAQPage graph on top of it — which this once did deliberately —
+        # gives the page two FAQPage items, which Google reports as an error.
+        if _has_faq_microdata(body):
+            wanted = [t for t in wanted if t != "FAQPage"]
         return wanted[:3]
 
     def _unchanged(self, ctx: AgentContext, patch: SchemaPatch, json_ld: dict) -> bool:
@@ -246,10 +339,43 @@ class KnowledgeGraphSchemaAgent(BaseAgent):
         return json.dumps(current, sort_keys=True) == json.dumps(json_ld, sort_keys=True)
 
     def _absolute(self, ctx: AgentContext, path: str) -> str:
+        """The page's absolute URL, or empty when the site's domain is unknown.
+
+        Never a placeholder domain: a graph whose ``url`` says example.com
+        tells a search engine the page is somebody else's.
+        """
         if path.startswith("http"):
             return path
-        domain = ctx.org.primary_domain or "example.com"
+        domain = (ctx.org.primary_domain or "").strip()
+        if not domain:
+            return ""
         return f"https://{domain.rstrip('/')}{path}"
+
+
+def _has_faq_microdata(body: str) -> bool:
+    """Whether the page already carries an FAQPage in microdata."""
+    return prompts.SECTION_MARKER in body or "schema.org/FAQPage" in body
+
+
+def _without_relative_urls(graph):  # noqa: ANN001, ANN202 - JSON value
+    """Drop ``url`` and ``@id`` values that are not absolute URLs.
+
+    Used when the site's domain is unknown: the model was told to leave the
+    url out, and anything it wrote anyway would be a guess.
+    """
+    if isinstance(graph, dict):
+        return {
+            key: _without_relative_urls(value)
+            for key, value in graph.items()
+            if not (
+                key in ("url", "@id")
+                and isinstance(value, str)
+                and not value.startswith(("http://", "https://"))
+            )
+        }
+    if isinstance(graph, list):
+        return [_without_relative_urls(value) for value in graph]
+    return graph
 
 
 # ── Applying a patch ───────────────────────────────────────────────────────
@@ -289,7 +415,8 @@ def _make_injector(patch_id: str):  # noqa: ANN202
         except NotImplementedError:
             # The CMS has no structured-data field, so the graph goes into the
             # body as a script tag instead — same result for a crawler.
-            body = ctx.cipher.decrypt(page.body_encrypted, context=Ctx.PAGE_BODY)
+            # Into the page as it is now, not as the last sync saw it.
+            body = page_rules.current_body(ctx, writer, page)
             merged = prompts.merge_script_tag(body, json_ld, patch.schema_type)
             writer.write_page(page.cms_id, body=merged, title=page.title)
             page.body_encrypted = ctx.cipher.encrypt(merged, context=Ctx.PAGE_BODY)
@@ -326,6 +453,18 @@ def apply_schema_patch(
 
     ctx = build_context(db, record, org, trigger="approval")
     _make_injector(payload.get("patch_id") or item.target_id or "")(ctx)
+
+
+@register_rejecter("schema_patch")
+def reject_schema_patch(
+    db: Session, org: Organization, item: ApprovalItem, payload: dict
+) -> None:
+    """Mark a turned-down patch rejected, so it is not offered again as is."""
+    patch = db.get(SchemaPatch, payload.get("patch_id") or item.target_id or "")
+    if patch is None or patch.tenant_id != org.id or patch.status != "queued":
+        return
+    patch.status = "rejected"
+    db.flush()
 
 
 AGENT = KnowledgeGraphSchemaAgent()

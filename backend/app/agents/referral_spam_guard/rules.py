@@ -26,19 +26,50 @@ class Verdict(StrEnum):
 
 
 # ── Signals ────────────────────────────────────────────────────────────────
+# Tokens are matched against the *words* of a domain, not its raw characters.
+# A domain is split into runs of letters and runs of digits, so
+# "sex4u-cams.xyz" reads as ["sex", "4", "u", "cams", "xyz"]. Plain substring
+# matching flagged essex.ac.uk, sussex.com and middlesex.gov.uk as adult spam
+# and cryptography sites as crypto scams.
+#
+# Token forms:
+#   "word"    that whole word, exactly
+#   "word*"   a word starting with it ("webcams", "webcamshow")
+#   "a-b"     these words, consecutively ("trading-signals")
+#   "~text"   anywhere, even inside a word. Only for strings with no innocent
+#             reading ("porn", "xxx"), so "freeporn" is still caught.
 _ADULT_TOKENS = (
-    "porn", "xxx", "sex", "webcam", "cams", "adult", "nude", "escort",
-    "hookup", "milf", "dating-hot", "fuck",
+    "~porn", "~xxx", "~fuck", "~milf", "sex", "sexy", "webcam*", "cams",
+    "livecam*", "adult", "nude", "nudes", "escort", "escorts", "hookup*",
+    "dating-hot",
 )
 _CRYPTO_TOKENS = (
-    "crypto", "bitcoin", "btc-", "forex", "binaryoption", "trading-signals",
-    "airdrop", "nft-drop", "investment-profit",
+    "crypto", "bitcoin*", "btc", "forex", "binaryoption*", "trading-signals",
+    "airdrop*", "nft-drop", "investment-profit",
 )
 _LINK_DROP_TOKENS = (
-    "seo-", "-seo", "backlink", "traffic-bot", "buy-traffic", "rank-boost",
-    "free-followers", "get-clicks", "linkbuild", "guestpost-cheap",
+    "seo", "~backlink", "traffic-bot", "buy-traffic", "rank-boost",
+    "free-followers", "get-clicks", "~linkbuild", "guestpost-cheap",
 )
-_SCRAPER_TOKENS = ("scrape", "crawler", "spider-", "proxy-list", "datacenter")
+_SCRAPER_TOKENS = ("scrape*", "scraping", "crawler*", "spider", "proxy-list", "datacenter*")
+
+_WORD_RE = re.compile(r"[a-z]+|[0-9]+")
+
+
+def domain_words(domain: str) -> list[str]:
+    """The words a domain is made of, for boundary-aware token matching."""
+    return _WORD_RE.findall((domain or "").lower())
+
+
+def _token_matches(token: str, domain: str, words: list[str]) -> bool:
+    if token.startswith("~"):
+        return token[1:] in domain
+    if token.endswith("*"):
+        stem = token[:-1]
+        return any(word.startswith(stem) for word in words)
+    parts = domain_words(token)
+    span = len(parts)
+    return any(words[i : i + span] == parts for i in range(len(words) - span + 1))
 
 # TLDs that carry a disproportionate share of referral spam. A hit here is a
 # contributing signal, never a block on its own — legitimate sites use them.
@@ -85,13 +116,14 @@ def parse_scope(scope: str) -> frozenset[str]:
 
 
 def _token_verdict(domain: str) -> Verdict | None:
+    words = domain_words(domain)
     for tokens, verdict in (
         (_ADULT_TOKENS, Verdict.ADULT),
         (_CRYPTO_TOKENS, Verdict.CRYPTO),
         (_LINK_DROP_TOKENS, Verdict.LINK_DROP),
         (_SCRAPER_TOKENS, Verdict.SCRAPER),
     ):
-        if any(token in domain for token in tokens):
+        if any(_token_matches(token, domain, words) for token in tokens):
             return verdict
     return None
 

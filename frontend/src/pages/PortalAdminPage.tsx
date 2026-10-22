@@ -5,12 +5,16 @@
  * connector, agent, or module hides it from every customer workspace.
  */
 import { useMemo, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 
 import { api } from '@/api/client'
 import type { PortalFeature, PortalOrganization } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { AgentIcon } from '@/components/AgentIcon'
+import { PortalAnalyses } from '@/components/PortalAnalyses'
+import { PortalSignInProviders } from '@/components/PortalSignInProviders'
+import { PortalVerification } from '@/components/PortalVerification'
+import { PortalSafetyPanel } from '@/components/SafetyBits'
 import { CardSection } from '@/components/CardSection'
 import { useConfirm } from '@/components/Confirm'
 import { ConnectorIcon } from '@/components/ConnectorIcon'
@@ -40,7 +44,7 @@ import {
 } from '@/components/ui'
 import { useResource } from '@/hooks/useResource'
 
-type Tab = 'workspaces' | 'features'
+type Tab = 'workspaces' | 'features' | 'analyses' | 'signin' | 'verification'
 type FeatureKindFilter = 'all' | 'connector' | 'agent' | 'module'
 
 const KIND_LABEL: Record<string, string> = {
@@ -89,7 +93,12 @@ export function PortalAdminPage() {
   const { session, refresh } = useAuth()
   const { fromResult, fromError } = useToasts()
   const confirm = useConfirm()
-  const [tab, setTab] = useState<Tab>('workspaces')
+  // Deep link from the connect screen: /portal?tab=signin&provider=google
+  const [params] = useSearchParams()
+  const [tab, setTab] = useState<Tab>(() =>
+    (['workspaces', 'features', 'analyses', 'signin', 'verification'] as const).find((t) => t === params.get('tab')) ?? 'workspaces',
+  )
+  const focusProvider = params.get('provider') ?? undefined
   const [selectedOrg, setSelectedOrg] = useState<PortalOrganization | null>(null)
   const [featureFilter, setFeatureFilter] = useState<FeatureKindFilter>('all')
   const [workspaceQuery, setWorkspaceQuery] = useState('')
@@ -217,6 +226,9 @@ export function PortalAdminPage() {
             module here and it disappears from the customer product until you
             restore it.
           </p>
+          <p className="portal-masthead-lede">
+            Set up each sign-in once. After that, every customer connects with one click.
+          </p>
         </div>
         <div className="portal-masthead-aside">
           <Tag tone="accent">Operator access</Tag>
@@ -250,12 +262,17 @@ export function PortalAdminPage() {
         />
       </div>
 
+      <PortalSafetyPanel />
+
       <div className="portal-toolbar">
         <div className="portal-tabs" role="tablist" aria-label="Portal sections">
           {(
             [
               { value: 'workspaces' as const, label: 'Workspaces', hint: 'Tenants & members' },
               { value: 'features' as const, label: 'Catalogue', hint: 'Connectors · agents · modules' },
+              { value: 'analyses' as const, label: 'Analyses', hint: 'Website & workspace reports' },
+              { value: 'signin' as const, label: 'Sign-in providers', hint: 'Google · Meta · LinkedIn · more' },
+              { value: 'verification' as const, label: 'Verification', hint: 'Live checks · Beta labels' },
             ] as const
           ).map((item) => (
             <button
@@ -379,6 +396,12 @@ export function PortalAdminPage() {
             </Blueprint>
           )}
         </section>
+      ) : tab === 'analyses' ? (
+        <PortalAnalyses />
+      ) : tab === 'signin' ? (
+        <PortalSignInProviders focus={focusProvider} />
+      ) : tab === 'verification' ? (
+        <PortalVerification />
       ) : (
         <section className="portal-panel" aria-label="Catalogue">
           <SectionHeading

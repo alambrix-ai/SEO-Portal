@@ -7,7 +7,8 @@ disagree about it.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -27,6 +28,7 @@ from app.models.seo import SeoIssue, PAGE_STATUS_LABELS, PageStatus, ReferralSpa
 from app.models.workspace import AuditLogEntry, User
 from app.schemas.workspace import (
     AgentOut,
+    AgentRunOut,
     ApprovalOut,
     AudienceOut,
     AuditEntryOut,
@@ -40,7 +42,6 @@ from app.schemas.workspace import (
     QaPairOut,
     ReferralSpamOut,
     SchemaPatchOut,
-    SeoAuditOut,
     SeoIssueOut,
     SeoPageOut,
     TeamMemberOut,
@@ -103,8 +104,260 @@ def _stamp_safe(moment: datetime | None) -> str:
 
 
 # ── Agents ─────────────────────────────────────────────────────────────────
+@dataclass(slots=True)
+class GuideEnv:
+    """Workspace facts the plain-language agent guide is computed from."""
+
+    #: Connector slugs a run would receive: connected, with complete credentials.
+    usable: frozenset[str]
+    enabled_connectors: set[str]
+    guardrail: str
+    #: On-Page SEO Sync has collected at least one page.
+    has_pages: bool
+    #: ``(agent slug, capability) -> ConnectorPolicy`` — what the plan allows
+    #: (app.services.entitlements). None means unrestricted.
+    policy: object = None
+    #: Practice mode set above the agent: "platform", "workspace" or "".
+    practice: str = ""
+    #: ``slug -> bool``: verified against a live account
+    #: (app.services.verification). None when not looked up.
+    verified: object = None
+
+
+def guide_env(db: Session, tenant_id: str) -> GuideEnv:
+    from app.models.workspace import OnboardingState, Organization
+    from app.services import portal_features
+    from app.services.connectors import build_connector_bundle
+
+    org = db.get(Organization, tenant_id)
+    usable = build_connector_bundle(db, org).connected if org is not None else frozenset()
+    state = db.execute(
+        select(OnboardingState).where(OnboardingState.tenant_id == tenant_id)
+    ).scalar_one_or_none()
+    has_pages = (
+        db.execute(
+            select(func.count()).select_from(SeoPage).where(SeoPage.tenant_id == tenant_id)
+        ).scalar_one()
+        > 0
+    )
+    from app.services import entitlements
+
+    return GuideEnv(
+        usable=usable,
+        # Unverified types hidden in Portal Admin are not offered as options
+        # (one this workspace already connected still is).
+        enabled_connectors=set(portal_features.offered_connector_slugs(db, connected=usable)),
+        guardrail=state.guardrail if state else "hybrid",
+        has_pages=has_pages,
+        policy=entitlements.lookup(db, org),
+        **_safety_env(db, org),
+    )
+
+
+def _safety_env(db: Session, org) -> dict:  # noqa: ANN001
+    """Practice mode above the agent, and the verification lookup."""
+    from app.services import agent_safety, verification
+
+    if org is None:
+        return {}
+    if agent_safety.platform_switch(db, agent_safety.PLATFORM_PRACTICE):
+        practice = "platform"
+    elif agent_safety.workspace_practice_on(org):
+        practice = "workspace"
+    else:
+        practice = ""
+    seen: dict[str, bool] = {}
+
+    def verified(slug: str) -> bool:
+        if slug not in seen:
+            try:
+                seen[slug] = bool(verification.is_verified(db, slug))
+            except Exception:  # noqa: BLE001 - unknown means unproven
+                seen[slug] = False
+        return seen[slug]
+
+    return {"practice": practice, "verified": verified}
+
+
+def _need_options(options) -> list:  # noqa: ANN001
+    from app.schemas.workspace import NeedOptionOut
+
+    return [
+        NeedOptionOut(
+            slug=o.slug,
+            name=o.name,
+            connected=o.connected,
+            locked=getattr(o, "locked", False),
+            locked_reason=getattr(o, "locked_reason", ""),
+        )
+        for o in options
+    ]
+
+
+def _need_uses(uses) -> list:  # noqa: ANN001
+    from app.schemas.workspace import NeedUseOut
+
+    return [
+        NeedUseOut(
+            capability=u.capability,
+            mode=u.mode,
+            question=u.question,
+            primary=u.primary,
+            control=u.control,
+            automatic_option=u.automatic_option,
+            chosen=list(u.chosen),
+            selected=list(u.selected),
+            stale=u.stale,
+            using=_need_options(u.using),
+            options=_need_options(u.options),
+            statement=u.statement,
+            automatic_statement=u.automatic_statement,
+            template=u.template,
+            note=u.note,
+        )
+        for u in uses
+    ]
+
+
+def _guide_fields(record: AgentRecord, env: GuideEnv | None) -> dict:
+    """Summary, effect, prerequisites and approval sentence for one agent."""
+    from app.agents.base.plain import guide_for
+    from app.agents.base.policy import resolve_guardrail
+    from app.schemas.workspace import AgentNeedOut, NeedOptionOut
+    from app.services import agent_requirements as req
+
+    agent = get_agent(record.slug)
+    guide = guide_for(record.slug)
+    if agent is None or guide is None:
+        return {}
+    fields: dict = {
+        "summary": guide.summary,
+        "effect": guide.effect,
+        "makes_changes": guide.makes_changes,
+        "scope_label": guide.scope_label,
+        "scope_help": guide.scope_help,
+        "uses_scope": guide.uses_scope,
+        "settings_fields": [
+            {
+                "key": spec.key,
+                "label": spec.label,
+                "help": spec.help,
+                "kind": spec.kind,
+                "default": spec.default,
+                "value": str((record.settings or {}).get(spec.key, "") or ""),
+            }
+            for spec in guide.settings
+        ],
+    }
+    if env is None:
+        return fields
+
+    from app.agents.base.choice import saved_choices
+
+    choices = saved_choices(record.settings)
+    described: set[str] = set()
+    needs: list[AgentNeedOut] = [
+        AgentNeedOut(
+            key=need.key,
+            label=need.label,
+            satisfied=need.satisfied,
+            note=need.note,
+            options=_need_options(need.options),
+            uses=_need_uses(need.uses),
+        )
+        for need in req.needs_for(
+            agent,
+            usable=env.usable,
+            enabled=env.enabled_connectors,
+            llm_choice=record.llm_connector or "",
+            choices=choices,
+            described=described,
+            policy=env.policy,
+            settings=record.settings,
+        )
+    ]
+    if guide.uses_data_from:
+        source = get_agent(guide.uses_data_from)
+        name = source.spec.name if source else guide.uses_data_from
+        needs.append(
+            AgentNeedOut(
+                key=f"data:{guide.uses_data_from}",
+                kind="agent",
+                label=f"Pages collected by {name}",
+                satisfied=env.has_pages,
+                note=f"Set up and run {name} first. This agent works on the pages it collects.",
+                options=[
+                    NeedOptionOut(slug=guide.uses_data_from, name=name, connected=env.has_pages)
+                ],
+            )
+        )
+    if guide.scope_required_setting:
+        filled = bool((record.scope or "").strip()) or bool(
+            (record.settings or {}).get(guide.scope_required_setting)
+        )
+        needs.append(
+            AgentNeedOut(
+                key="scope",
+                kind="setting",
+                label=guide.scope_label.replace(" (required)", ""),
+                satisfied=filled,
+                note="Enter it in this agent's settings.",
+            )
+        )
+    for extra in guide.optional:
+        options = req.options_for(
+            extra.capability, usable=env.usable, enabled=env.enabled_connectors
+        )
+        needs.append(
+            AgentNeedOut(
+                key=extra.capability.value,
+                label=req.plain(extra.capability),
+                satisfied=any(o.connected for o in options),
+                optional=True,
+                note=extra.note,
+                options=_need_options(options),
+                uses=_need_uses(
+                    req.uses_for(
+                        agent,
+                        (extra.capability,),
+                        usable=env.usable,
+                        enabled=env.enabled_connectors,
+                        choices=choices,
+                        described=described,
+                        policy=env.policy,
+                        settings=record.settings,
+                    )
+                ),
+            )
+        )
+    fields["needs"] = needs
+    fields["ready"] = all(n.satisfied for n in needs if not n.optional)
+    rail = resolve_guardrail(env.guardrail)
+    for key, autonomous in (
+        ("approval_behaviour", record.autonomy),
+        ("approval_if_auto", True),
+        ("approval_if_review", False),
+    ):
+        fields[key] = req.approval_behaviour(
+            agent, guardrail=rail, autonomous=autonomous, makes_changes=guide.makes_changes
+        )
+    fields["guardrail"] = rail.value
+    return fields
+
+
+def strict_model_on(record: AgentRecord) -> bool:
+    """The agent's "Always use the model I picked" switch, as the runner reads it."""
+    from app.orchestration.runner import STRICT_MODEL_SETTING
+
+    return (getattr(record, "settings", None) or {}).get(STRICT_MODEL_SETTING) is True
+
+
 def agent_out(
-    record: AgentRecord, *, can_write: bool, run: AgentRun | None = None
+    record: AgentRecord,
+    *,
+    can_write: bool,
+    run: AgentRun | None = None,
+    env: GuideEnv | None = None,
 ) -> AgentOut:
     """One agent card.
 
@@ -122,15 +375,22 @@ def agent_out(
             f"notify {record.notify_channel}",
             f"max {record.max_actions_per_day}/day",
         ]
-        if requires_llm and record.llm_connector:
+        if requires_llm:
             from app.connectors.base import registry as connector_registry
+            from app.llm.from_connector import effective_llm
 
-            spec = connector_registry.get_spec(record.llm_connector)
-            label = spec.name if spec else record.llm_connector
-            parts.insert(1, f"model {label}")
+            using = (
+                effective_llm(record.llm_connector, env.usable)[0]
+                if env is not None
+                else (record.llm_connector or "")
+            )
+            if using:
+                spec = connector_registry.get_spec(using)
+                parts.insert(1, f"model {spec.name if spec else using}")
         config_summary = " · ".join(parts)
 
     return AgentOut(
+        id=str(record.id or ""),
         slug=record.slug,
         name=record.name,
         category=record.category,
@@ -157,7 +417,177 @@ def agent_out(
         last_error=record.last_error,
         actions_today=record.actions_today,
         read_only=not can_write,
+        strict_model=requires_llm and strict_model_on(record),
+        **_safety_fields(record, env),
+        **_guide_fields(record, env),
     )
+
+
+# ── Runs ───────────────────────────────────────────────────────────────────
+RUN_STATE_LABELS: dict[str, str] = {
+    "running": "Running",
+    "interrupted": "Interrupted",
+    "succeeded": "Completed",
+    "skipped": "Did not go ahead",
+    "failed": "Failed",
+}
+
+
+def _parse_moment(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _duration(seconds: int) -> str:
+    seconds = max(int(seconds), 0)
+    if seconds < 60:
+        return f"{max(seconds, 1)}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60:02d}s"
+    return f"{seconds // 3600}h {(seconds % 3600) // 60:02d}m"
+
+
+def run_state(run: AgentRun) -> str:
+    """A run's state, with abandoned passes told apart from live ones.
+
+    Uses the scheduler's claim lease — the same bound ``_already_running``
+    uses to unblock Run now — so the console and the server agree on when a
+    pass is presumed dead.
+    """
+    from app.core.config import settings
+    from app.models.agent import RunStatus
+
+    if run.status == RunStatus.RUNNING.value:
+        lease = timedelta(minutes=settings.scheduler_claim_lease_minutes)
+        if run.started_at is not None and utcnow() - run.started_at > lease:
+            return "interrupted"
+        return "running"
+    return run.status
+
+
+def run_out(run: AgentRun, *, agent_name: str = "", events: list | None = None) -> AgentRunOut:
+    from app.schemas.workspace import RunEventOut, RunStepOut
+
+    state = run_state(run)
+    timeline = []
+    for entry in (run.detail or {}).get("timeline") or []:
+        total = int(entry.get("total") or 0)
+        done = int(entry.get("done") or 0)
+        timeline.append(
+            RunStepOut(
+                label=str(entry.get("label") or ""),
+                text=str(entry.get("text") or entry.get("label") or ""),
+                done=done,
+                total=total,
+                percent=round(done / total * 100) if total > 0 else None,
+                at=_parse_moment(entry.get("at")),
+                ended_at=_parse_moment(entry.get("ended_at")),
+            )
+        )
+    last_update = None
+    if timeline:
+        raw = ((run.detail or {}).get("timeline") or [])[-1]
+        last_update = _parse_moment(raw.get("updated_at")) or timeline[-1].at
+    if state == "running":
+        elapsed = int((utcnow() - run.started_at).total_seconds()) if run.started_at else 0
+    else:
+        elapsed = int((run.duration_ms or 0) / 1000)
+    total = run.step_total or 0
+    return AgentRunOut(
+        id=run.id,
+        agent_slug=run.agent_slug,
+        agent_name=agent_name,
+        trigger=run.trigger,
+        triggered_by=run.triggered_by or "",
+        status=run.status,
+        state=state,
+        state_label=RUN_STATE_LABELS.get(state, state.title()),
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        duration_ms=run.duration_ms or 0,
+        duration_label=_duration(elapsed) if state != "interrupted" else "",
+        actions_taken=run.actions_taken or 0,
+        actions_queued=run.actions_queued or 0,
+        summary=run.summary or "",
+        error=run.error or "",
+        cost=run.cost or 0.0,
+        step=run.step if state == "running" else "",
+        step_percent=(
+            round((run.step_done or 0) / total * 100) if state == "running" and total > 0 else None
+        ),
+        last_update_at=last_update,
+        timeline=timeline,
+        events=[
+            RunEventOut(
+                at=entry.at,
+                action=entry.action,
+                awaiting_approval=bool((entry.context or {}).get("awaiting_approval")),
+                practice=bool((entry.context or {}).get("practice")),
+                held=[str(n) for n in ((entry.context or {}).get("held") or [])],
+            )
+            for entry in (events or [])
+        ],
+        actions_practised=int((run.detail or {}).get("practised") or 0),
+        practice=str((run.detail or {}).get("practice") or ""),
+    )
+
+
+def run_events(db: Session, *, tenant_id: str, run_id: str) -> list[AuditLogEntry]:
+    """Audit entries a run recorded, oldest first."""
+    return list(
+        db.execute(
+            select(AuditLogEntry)
+            .where(
+                AuditLogEntry.tenant_id == tenant_id,
+                AuditLogEntry.context["run_id"].astext == run_id,
+            )
+            .order_by(AuditLogEntry.at)
+            .limit(200)
+        ).scalars()
+    )
+
+
+def agent_activity(db: Session, *, tenant_id: str, recent: int = 12) -> dict:
+    """Runs open now (live or interrupted), and the most recent finished ones."""
+    from app.models.agent import RunStatus
+    from app.services import portal_features
+
+    names = {
+        r.slug: r.name
+        for r in db.execute(select(AgentRecord).where(AgentRecord.tenant_id == tenant_id)).scalars()
+    }
+    allowed = portal_features.enabled_agent_slugs(db)
+    open_runs = db.execute(
+        select(AgentRun)
+        .where(AgentRun.tenant_id == tenant_id, AgentRun.status == RunStatus.RUNNING.value)
+        .order_by(AgentRun.started_at.desc())
+        .limit(50)
+    ).scalars()
+    finished = db.execute(
+        select(AgentRun)
+        .where(AgentRun.tenant_id == tenant_id, AgentRun.status != RunStatus.RUNNING.value)
+        .order_by(AgentRun.started_at.desc())
+        .limit(recent * 2)
+    ).scalars()
+    running_out = [
+        run_out(run, agent_name=names.get(run.agent_slug, run.agent_slug))
+        for run in open_runs
+        if run.agent_slug in allowed
+    ]
+    # Only live passes are "running"; interrupted ones belong with history.
+    live = [r for r in running_out if r.state == "running"]
+    interrupted = [r for r in running_out if r.state == "interrupted"]
+    recent_out = [
+        run_out(run, agent_name=names.get(run.agent_slug, run.agent_slug))
+        for run in finished
+        if run.agent_slug in allowed
+    ]
+    merged = sorted(interrupted + recent_out, key=lambda r: r.started_at, reverse=True)[:recent]
+    return {"running": live, "recent": merged}
 
 
 def _agent_status_label(status: str) -> str:
@@ -201,12 +631,11 @@ def _run_progress(run: AgentRun | None) -> dict:
     doing; the percentage is only offered where the step has a countable
     total, because a bar that invents its own progress is worse than no bar.
     """
-    from app.models.agent import RunStatus
-
+    
     if run is None:
         return {}
 
-    busy = run.status == RunStatus.RUNNING.value
+    busy = run_state(run) == "running"
     total = run.step_total or 0
     percent = round(run.step_done / total * 100) if busy and total > 0 else None
     return {
@@ -218,8 +647,15 @@ def _run_progress(run: AgentRun | None) -> dict:
         "busy_for": f"running for {_elapsed(run.started_at)}" if busy else "",
         # The finished pass's own words. Shown when nothing is open, so the
         # card reports what it last achieved rather than only its status.
-        "last_run_summary": "" if busy else (run.summary or ""),
-        "last_run_status": "" if busy else run.status,
+        "last_run_summary": ""
+        if busy
+        else (
+            "The previous run was interrupted before it finished — it stopped "
+            "reporting and will not resume. The next scheduled run starts fresh."
+            if run_state(run) == "interrupted"
+            else (run.summary or "")
+        ),
+        "last_run_status": "" if busy else run_state(run),
     }
 
 
@@ -268,8 +704,9 @@ def list_agents(db: Session, *, tenant_id: str, can_write: bool) -> list[AgentOu
     ).scalars():
         newest.setdefault(run.agent_slug, run)
 
+    env = guide_env(db, tenant_id)
     return [
-        agent_out(record, can_write=can_write, run=newest.get(record.slug))
+        agent_out(record, can_write=can_write, run=newest.get(record.slug), env=env)
         for record in records
     ]
 
@@ -289,9 +726,248 @@ def _connector_rank(record: ConnectorRecord) -> int:
     return connector_rank(record)
 
 
-def connector_out(record: ConnectorRecord, *, can_write: bool) -> ConnectorOut:
+@dataclass(slots=True)
+class ConnectContext:
+    """Workspace facts the connect screen needs beyond one record."""
+
+    #: A workspace admin or a portal admin: sees who can switch a sign-in
+    #: on, and the developer route.
+    show_admin_notes: bool = False
+    #: A portal admin: can switch a sign-in on themselves.
+    is_portal_admin: bool = False
+    #: provider -> the address already signed in for this workspace.
+    accounts: dict[str, str] = field(default_factory=dict)
+    #: provider -> [(slug, name)] of connectors not yet connected.
+    not_connected: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
+
+
+def connect_guide(record: ConnectorRecord, ctx: ConnectContext | None = None):  # noqa: ANN201
+    """How the connect screen presents one integration. See ConnectGuideOut."""
+    from app.connectors.base import oauth_providers
+    from app.connectors.base.credentials import OAUTH_ACCOUNT_KEY, from_platform_sign_in
+    from app.schemas.workspace import ConnectGuideOut, ConnectLinkOut
+
+    ctx = ctx or ConnectContext()
     spec = connector_registry.get_spec(record.slug)
-    hints = dict(record.credential_hints or {})
+    if spec is None:
+        return ConnectGuideOut()
+
+    if spec.oauth is not None:
+        provider = oauth_providers.provider_for(spec)
+        label = provider.label if provider else ""
+        hints = record.credential_hints or {}
+        if provider is not None and provider.kind == "wordpress_app_password":
+            return ConnectGuideOut(
+                mode="wordpress",
+                provider=provider.name,
+                provider_label=label,
+                sign_in_available=True,
+                button_label="Continue to WordPress",
+                access_summary=spec.oauth.access_summary,
+                sign_in_hidden_fields=sorted(spec.oauth.token_fields),
+            )
+        available = oauth_providers.sign_in_available(spec)
+        signed_in = from_platform_sign_in(hints)
+        button = spec.oauth.button_label or f"Sign in with {label}"
+        admin = _sign_in_admin_extras(spec.oauth.provider, label, ctx) if not available else {}
+        if not available and not signed_in and spec.guide is not None:
+            # A connector with both a sign-in and a key guide (Bing
+            # Webmaster Tools, Mailchimp, Klaviyo): until the platform's app
+            # is set up, the guided key steps are the default path.
+            guide_out = _key_guide(spec.guide)
+            for key, value in admin.items():
+                if key != "developer_label":  # the key steps are the route here
+                    setattr(guide_out, key, value)
+            return guide_out
+        # A connection made with the customer's own app credentials keeps
+        # its form; everything else waits for the sign-in to be switched on.
+        own_app = record.connected and not signed_in
+        pending = not available and not own_app
+        also = [
+            ConnectLinkOut(slug=slug, name=name)
+            for slug, name in ctx.not_connected.get(spec.oauth.provider, [])
+            if slug != record.slug
+        ]
+        return ConnectGuideOut(
+            sign_in_note=sign_in_note(record, label) if signed_in else "",
+            manual_label=(
+                "Advanced: connect with your own Google Cloud app"
+                if spec.oauth.provider == "google"
+                # Phase 2B: a vendor whose manual route is a guided key.
+                else "Advanced: use an API key instead"
+                if spec.guide is not None
+                else f"Advanced: connect with your own {label} app or token"
+            ),
+            **_phase_2b_sign_in(spec, hints),
+            mode="sign_in",
+            provider=spec.oauth.provider,
+            provider_label=label,
+            sign_in_available=available,
+            button_label=button,
+            access_summary=spec.oauth.access_summary,
+            choice_noun=spec.oauth.choice_noun,
+            signed_in=signed_in,
+            signed_in_account=hints.get(OAUTH_ACCOUNT_KEY, "") if signed_in else "",
+            pending_choice=signed_in and not record.connected,
+            reuse_account=ctx.accounts.get(spec.oauth.provider, "") if available else "",
+            also_connect=also if available and record.connected and signed_in else [],
+            sign_in_hidden_fields=sorted(
+                spec.oauth.token_fields | spec.oauth.platform_fields | set(spec.oauth.choice_fields)
+            ),
+            setup_pending=pending,
+            setup_message=setup_message(button, label) if pending else "",
+            can_request_setup=pending and not ctx.show_admin_notes and not ctx.is_portal_admin,
+            **(admin if pending else {}),
+        )
+
+    if spec.guide is not None and not spec.advanced:
+        guide_out = _key_guide(spec.guide)
+        # Phase 2B: a key the platform includes, for a one-click connection.
+        if spec.platform_key is not None and spec.platform_key.available:
+            guide_out.platform_key_available = True
+            guide_out.platform_key_summary = spec.platform_key.summary
+        return guide_out
+    if spec.guide is not None:
+        # Phase 2B: a developer integration with plain steps (Zapier, Adobe).
+        guide_out = _key_guide(spec.guide)
+        guide_out.mode = "advanced"
+        return guide_out
+    return ConnectGuideOut(mode="advanced" if spec.advanced else "form")
+
+
+#: The connect-with-your-own-app-credentials route, offered only as a
+#: secondary link while a sign-in is not switched on.
+DEVELOPER_LABEL = "For developers: connect with your own app credentials"
+
+
+def setup_message(button_label: str, provider_label: str) -> str:
+    """What everyone sees on a sign-in that is not switched on yet."""
+    what = button_label if button_label.startswith("Sign in with") else f"“{button_label}”"
+    return (
+        f"{what} isn't switched on for this workspace yet. Once your administrator "
+        "switches it on, you'll connect in one click."
+    )
+
+
+def _sign_in_admin_extras(provider: str, label: str, ctx: ConnectContext) -> dict:
+    """Admin-only extras while a provider's sign-in is not set up: portal
+    admins get a link to set it up, workspace admins are told who can, and
+    both may use their own app credentials instead."""
+    if not ctx.show_admin_notes and not ctx.is_portal_admin:
+        return {}
+    extras: dict = {"developer_label": DEVELOPER_LABEL}
+    if ctx.is_portal_admin:
+        extras["admin_setup_url"] = f"/portal?tab=signin&provider={provider}"
+        extras["admin_setup_label"] = f"Set up Sign in with {label}"
+    else:
+        extras["admin_hint"] = (
+            f"Only admins see this: ask your platform administrator to set up Sign in with "
+            f"{label}. After that, everyone here connects in one click."
+        )
+    return extras
+
+
+def _sign_in_input_value(item, hints: dict[str, str]) -> str:  # noqa: ANN001
+    """The starting value of a sign-in input, from what the connection holds."""
+    current = str(hints.get(item.field, "")) if item.field else ""
+    if item.kind == "text":
+        return current
+    if item.value_when_on:
+        # A toggle that writes a value (Microsoft Ads: accountEnvironment).
+        return "true" if current.strip().lower() == item.value_when_on.lower() else ""
+    # Salesforce: the sandbox toggle wrote test.salesforce.com.
+    return "true" if "test." in current else ""
+
+
+def _phase_2b_sign_in(spec, hints: dict[str, str]) -> dict:  # noqa: ANN001
+    """Phase 2B extras for the sign-in path: inputs asked before leaving,
+    and the key guide offered under Advanced (Mailchimp, Klaviyo)."""
+    from app.schemas.workspace import SignInInputOut
+
+    extras: dict = {
+        "sign_in_inputs": [
+            SignInInputOut(
+                key=item.key,
+                label=item.label,
+                kind=item.kind,
+                placeholder=item.placeholder,
+                help_text=item.help_text,
+                value=_sign_in_input_value(item, hints),
+            )
+            for item in spec.oauth.sign_in_inputs
+        ]
+    }
+    if spec.guide is not None:
+        guide = spec.guide
+        extras.update(
+            steps=list(guide.steps),
+            key_url=guide.key_url,
+            key_url_label=guide.key_url_label,
+            key_field=guide.key_field,
+            key_pattern=guide.key_pattern,
+            key_hint=guide.key_hint,
+        )
+    return extras
+
+
+def _key_guide(guide, *, admin_note: str = ""):  # noqa: ANN001, ANN202
+    from app.schemas.workspace import ConnectGuideOut
+
+    return ConnectGuideOut(
+        mode="key",
+        steps=list(guide.steps),
+        key_url=guide.key_url,
+        key_url_label=guide.key_url_label,
+        key_field=guide.key_field,
+        key_pattern=guide.key_pattern,
+        key_hint=guide.key_hint,
+        admin_note=admin_note,
+    )
+
+
+#: Days before a non-renewing sign-in ends that the note turns into a warning.
+SIGN_IN_WARNING_DAYS = 14
+
+
+def sign_in_note(record: ConnectorRecord, label: str, *, now: datetime | None = None) -> str:
+    """One sentence about a sign-in that cannot renew itself (Meta's
+    long-lived token, LinkedIn without refresh), or "" when it renews."""
+    from app.connectors.base.credentials import SIGN_IN_EXPIRY_KEY
+
+    raw = (record.credential_hints or {}).get(SIGN_IN_EXPIRY_KEY, "")
+    try:
+        ends = datetime.fromtimestamp(float(raw), UTC) if raw else None
+    except (ValueError, OverflowError, OSError):
+        ends = None
+    if ends is None:
+        return ""
+    current = now or datetime.now(UTC)
+    day = f"{ends.day} {ends:%B %Y}"
+    if ends <= current:
+        return (
+            f"Your {label} sign-in for {record.name} has expired, so it has stopped "
+            "working. Choose Sign in again to reconnect it."
+        )
+    if ends - current <= timedelta(days=SIGN_IN_WARNING_DAYS):
+        return (
+            f"Your {label} sign-in ends on {day}. Choose Sign in again before then "
+            f"to keep {record.name} working."
+        )
+    return (
+        f"{label} sign-ins last about 60 days and do not renew themselves. This one "
+        f"ends on {day}; you will be reminded here before then."
+    )
+
+
+def connector_out(
+    record: ConnectorRecord, *, can_write: bool, ctx: ConnectContext | None = None
+) -> ConnectorOut:
+    spec = connector_registry.get_spec(record.slug)
+    from app.connectors.base.llm_fields import without_legacy_autofill
+
+    # An AI connection's old automatic fill-ins show as blank, so saving the
+    # form again clears them (see LEGACY_AUTOFILLED).
+    hints = without_legacy_autofill(record.slug, dict(record.credential_hints or {}))
 
     label = "Connected"
     if not record.connected:
@@ -304,7 +980,9 @@ def connector_out(record: ConnectorRecord, *, can_write: bool) -> ConnectorOut:
     return ConnectorOut(
         slug=record.slug,
         name=record.name,
-        category=record.category,
+        # The code's declaration wins: a category changed in a release must
+        # not stay stale on rows installed before it.
+        category=spec.category if spec else record.category,
         description=spec.description if spec else "",
         connected=record.connected,
         # attention | connected | available. Same rule as the sort, so the
@@ -332,7 +1010,32 @@ def connector_out(record: ConnectorRecord, *, can_write: bool) -> ConnectorOut:
         docs_url=spec.docs_url if spec else "",
         requirements=list(spec.requirements) if spec else [],
         read_only=not can_write,
+        connect=connect_guide(record, ctx),
+        verification=_verification_out(record.slug),
+        **_connector_guide(record.slug),
     )
+
+
+def _verification_out(slug: str):  # noqa: ANN202
+    """The "Beta" label: shown until the connector type passes a live check."""
+    from app.schemas.workspace import ConnectorVerificationOut
+    from app.services import verification
+
+    return ConnectorVerificationOut(**verification.label_for(slug))
+
+
+def _connector_guide(slug: str) -> dict:
+    """What an integration lets agents do, and which agents it serves."""
+    from app.schemas.workspace import NeedOptionOut
+    from app.services import agent_requirements as req
+
+    return {
+        "abilities": req.connector_abilities(slug),
+        "used_by": [
+            NeedOptionOut(slug=agent_slug, name=name, connected=False)
+            for agent_slug, name in req.agents_using(slug)
+        ],
+    }
 
 
 # ── SEO ────────────────────────────────────────────────────────────────────
@@ -366,6 +1069,10 @@ def referral_spam_out(event: ReferralSpamEvent) -> ReferralSpamOut:
 
 # ── Off-page ───────────────────────────────────────────────────────────────
 def backlink_out(target: BacklinkTarget, *, can_write: bool) -> BacklinkOut:
+    from app.agents.digital_pr_outreach.prompts import mask_email
+
+    # Decrypted by the column type; personal data, so only editors see it whole.
+    email = (target.contact_email or "").strip()
     return BacklinkOut(
         id=target.id,
         domain=target.domain,
@@ -375,6 +1082,10 @@ def backlink_out(target: BacklinkTarget, *, can_write: bool) -> BacklinkOut:
         status_label=target.status,
         relevance=round(target.relevance, 2),
         show_launch=target.status == "Discovered" and can_write,
+        authority_measured=target.authority > 0,
+        has_contact=bool(email),
+        contact_email_masked=mask_email(email),
+        contact_email=(email or None) if can_write else None,
     )
 
 
@@ -386,7 +1097,14 @@ def alert_out(alert: CompetitorAlert) -> CompetitorAlertOut:
         source_domain=alert.source_domain,
         authority=alert.authority,
         counter_launched=alert.counter_launched,
-        button_label="Counter-pitch launched" if alert.counter_launched else "Launch counter-pitch",
+        button_label=(
+            "Counter-pitch sent"
+            if alert.counter_launched
+            # Answered with a draft to the team: the publisher has no address yet.
+            else "Draft sent to your team"
+            if alert.counter_pitch_id
+            else "Launch counter-pitch"
+        ),
     )
 
 
@@ -440,9 +1158,23 @@ def audience_out(cluster: AudienceCluster) -> AudienceOut:
 
 
 # ── Approvals ──────────────────────────────────────────────────────────────
-def approval_out(item: ApprovalItem) -> ApprovalOut:
-    from app.services.approvals import humanize_age
+def approval_out(
+    item: ApprovalItem,
+    payload: dict | None = None,
+    *,
+    can_request_changes: bool = False,
+    can_edit_text: bool = False,
+    preview_file_id: str | None = None,
+) -> ApprovalOut:
+    """One approval card. ``payload`` (decrypted) adds why it waits, or
+    what a practised change would have done. The ``can_*`` flags are decided
+    by the caller, which knows both the item and the user's role."""
+    from app.models.approval import ApprovalStatus
+    from app.services.approvals import PRACTICE_KEY, humanize_age, why_waiting
 
+    practice = item.status == ApprovalStatus.PRACTISED.value
+    plan = (payload or {}).get(PRACTICE_KEY) if isinstance(payload, dict) else None
+    plan = plan if isinstance(plan, dict) else {}
     return ApprovalOut(
         id=item.id,
         type=item.type,
@@ -452,7 +1184,80 @@ def approval_out(item: ApprovalItem) -> ApprovalOut:
         meta=item.meta or humanize_age(utcnow() - item.submitted_at),
         target_kind=item.target_kind,
         submitted_at=item.submitted_at,
+        status=item.status,
+        practice=practice,
+        would=str(plan.get("would") or "") if practice else "",
+        why=[str(n) for n in plan.get("notes") or []] if practice else why_waiting(payload),
+        can_request_changes=can_request_changes,
+        can_edit_text=can_edit_text,
+        preview_file_id=preview_file_id,
     )
+
+
+# ── Spending-agent safety ──────────────────────────────────────────────────
+def _safety_fields(record: AgentRecord, env: GuideEnv | None) -> dict:
+    """Practice mode and the verified-connector note, for a spending agent."""
+    from app.agents.base import safety
+
+    if not safety.is_spending_agent(record.slug):
+        return {}
+    own = safety.agent_practice_on(record.slug, record.settings)
+    source = getattr(env, "practice", None) if env is not None else None
+    if source is None:
+        source = "agent" if own else ""
+    elif source in ("", "agent"):
+        # The workspace or platform switch is off: the agent's own decides.
+        source = "agent" if own else ""
+    if source == "platform":
+        note = (
+            "Practice mode is on for every workspace, set by the platform team: this "
+            "agent plans changes but doesn't send them."
+        )
+    elif source == "workspace":
+        note = (
+            "Practice mode is on for all spending agents in this workspace: this agent "
+            "plans changes but doesn't send them."
+        )
+    elif source == "agent":
+        note = "This agent plans changes and records them, but doesn't send them."
+    else:
+        note = "This agent sends the changes it makes to your ad accounts."
+    return {
+        "spending": True,
+        "practice_mode": own,
+        "practice_source": source,
+        "practice_note": note,
+        "automatic_note": _automatic_note(record, env),
+    }
+
+
+def _automatic_note(record: AgentRecord, env: GuideEnv | None) -> str:
+    """ "Automatic changes switch on once <connector> is verified." """
+    from app.agents.base import safety
+    from app.connectors.base import registry as connector_registry
+
+    capability = safety.SPENDING_AGENTS.get(record.slug)
+    verified = getattr(env, "verified", None) if env is not None else None
+    if capability is None or verified is None:
+        return ""
+    names = []
+    for slug in sorted(env.usable):
+        spec = connector_registry.get_spec(slug)
+        if spec is None or capability not in spec.capabilities:
+            continue
+        if not verified(slug):
+            names.append(spec.name)
+    if names:
+        return safety.automatic_note(names)
+    if not any(
+        (spec := connector_registry.get_spec(slug)) is not None and capability in spec.capabilities
+        for slug in env.usable
+    ):
+        return (
+            "Automatic changes switch on once the ad platform it uses is connected and "
+            "verified against a live account."
+        )
+    return ""
 
 
 # ── Admin ──────────────────────────────────────────────────────────────────

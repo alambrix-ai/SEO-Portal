@@ -52,7 +52,7 @@ const CHIPS = new Set([
 ])
 
 /** Amounts, rendered in the workspace's currency rather than as a bare float. */
-const MONEY = new Set(['spend_saved', 'spend', 'budget', 'monthly_budget', 'cost'])
+const MONEY = new Set(['spend_saved', 'spend', 'budget', 'monthly_budget', 'cost', 'budget_moved_per_day'])
 
 /** Figures that are a 0-100 score. */
 const SCORES = new Set(['gap_score', 'authority', 'relevance', 'confidence', 'cohesion'])
@@ -67,7 +67,18 @@ function isInternal(key: string): boolean {
 }
 
 /** `source_page_url` -> `Source page url` -> `Source page URL`. */
+/** Plain names for the budget plan's before / after figures. */
+const NAMES: Record<string, string> = {
+  before: 'Before (share of budget, %)',
+  percents: 'After (share of budget, %)',
+  shifts: 'Change (points)',
+  moved_points: 'Share of budget moved (%)',
+  budget_moved_per_day: 'Daily budget moved',
+  export_only: 'Download file only',
+}
+
 function humanise(key: string): string {
+  if (NAMES[key]) return NAMES[key]
   const words = key.replace(/_/g, ' ').trim()
   const sentence = words.charAt(0).toUpperCase() + words.slice(1)
   return sentence
@@ -94,7 +105,9 @@ function scalar(key: string, value: unknown): ReactNode {
 }
 
 export function PayloadView({ payload }: { payload: Record<string, unknown> }) {
-  const entries = Object.entries(payload).filter(
+  // Keys starting with "_" are internal bookkeeping (e.g. the counters a
+  // change earns once applied), not part of the proposal itself.
+  const entries = Object.entries(payload).filter(([key]) => !key.startsWith('_')).filter(
     ([key, value]) =>
       !isInternal(key) && value !== null && value !== undefined && value !== '',
   )

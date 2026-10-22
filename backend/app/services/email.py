@@ -11,21 +11,28 @@ Provider is chosen from ``APP_ENV`` (not “whichever key is set”):
 * ``test`` → Resend HTTPS (integration / hosted testing)
 * ``staging`` / ``production`` → Resend HTTPS (Render blocks SMTP)
 
-In development, with ``SMTP_HOST`` unset, the message is written to the log
-instead — the code is right there in the console.
+In development, with ``SMTP_HOST`` unset, nothing is sent and the log says
+so. The log never holds a recipient address, a subject or a body (a subject
+or body can carry a sign-in code): a recipient appears only as
+:func:`recipient_ref`, a short hash that correlates repeats. For local work
+without a mail server, ``DEV_LOG_SIGN_IN_CODES=true`` additionally prints the
+one-time code itself to this process's log — only with ``APP_ENV=development``,
+never in test, staging or production.
 """
 from __future__ import annotations
 
+import hashlib
+import logging
 import smtplib
 import ssl
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from email.message import EmailMessage
 from email.utils import formataddr
 
 import httpx
 
 from app.core.config import settings
-from app.core.logging import get_logger
+from app.core.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
@@ -41,10 +48,21 @@ class Message:
     # file, which is read by more people than the mailbox is and kept longer.
     # So logging uses this label and never the subject or the body.
     log_label: str = ""
+    # The one-time code alone, for the development-only log in :func:`_send`.
+    # Kept out of repr so it cannot reach a log by accident.
+    dev_code: str = field(default="", repr=False)
 
     @property
     def label(self) -> str:
-        return self.log_label or self.subject
+        # Never the subject: an unlabelled message is logged generically.
+        return self.log_label or "message"
+
+
+def recipient_ref(address: str) -> str:
+    """A 12-character hash of an address, for logs: the same mailbox always
+    gives the same value, and the address cannot be read back from it."""
+    normalised = (address or "").strip().lower()
+    return hashlib.sha256(normalised.encode("utf-8", "replace")).hexdigest()[:12]
 
 
 def _send_via_resend(message: Message) -> bool:
@@ -66,17 +84,19 @@ def _send_via_resend(message: Message) -> bool:
             timeout=20.0,
         )
     except httpx.HTTPError as exc:
-        log.error("Resend delivery to %s failed: %s", message.to, exc)
-        return False
-    if response.status_code >= 400:
-        log.error(
-            "Resend delivery to %s failed: HTTP %s %s",
-            message.to,
-            response.status_code,
-            response.text[:300],
+        log_failure(
+            log, "Resend delivery failed", exc, level=logging.ERROR, to=recipient_ref(message.to)
         )
         return False
-    log.info("Sent %r to %s via Resend", message.label, message.to)
+    if response.status_code >= 400:
+        # Status only: the response body can echo the recipient back.
+        log.error(
+            "Resend delivery failed: HTTP %s to=%s",
+            response.status_code,
+            recipient_ref(message.to),
+        )
+        return False
+    log.info("Sent %r to=%s via Resend", message.label, recipient_ref(message.to))
     return True
 
 
@@ -105,9 +125,13 @@ def _send_via_smtp(message: Message) -> bool:
     except (smtplib.SMTPException, OSError) as exc:
         # A failed notification must not fail the request that triggered it;
         # the user can always ask for another link.
-        log.error("SMTP delivery to %s failed: %s", message.to, exc)
+        # log_failure masks addresses in the error text (a refused
+        # recipient is named in it).
+        log_failure(
+            log, "SMTP delivery failed", exc, level=logging.ERROR, to=recipient_ref(message.to)
+        )
         return False
-    log.info("Sent %r to %s", message.label, message.to)
+    log.info("Sent %r to=%s", message.label, recipient_ref(message.to))
     return True
 
 
@@ -116,25 +140,43 @@ def _use_resend() -> bool:
     return settings.app_env in ("test", "staging", "production")
 
 
+def _dev_log_flag() -> object:
+    """``DEV_LOG_SIGN_IN_CODES``. Config refuses it outside development."""
+    return settings.dev_log_sign_in_codes
+
+
+def _dev_code_logging() -> bool:
+    """True only in development with ``DEV_LOG_SIGN_IN_CODES`` set to true."""
+    return settings.app_env == "development" and _dev_log_flag() is True
+
+
 def _send(message: Message) -> bool:
     """Return True when handed to a mail provider, False when only logged."""
     if settings.app_env == "development":
         if not settings.smtp_host:
             log.info(
-                "[email:not-configured] to=%s subject=%s\n%s",
-                message.to,
-                message.subject,
-                message.text,
+                "[email:not-configured] %r to=%s not sent (set SMTP_HOST to deliver)",
+                message.label,
+                recipient_ref(message.to),
             )
+            if message.dev_code and _dev_code_logging():
+                # Developer convenience, development only: the code, never
+                # the address, subject or body.
+                log.warning(
+                    "[email:dev-code] %s code for to=%s: %s",
+                    message.label,
+                    recipient_ref(message.to),
+                    message.dev_code,
+                )
             return False
         return _send_via_smtp(message)
 
     # APP_ENV=test (and staging/production): Resend only
     if not settings.resend_api_key:
         log.error(
-            "APP_ENV=%s requires RESEND_API_KEY to send mail to %s",
+            "APP_ENV=%s requires RESEND_API_KEY to send mail (to=%s)",
             settings.app_env,
-            message.to,
+            recipient_ref(message.to),
         )
         return False
     return _send_via_resend(message)
@@ -158,6 +200,7 @@ def send_login_code(*, to: str, name: str, code: str, minutes: int) -> bool:
             to=to,
             subject=f"Your {settings.app_name} sign-in code: {code}",
             log_label="sign-in code",
+            dev_code=code,
             text=(
                 f"{greeting}"
                 f"Your sign-in code is:\n\n    {_code_block(code)}\n\n"
@@ -178,6 +221,7 @@ def send_signup_code(*, to: str, code: str, minutes: int) -> bool:
             to=to,
             subject=f"Your {settings.app_name} verification code: {code}",
             log_label="sign-up code",
+            dev_code=code,
             text=(
                 "Use this code to confirm your email address and finish "
                 f"creating your {settings.app_name} workspace:\n\n"
@@ -196,6 +240,7 @@ def send_invitation(*, to: str, org_name: str, inviter: str, role_label: str, to
         Message(
             to=to,
             subject=f"{inviter} invited you to {org_name} on {settings.app_name}",
+            log_label="invitation",
             text=(
                 f"{inviter} has invited you to join {org_name} as {role_label}.\n\n"
                 f"Accept the invitation here:\n\n{url}\n\n"

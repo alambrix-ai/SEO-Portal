@@ -7,8 +7,14 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.connectors.base.connector import Capability, ConnectorSpec, HealthReport
-from app.connectors.base.credentials import oauth, text
+from app.connectors.base.connector import (
+    Capability,
+    ConnectorSpec,
+    HealthReport,
+    OAuthBinding,
+    OAuthChoice,
+)
+from app.connectors.base.credentials import text
 from app.connectors.base.oauth import OAuthTokenMixin, token_fields
 from app.connectors.base.interfaces import AnalyticsConnector, SessionMetrics, TrafficSample
 from app.core.exceptions import ConnectorError
@@ -16,6 +22,32 @@ from app.core.logging import get_logger
 from app.db.base import utcnow
 
 log = get_logger(__name__)
+
+#: Lists the properties an account can reach, for the sign-in "choose" step.
+ADMIN_API = "https://analyticsadmin.googleapis.com/v1beta"
+
+
+def parse_account_summaries(data: dict) -> list[OAuthChoice]:
+    """Properties out of an ``accountSummaries.list`` response."""
+    out: list[OAuthChoice] = []
+    for account in data.get("accountSummaries") or []:
+        account_name = str(account.get("displayName") or "")
+        for prop in account.get("propertySummaries") or []:
+            resource = str(prop.get("property") or "")
+            if not resource.startswith("properties/"):
+                continue
+            number = resource.split("/", 1)[1]
+            out.append(
+                OAuthChoice(
+                    id=resource,
+                    label=str(prop.get("displayName") or resource),
+                    detail=f"Account: {account_name} · Property ID {number}"
+                    if account_name
+                    else f"Property ID {number}",
+                    values={"propertyId": number},
+                )
+            )
+    return out
 
 
 class GoogleAnalytics4Connector(OAuthTokenMixin, AnalyticsConnector):
@@ -55,6 +87,18 @@ class GoogleAnalytics4Connector(OAuthTokenMixin, AnalyticsConnector):
         ),
         docs_url="https://developers.google.com/analytics/devguides/reporting/data/v1",
         base_url="https://analyticsdata.googleapis.com/v1beta",
+        # Read-only: every call here is a report or a listing. The referral
+        # exclusion is not written through any API (see exclude_referrer).
+        oauth=OAuthBinding(
+            provider="google",
+            scopes=("https://www.googleapis.com/auth/analytics.readonly",),
+            access_summary=(
+                "Read-only access to your Google Analytics reports, so agents can "
+                "see visits, sources and conversions. Nothing in Analytics is changed."
+            ),
+            choice_noun="property",
+            choice_fields=("propertyId",),
+        ),
     )
 
     token_url = "https://oauth2.googleapis.com/token"
@@ -85,7 +129,7 @@ class GoogleAnalytics4Connector(OAuthTokenMixin, AnalyticsConnector):
                 "dimensions": [{"name": "date"}],
                 "metrics": [
                     {"name": "sessions"},
-                    {"name": "conversions"},
+                    {"name": "keyEvents"},
                     {"name": "totalRevenue"},
                 ],
                 # Organic only: paid sessions are reported by the ad platforms,
@@ -160,30 +204,34 @@ class GoogleAnalytics4Connector(OAuthTokenMixin, AnalyticsConnector):
             )
         return out
 
-    def exclude_referrer(self, domain: str) -> bool:
-        """Add the domain to the property's unwanted-referrals list.
+    #: GA4 has no public API for the unwanted-referrals list — it lives under
+    #: the web stream's tag settings and is edited only in the GA4 interface.
+    #: (The old call POSTed to an Admin API path that does not exist and so
+    #: always failed.) Exposed so the console can say so instead of implying
+    #: the exclusion was pushed.
+    supports_referrer_exclusion = False
 
-        The Admin API surface for this is limited, so a rejection is reported
-        rather than raised: the platform-side block already stands.
+    def exclude_referrer(self, domain: str) -> bool:
+        """Not possible through any public GA4 API; always returns False.
+
+        Unwanted referrals are configured in GA4 → Admin → Data streams →
+        (web stream) → Configure tag settings → List unwanted referrals. The
+        platform-side block the spam guard records still stands; this only
+        means GA4's own list has to be edited by hand.
         """
-        try:
-            self.request(
-                "POST",
-                f"https://analyticsadmin.googleapis.com/v1alpha/{self.property_path}"
-                "/dataStreams:updateEnhancedMeasurementSettings",
-                json_body={"unwantedReferrals": [{"domain": domain}]},
-            )
-        except ConnectorError as exc:
-            log.info("GA4 declined a referral exclusion for %s: %s", domain, exc)
-            return False
-        return True
+        log.info(
+            "GA4 has no API for unwanted referrals; %s must be added in the GA4 "
+            "interface (Data streams → Configure tag settings)",
+            domain,
+        )
+        return False
 
     # ── Conversions ────────────────────────────────────────────────────────
     def read_conversions(self, *, days: int = 30) -> int:
         report = self._run_report(
             {
                 "dateRanges": [{"startDate": f"{days}daysAgo", "endDate": "today"}],
-                "metrics": [{"name": "conversions"}],
+                "metrics": [{"name": "keyEvents"}],
             }
         )
         rows = self._rows(report)
@@ -191,6 +239,63 @@ class GoogleAnalytics4Connector(OAuthTokenMixin, AnalyticsConnector):
             return 0
         metrics = rows[0].get("metricValues") or []
         return int(float(metrics[0].get("value") or 0)) if metrics else 0
+
+    # ── Sign-in ────────────────────────────────────────────────────────────
+    def list_oauth_choices(self) -> list[OAuthChoice]:
+        """Every GA4 property the signed-in account can see (Admin API)."""
+        choices: list[OAuthChoice] = []
+        page = ""
+        for _ in range(10):  # 200 per page; ten pages is far beyond a real account
+            params = {"pageSize": 200, **({"pageToken": page} if page else {})}
+            data = self.request(
+                "GET", f"{ADMIN_API}/accountSummaries", params=params
+            ) or {}
+            choices.extend(parse_account_summaries(data))
+            page = str(data.get("nextPageToken") or "")
+            if not page:
+                break
+        return choices
+
+    # ── Live checks ────────────────────────────────────────────────────────
+    def verify_steps(self) -> list:
+        """List the properties this sign-in reaches, then read yesterday's
+        figures with the same reports the agents run. Read-only throughout:
+        GA4 has nothing this connector writes."""
+        from app.connectors.base import verify_helpers as vh
+
+        def properties() -> tuple[str, dict]:
+            found = self.list_oauth_choices()
+            ids = [c.values.get("propertyId", "") for c in found]
+            configured = (self.credentials.get("propertyId") or "").strip().removeprefix("properties/")
+            detail = f"This sign-in can read {vh.plural(len(found), 'Analytics property', 'Analytics properties')}."
+            if configured:
+                detail += (
+                    " The chosen property is one of them."
+                    if configured in ids
+                    else " The chosen property is not among them."
+                )
+            return detail, {"count": len(found), "property_ids": ids[:20]}
+
+        def sessions() -> tuple[str, dict]:
+            rows = self.read_sessions(days=1)
+            total = sum(r.sessions for r in rows)
+            return (
+                f"Read organic sessions for yesterday and today: {total} over {vh.plural(len(rows), 'day')}.",
+                {"days": len(rows), "sessions": total},
+            )
+
+        def referrers() -> tuple[str, dict]:
+            rows = self.read_referrers(days=1, limit=5)
+            return (
+                f"Read the top traffic sources since yesterday: {vh.plural(len(rows), 'source')} with a referrer.",
+                {"count": len(rows)},
+            )
+
+        return [
+            vh.read_step("list_properties", "List the Analytics properties this sign-in can read", properties),
+            vh.read_step("sessions_yesterday", "Read organic sessions since yesterday", sessions),
+            vh.read_step("referrers_yesterday", "Read the top five traffic sources since yesterday", referrers),
+        ]
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
     def check_health(self) -> HealthReport:

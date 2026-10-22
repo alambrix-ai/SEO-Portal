@@ -180,8 +180,8 @@ class FakeAnalyticsConnector(AnalyticsConnector):
     def read_search_performance(self, *, days: int = 28) -> dict:
         return fake_data.search_performance(org_id=self.org_id, days=days)
 
-    def read_backlinks(self, *, limit: int = 100) -> list[dict]:
-        return fake_data.backlinks(org_id=self.org_id, limit=limit)
+    def read_backlinks(self, *, domain: str, limit: int = 50) -> list[dict]:
+        return fake_data.backlinks(org_id=f"{self.org_id}:{domain}", limit=limit)
 
     def read_conversions(self, *, days: int = 30) -> int:
         return fake_data.conversions(org_id=self.org_id, days=days)

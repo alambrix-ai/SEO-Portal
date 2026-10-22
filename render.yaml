@@ -1,4 +1,10 @@
-# Free-tier Render Blueprint — https://render.com/docs/blueprint-spec
+# TEST ONLY: Render Blueprint for a free test environment.
+# https://render.com/docs/blueprint-spec
+#
+# This is NOT a production deployment. Production is self-hosted with
+# docker-compose.yml (see docs/deployment.md): separate migrate, api, worker,
+# render-worker and beat services, Redis, a schema-owner/app-role split, and
+# Chromium rendering. None of that runs here.
 #
 # Target stack (all free):
 #   - automarket-api:     Docker web service on Render free plan
@@ -7,7 +13,7 @@
 #
 # Not used on this free path:
 #   - Redis / Key Value
-#   - Celery worker
+#   - Celery worker, render worker and beat
 #   - Render-managed Postgres
 #
 # Deploy:
@@ -15,12 +21,14 @@
 #   2. Push this repo to GitHub.
 #   3. In Render: New -> Blueprint, select the repo.
 #   4. Paste secrets when prompted (Neon URL, encryption keys, SMTP, LLM).
-#   5. After deploy, fix PUBLIC_BASE_URL / CORS / VITE_API_BASE_URL if Render
-#      assigned different subdomains than the placeholders below.
+#   5. After deploy, fix PUBLIC_BASE_URL / CORS / VITE_API_BASE_URL and the
+#      console's Content-Security-Policy if Render assigned different
+#      subdomains than the placeholders below.
 #
 # Free-tier notes:
 #   - The API sleeps after ~15 minutes idle; the first request wakes it slowly.
-#   - SCHEDULER_ENABLED only runs while the instance is awake.
+#   - SCHEDULER_ENABLED only runs while the instance is awake, so scheduled
+#     posts, metric collection and retention run late (or not at all) in test.
 
 services:
   - type: web
@@ -30,7 +38,8 @@ services:
     region: oregon
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    # Migrations + uvicorn live in backend/docker-entrypoint.sh (Dockerfile CMD).
+    # Migrations + uvicorn (--no-proxy-headers) live in
+    # backend/docker-entrypoint.sh (Dockerfile CMD).
     healthCheckPath: /health
     envVars:
       - key: APP_ENV
@@ -53,6 +62,28 @@ services:
         value: automarket-api.onrender.com
       - key: CORS_ORIGINS
         value: https://automarket-console.onrender.com
+      # Render's proxy addresses are not published. Left empty, every request
+      # appears to come from Render's proxy, so per-IP rate limits are shared
+      # by all testers. Calibrate it from the API log if that matters, and
+      # never set 0.0.0.0/0 (any caller could then choose its own address).
+      # TRUSTED_PROXIES is therefore not set here.
+      #
+      # Render terminates TLS at its edge and redirects http there. Without
+      # trusted proxies the app cannot see that a request came in over https,
+      # so its own redirect would loop: EDGE_TLS_TERMINATED turns it off
+      # (HSTS is still sent). Production refuses FORCE_HTTPS with neither.
+      - key: EDGE_TLS_TERMINATED
+        value: "true"
+      # TEST ENVIRONMENT ONLY. The Neon connection string is Neon's owner
+      # role, so the API runs as the table owner: row-level security rests on
+      # FORCE alone (an owner can switch it off), and the audit-log REVOKE
+      # does not apply. Treat this environment as having no RLS. There is
+      # no separate automarket_app role here, so the production startup check
+      # that refuses a superuser / BYPASSRLS / owning role is switched off.
+      # A real deployment uses docker-compose.yml with the role split from
+      # backend/scripts/bootstrap.sql and leaves this false.
+      - key: ALLOW_PRIVILEGED_DB_ROLE
+        value: "true"
       - key: SECRET_KEY
         generateValue: true
       - key: MASTER_ENCRYPTION_KEY
@@ -66,7 +97,24 @@ services:
         value: "1.0"
       - key: CELERY_ENABLED
         value: "false"
-      # Agent writing models come from Connectors (per agent), not env keys.
+      # Creative Studio: no Chromium on the free instance (512 MB). Render
+      # passes env vars to the Docker build as build args, so this also
+      # builds the image without the browser. Designs render with Pillow.
+      - key: INSTALL_CHROMIUM
+        value: "false"
+      - key: CREATIVE_RENDERER
+        value: pillow
+      # Creative Studio offers no AI model until these are set (deny-all by
+      # default). Paste the recommended values from backend/.env.example.
+      - key: CREATIVE_ALLOWED_TEXT_MODELS
+        sync: false
+      - key: CREATIVE_DENIED_TEXT_MODELS
+        sync: false
+      - key: CREATIVE_ALLOWED_IMAGE_MODELS
+        sync: false
+      - key: CREATIVE_DENIED_IMAGE_MODELS
+        sync: false
+      # Agent writing models come from Integrations (per agent), not env keys.
       - key: LLM_EFFORT
         value: medium
       - key: LLM_MAX_TOKENS
@@ -103,3 +151,29 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+    # The same security headers the production nginx console sends
+    # (frontend/nginx.conf and frontend/docker-entrypoint.sh). The API origin
+    # appears in img-src and connect-src, and report-uri sends violations to
+    # its POST /api/v1/csp-report: change all three with VITE_API_BASE_URL.
+    # The policy is Report-Only first, as in production (CSP_REPORT_ONLY):
+    # once the browser console shows no violations, rename the header to
+    # Content-Security-Policy.
+    headers:
+      - path: /*
+        name: Content-Security-Policy-Report-Only
+        value: "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com 'sha256-gEXg8wJ6NZcXg9kwIBG4qfliEImxcABXgQQr+woqmd8='; font-src https://fonts.gstatic.com; img-src 'self' blob: data: https://www.google.com https://*.gstatic.com https://icon.horse https://automarket-api.onrender.com; connect-src 'self' https://automarket-api.onrender.com; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; report-uri https://automarket-api.onrender.com/api/v1/csp-report"
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=31536000
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: Permissions-Policy
+        value: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()

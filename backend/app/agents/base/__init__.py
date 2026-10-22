@@ -6,7 +6,9 @@ from app.agents.base.contracts import (
     AgentResult,
     AgentSpec,
     BaseAgent,
+    ConnectorUse,
     Impact,
+    UseMode,
 )
 from app.agents.base.policy import Decision, Guardrail, decide, resolve_guardrail
 from app.agents.base.registry import all_agents, agent_slugs, get_agent
@@ -18,9 +20,11 @@ __all__ = [
     "AgentResult",
     "AgentSpec",
     "BaseAgent",
+    "ConnectorUse",
     "Decision",
     "Guardrail",
     "Impact",
+    "UseMode",
     "agent_slugs",
     "all_agents",
     "decide",

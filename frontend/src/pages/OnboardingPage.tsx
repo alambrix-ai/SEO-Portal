@@ -6,23 +6,25 @@
  * setup form for the workspace that still needs launching.
  */
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { api } from '@/api/client'
-import type { ConnectorOut, OnboardingOut, WorkspaceCard } from '@/api/types'
+import { needsConfirmation } from '@/api/history'
+import type { ConnectorOut, OnboardingOut, WorkspaceCard, WorkspacePolicyRequest } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
-import { BrandLogo } from '@/components/BrandLogo'
+import { useConfirm } from '@/components/Confirm'
 import { ConnectDialog } from '@/components/ConnectDialog'
 import { ConnectorIcon } from '@/components/ConnectorIcon'
 import { useToasts } from '@/components/Toasts'
 import { Dialog, ErrorState, Loading } from '@/components/ui'
 import { invalidateResourceCache, useResource } from '@/hooks/useResource'
+import { PUBLISH_AUTOMATICALLY_CONFIRM, REVIEW_SETTING_NAME, isReviewSetting, reviewSettingName } from '@/lib/plain'
 
 const STEPS = [
-  { label: 'Your site', purpose: 'Where your content lives' },
-  { label: 'Ad platforms', purpose: 'What we can spend and measure on' },
-  { label: 'Guardrails', purpose: 'How much the agents may do alone' },
-  { label: 'Review', purpose: 'What happens when you launch' },
+  { label: 'Your site', purpose: 'Domain and CMS' },
+  { label: 'Ad platforms', purpose: 'Optional' },
+  { label: REVIEW_SETTING_NAME, purpose: 'When agents ask you' },
+  { label: 'Launch', purpose: 'Review and go live' },
 ] as const
 
 function fallbackCards(session: NonNullable<ReturnType<typeof useAuth>['session']>): WorkspaceCard[] {
@@ -54,6 +56,7 @@ export function OnboardingPage() {
     deleteWorkspace,
   } = useAuth()
   const { push, fromResult, fromError } = useToasts()
+  const confirm = useConfirm()
 
   const orgId = session?.organization.id ?? ''
   const { data, loading, error, reload, set } = useResource(
@@ -78,6 +81,8 @@ export function OnboardingPage() {
   const [newDomain, setNewDomain] = useState('')
   /** Force the wizard open (e.g. after create, or "Continue setup"). */
   const [setupOpen, setSetupOpen] = useState(true)
+  /** Workspace list, shown on demand while a setup is in progress. */
+  const [hubOpen, setHubOpen] = useState(false)
   const readOnly = !canWrite('onboarding')
 
   useEffect(() => {
@@ -186,10 +191,11 @@ export function OnboardingPage() {
     }
   }
 
-  const save = async (partial: Partial<OnboardingOut> & { step?: number }) => {
+  /** Save part of the setup; true when the server accepted it. */
+  const save = async (partial: Partial<OnboardingOut> & { step?: number; confirm?: boolean }): Promise<boolean> => {
     if (readOnly) {
       push('View-only access for your role', 'warning')
-      return
+      return false
     }
     setBusy(true)
     try {
@@ -199,10 +205,63 @@ export function OnboardingPage() {
           domain: partial.domain,
           cms: partial.cms,
           guardrail: partial.guardrail,
+          confirm: partial.confirm,
         }),
       )
+      return true
     } catch (caught) {
       fromError(caught)
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * Persist the review setting the same way Team & Access does: one policy
+   * save (workspace choice + agents' switch) with a confirmation retry, then
+   * the wizard record. Rolls back the caller on failure.
+   */
+  const persistGuardrail = async (value: string): Promise<boolean> => {
+    if (readOnly) {
+      push('View-only access for your role', 'warning')
+      return false
+    }
+    if (!isReviewSetting(value)) {
+      return save({ guardrail: value, confirm: value === 'full' })
+    }
+    const body: WorkspacePolicyRequest = {
+      guardrail: value,
+      autonomous: value !== 'human',
+      confirm: value === 'full',
+    }
+    setBusy(true)
+    try {
+      try {
+        await api.setWorkspacePolicy(body)
+      } catch (caught) {
+        if (body.confirm || !needsConfirmation(caught)) throw caught
+        if (!(await confirm(PUBLISH_AUTOMATICALLY_CONFIRM))) return false
+        await api.setWorkspacePolicy({ ...body, confirm: true })
+      }
+      // Policy already wrote the guardrail; keep the local choice even if
+      // the wizard record fails to save a second time.
+      try {
+        set(
+          await api.saveOnboarding({
+            guardrail: value,
+            confirm: value === 'full',
+          }),
+        )
+      } catch (caught) {
+        fromError(caught)
+      }
+      invalidateResourceCache('agents')
+      void refresh()
+      return true
+    } catch (caught) {
+      fromError(caught)
+      return false
     } finally {
       setBusy(false)
     }
@@ -221,7 +280,7 @@ export function OnboardingPage() {
         const list = connectors.data ?? (await api.connectors())
         const match = list.find((connector) => connector.slug === slug)
         if (!match) {
-          push(`Could not find the ${name} connector`, 'warning')
+          push(`Could not find the ${name} integration`, 'warning')
           return
         }
         if (!connectors.data) connectors.set(list)
@@ -251,12 +310,41 @@ export function OnboardingPage() {
     openConnector(platform.slug, platform.name)
   }
 
+  const pickGuardrail = async (value: string) => {
+    if (!state || readOnly) {
+      if (readOnly) push('View-only access for your role', 'warning')
+      return
+    }
+    // Turning on automatic publishing is the one choice that lets changes go
+    // live unseen, so it is confirmed rather than applied on a single click.
+    if (value === 'full' && state.guardrail !== 'full') {
+      const ok = await confirm(PUBLISH_AUTOMATICALLY_CONFIRM)
+      if (!ok) return
+    }
+    const wasTouched = touchedGuardrail
+    setTouchedGuardrail(true)
+    // Already saved as "full": nothing to send, and re-sending it would need
+    // confirming again.
+    if (value === 'full' && state.guardrail === 'full') return
+    const previous = state
+    set({ ...state, guardrail: value })
+    // Policy first (same as Team & Access), then the wizard record. The
+    // server refuses "full" without confirm; it is sent only after the
+    // dialog above was accepted.
+    const saved = await persistGuardrail(value)
+    if (!saved) {
+      // Show what is really saved, not the choice the server did not take.
+      set(previous)
+      setTouchedGuardrail(wasTouched)
+    }
+  }
+
   /** Tick = actually complete. Skipped / unfinished steps keep their number. */
   const isStepComplete = (index: number): boolean => {
     if (!state) return false
     if (index === 0) return Boolean(state.domain.trim() && state.cms)
     if (index === 1) return state.ad_platforms.some((platform) => platform.connected)
-    if (index === 2) return touchedGuardrail || state.completed
+    if (index === 2) return touchedGuardrail || state.completed || step > 2
     if (index === 3) return state.completed
     return false
   }
@@ -294,23 +382,32 @@ export function OnboardingPage() {
             }
           }
           if (!live?.connected) {
-            push('Connect your content system first, or tap Skip', 'warning')
+            push('Connect your content system to continue, or choose Skip for now', 'warning')
             openConnector(cmsOption.slug, cmsOption.name)
             return
           }
         }
       }
     }
-    if (step === 1) {
-      const anyAd = state.ad_platforms.some((platform) => platform.connected)
-      if (!anyAd) {
-        push('Connect at least one ad platform first, or tap Skip', 'warning')
+    // Step 1 (ad platforms) is optional, so Continue always advances.
+    if (step === 2) {
+      if (!state.guardrail) {
+        push('Choose when agents should ask you before publishing', 'warning')
         return
       }
-    }
-    if (step === 2 && !touchedGuardrail) {
-      push('Choose a guardrail before continuing', 'warning')
-      return
+      // The pre-selected (recommended) option is a valid choice; persist it.
+      // "full" is only ever pre-selected when it is already saved (the server
+      // never recommends it), so it is not re-sent without a confirmation.
+      if (!touchedGuardrail) {
+        setTouchedGuardrail(true)
+        if (state.guardrail !== 'full') {
+          const saved = await persistGuardrail(state.guardrail)
+          if (!saved) {
+            setTouchedGuardrail(false)
+            return
+          }
+        }
+      }
     }
     const target = Math.min(STEPS.length - 1, step + 1)
     setStep(target)
@@ -366,16 +463,31 @@ export function OnboardingPage() {
 
   return (
     <div className="onboard">
+      {showWizard && !hubOpen ? (
+        <div className="onboard-context">
+          <span>
+            Setting up <strong>{session.organization.name}</strong>
+          </span>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setHubOpen(true)}>
+            All workspaces ({workspaces.length})
+          </button>
+        </div>
+      ) : null}
+
+      {!showWizard || hubOpen ? (
       <section className="workspace-cards" aria-label="Your workspaces">
         <div className="workspace-cards-head">
           <div>
-            <div className="workspace-cards-eyebrow">Your workspaces</div>
-            <h2 className="workspace-cards-title">Choose where to work</h2>
+            <h2 className="workspace-cards-title">Workspaces</h2>
             <p className="workspace-cards-lede">
-              A workspace is one site setup — its own domain, agents, connectors,
-              and data. Add another with +, or open one to continue setup.
+              Each workspace is one site with its own domain, agents, integrations and data.
             </p>
           </div>
+          {showWizard ? (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setHubOpen(false)}>
+              Back to setup
+            </button>
+          ) : null}
         </div>
         <div className="workspace-cards-grid">
           {workspaces.map((ws) => {
@@ -439,17 +551,16 @@ export function OnboardingPage() {
           </button>
         </div>
       </section>
+      ) : null}
 
       {!showWizard && state?.completed ? (
         <section className="onboard-live card">
-          <BrandLogo height={22} />
-          <h2 className="onboard-h" style={{ marginTop: 12 }}>
+          <h2 className="onboard-h">
             {session.organization.name} is live
           </h2>
           <p className="onboard-lede">
             Domain {state.domain || session.organization.primary_domain || '—'} ·{' '}
-            {state.guardrail_label} guardrail. Add another workspace with +, or
-            reopen setup for this one.
+            {REVIEW_SETTING_NAME}: {reviewSettingName(state.guardrail)}.
           </p>
           <div className="onboard-live-actions">
             <button
@@ -461,7 +572,7 @@ export function OnboardingPage() {
                 setStep(STEPS.length - 1)
               }}
             >
-              Open workspace setup
+              Review setup
             </button>
             <button
               type="button"
@@ -469,7 +580,7 @@ export function OnboardingPage() {
               disabled={busy}
               onClick={goDashboard}
             >
-              Go to dashboard
+              Go to overview
             </button>
           </div>
         </section>
@@ -484,13 +595,12 @@ export function OnboardingPage() {
           ) : state ? (
             <>
               <header className="onboard-hero">
-                <BrandLogo height={26} />
                 <h1 className="onboard-title">
                   Set up {session.organization.name}
                 </h1>
                 <p className="onboard-sub">
-                  Four steps to launch this workspace. Nothing touches your site
-                  until you launch, and only within the guardrail you pick.
+                  Nothing touches your site until you launch, and then only as your
+                  review setting allows.
                 </p>
               </header>
 
@@ -530,9 +640,8 @@ export function OnboardingPage() {
                   <>
                     <h2 className="onboard-h">Where does your content live?</h2>
                     <p className="onboard-lede">
-                      The domain scopes everything for this workspace. Pick the
-                      content system — we will open its connector so you can
-                      connect credentials next.
+                      Everything in this workspace is scoped to this domain. Select your
+                      content system to connect it.
                     </p>
 
                     <div className="field">
@@ -587,8 +696,7 @@ export function OnboardingPage() {
                         ))}
                       </div>
                       <div className="field-hint">
-                        Choosing a CMS opens its connector — connect it before
-                        Continue, or use Skip / Other if you will wire it later.
+                        Selecting a system opens its connection form. Choose Skip to connect it later.
                       </div>
                     </div>
                   </>
@@ -598,9 +706,8 @@ export function OnboardingPage() {
                   <>
                     <h2 className="onboard-h">Ad platforms</h2>
                     <p className="onboard-lede">
-                      Optional. Tap a platform to connect it for this workspace.
-                      SEO agents do not need these — skip if you only want organic
-                      for now.
+                      Optional. Connect the platforms you advertise on. SEO agents work
+                      without them.
                     </p>
 
                     <div className="onboard-choices is-wide">
@@ -633,19 +740,18 @@ export function OnboardingPage() {
 
                     <p className="onboard-note">
                       {connectedAds.length === 0
-                        ? 'None connected yet. Continue needs at least one connection — or tap Skip.'
-                        : `${connectedAds.length} connected.`}{' '}
-                      <Link to="/connectors">Open Connectors →</Link>
+                        ? 'None connected. You can add them any time from Integrations.'
+                        : `${connectedAds.length} connected.`}
                     </p>
                   </>
                 ) : null}
 
                 {step === 2 ? (
                   <>
-                    <h2 className="onboard-h">How much may the agents do alone?</h2>
+                    <h2 className="onboard-h">{REVIEW_SETTING_NAME}</h2>
                     <p className="onboard-lede">
-                      This setting changes what reaches your site for this
-                      workspace. It applies to every agent here.
+                      Choose when agents ask you before a change goes live on your site.
+                      Applies to every agent in this workspace. You can change it later.
                     </p>
 
                     <div className="onboard-rails">
@@ -658,11 +764,7 @@ export function OnboardingPage() {
                             className={`onboard-rail-card${picked ? ' is-picked' : ''}`}
                             disabled={readOnly}
                             aria-pressed={picked}
-                            onClick={() => {
-                              setTouchedGuardrail(true)
-                              set({ ...state, guardrail: option.value })
-                              void save({ guardrail: option.value })
-                            }}
+                            onClick={() => void pickGuardrail(option.value)}
                           >
                             <span className="onboard-rail-head">
                               <span className="onboard-radio" aria-hidden="true" />
@@ -683,9 +785,8 @@ export function OnboardingPage() {
                   <>
                     <h2 className="onboard-h">Ready to launch</h2>
                     <p className="onboard-lede">
-                      Launching applies the guardrail and schedules every
-                      configured agent for this workspace. Unconfigured agents stay
-                      paused.
+                      Launching applies your review setting and schedules configured agents.
+                      Agents you have not set up stay paused.
                     </p>
 
                     <dl className="onboard-review">
@@ -712,15 +813,15 @@ export function OnboardingPage() {
                         </dd>
                       </div>
                       <div className="onboard-review-row">
-                        <dt>Guardrail</dt>
-                        <dd>{chosenGuardrail?.name ?? state.guardrail_label}</dd>
+                        <dt>{REVIEW_SETTING_NAME}</dt>
+                        <dd>{chosenGuardrail?.name ?? reviewSettingName(state.guardrail)}</dd>
                       </div>
                     </dl>
 
                     {state.completed ? (
                       <p className="onboard-note">
                         This workspace is already live. Launching again re-applies
-                        the guardrail and schedules configured agents now.
+                        your review setting and schedules configured agents now.
                       </p>
                     ) : null}
                   </>
@@ -740,7 +841,7 @@ export function OnboardingPage() {
                   Step {step + 1} of {STEPS.length}
                 </span>
                 <div className="onboard-nav-end">
-                  {step < STEPS.length - 1 ? (
+                  {step === 0 ? (
                     <button
                       type="button"
                       className="btn btn-ghost"

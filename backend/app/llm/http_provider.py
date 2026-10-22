@@ -21,7 +21,9 @@ a built-in table that goes stale the week a vendor changes its pricing.
 """
 from __future__ import annotations
 
+import re
 from abc import abstractmethod
+from collections.abc import Iterable
 from typing import Any
 
 import httpx
@@ -32,6 +34,38 @@ from app.core.logging import get_logger
 from app.llm.base import LLMError, LLMProvider, LLMResponse, LLMUsage
 
 log = get_logger(__name__)
+
+#: Longest slice of a vendor error body that may reach a log line.
+VENDOR_LOG_CHARS = 200
+#: How much of a body is scanned for secrets before it is cut down.
+_VENDOR_SCAN_CHARS = 4000
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_BEARER = re.compile(r"(?i)\bbearer\s+\S+")
+#: Vendor key shapes, plus any long opaque token (keys, session ids).
+_KEY_LIKE = re.compile(
+    r"\b(?:sk|pk|rk|xai|pplx|AIza|ya29)[-_.A-Za-z0-9]{8,}|[A-Za-z0-9_\-]{32,}"
+)
+
+
+def redact_vendor_text(text: str, *, secrets: Iterable[str] = ()) -> str:
+    """A vendor error body made safe for a log line.
+
+    The given ``secrets`` (the connection's own key), email addresses, bearer
+    tokens and key-shaped strings are blanked out, and the result is cut to
+    :data:`VENDOR_LOG_CHARS`. Redaction runs before the cut, so a key that
+    straddles the cut cannot leave its prefix behind. Never shown to users.
+    """
+    body = (text or "")[:_VENDOR_SCAN_CHARS]
+    for secret in secrets:
+        if secret and len(secret) >= 4:
+            body = body.replace(secret, "[redacted]")
+    body = _BEARER.sub("[redacted]", body)
+    body = _EMAIL.sub("[redacted-email]", body)
+    body = _KEY_LIKE.sub("[redacted]", body)
+    body = " ".join(body.split())
+    if len(body) > VENDOR_LOG_CHARS:
+        body = body[:VENDOR_LOG_CHARS] + "..."
+    return body
 
 
 def price(input_tokens: int, output_tokens: int) -> float:
@@ -55,6 +89,10 @@ class HttpLLMProvider(LLMProvider):
     base_url: str = ""
     #: Which setting holds this provider's key, for error messages that name it.
     key_setting: str = ""
+    #: True where the vendor API itself requires a token cap on every request
+    #: (Anthropic's ``max_tokens``). Informational only: every provider now
+    #: sends a cap (see :meth:`resolve_max_tokens`), so no call is unbounded.
+    requires_max_tokens: bool = False
 
     def __init__(
         self,
@@ -67,6 +105,7 @@ class HttpLLMProvider(LLMProvider):
         top_p: float | None = None,
         effort: str | None = None,
         thinking_level: str | None = None,
+        vendor_label: str = "",
     ) -> None:
         if not api_key:
             raise LLMError(
@@ -86,6 +125,8 @@ class HttpLLMProvider(LLMProvider):
         self.top_p = top_p
         self.effort = effort
         self.thinking_level = thinking_level
+        #: The connection's name in messages ("Google Gemini"), else ``name``.
+        self.vendor_label = vendor_label or self.name
         self._client: httpx.Client | None = None
 
     # ── Vendor specifics ───────────────────────────────────────────────────
@@ -94,8 +135,10 @@ class HttpLLMProvider(LLMProvider):
         ...
 
     @abstractmethod
-    def _payload(self, prompt: str, *, system: str, max_tokens: int) -> dict[str, Any]:
-        ...
+    def _payload(
+        self, prompt: str, *, system: str, max_tokens: int | None
+    ) -> dict[str, Any]:
+        """The request body. ``max_tokens`` None means "leave it out"."""
 
     @abstractmethod
     def _parse(self, data: dict[str, Any]) -> tuple[str, LLMUsage, str]:
@@ -115,7 +158,7 @@ class HttpLLMProvider(LLMProvider):
                 timeout=settings.llm_timeout_seconds,
                 # Never disabled: prompts carry the customer's page content.
                 verify=True,
-                headers={"User-Agent": "AutoMarket-AI/1.0"},
+                headers={"User-Agent": "Synaprank/1.0"},
             )
         return self._client
 
@@ -139,20 +182,35 @@ class HttpLLMProvider(LLMProvider):
         *,
         system: str = "",
         max_tokens: int | None = None,
-        temperature: float = 0.2,
+        temperature: float | None = None,
     ) -> LLMResponse:
-        # Per-call temperature is ignored when the connector already set one;
-        # otherwise vendors that support sampling use the connector (or this)
-        # value inside _payload. Callers that still pass temperature= are fine.
+        # Sampling settings come only from the connection, and only when the
+        # person set them; a per-call value is ignored so no code path can
+        # send a temperature nobody chose (newer models reject one).
         _ = temperature
-
-        resolved_max = (
-            max_tokens
-            or self.default_max_tokens
-            or settings.llm_max_tokens
-        )
         return self._complete_payload(
-            self._payload(prompt, system=system, max_tokens=resolved_max)
+            self._payload(prompt, system=system, max_tokens=self.resolve_max_tokens(max_tokens))
+        )
+
+    def resolve_max_tokens(self, requested: int | None) -> int:
+        """The caller's cap, else the connection's, else the platform's
+        ``LLM_MAX_TOKENS``. Always a positive number: no call goes out without
+        an output cap, whatever the vendor's own default would be."""
+        for candidate in (requested, self.default_max_tokens, settings.llm_max_tokens):
+            if candidate and candidate > 0:
+                return int(candidate)
+        raise LLMError(
+            "No output limit is configured for the AI model. Ask an "
+            "administrator to set LLM_MAX_TOKENS."
+        )
+
+    def _log_vendor_error(self, status: int, body: str) -> None:
+        """Log a vendor's error body, bounded and redacted. Never raised."""
+        log.warning(
+            "%s rejected request with HTTP %s: %s",
+            self.name,
+            status,
+            redact_vendor_text(body, secrets=(self.api_key,)),
         )
 
     def _complete_payload(self, payload: dict[str, Any]) -> LLMResponse:
@@ -171,7 +229,7 @@ class HttpLLMProvider(LLMProvider):
                 "%s HTTP %s after retries: %s",
                 self.name,
                 exc.response.status_code,
-                (exc.response.text or "")[:300],
+                redact_vendor_text(exc.response.text or "", secrets=(self.api_key,)),
             )
             from app.core.user_messages import message_for_http_status
 
@@ -179,7 +237,7 @@ class HttpLLMProvider(LLMProvider):
                 message_for_http_status(exc.response.status_code, service=self.name)
             ) from exc
         except httpx.TransportError as exc:
-            log.warning("%s transport error: %s", self.name, exc)
+            log.warning("%s transport error: %s", self.name, type(exc).__name__)
             from app.core.user_messages import message_for_unreachable
 
             raise LLMError(message_for_unreachable(self.name)) from exc
@@ -189,32 +247,14 @@ class HttpLLMProvider(LLMProvider):
 
             raise LLMError(message_for_http_status(response.status_code, service=self.name))
         if response.status_code == 404:
-            raise LLMError(
-                f"{self.name}: that model name was not found. "
-                "Check the model setting and try again."
-            )
+            from app.llm.model_catalog import stale_model_message
+
+            raise LLMError(stale_model_message(self.model, self.vendor_label))
         if response.status_code >= 400:
-            detail = (response.text or "")[:300]
-            log.warning(
-                "%s rejected request with HTTP %s: %s",
-                self.name,
-                response.status_code,
-                detail,
-            )
-            # Prefer the vendor's own error text when present — e.g. Anthropic
-            # "adaptive thinking is not supported on this model".
-            vendor_message = ""
-            try:
-                payload_err = response.json()
-                err = payload_err.get("error") if isinstance(payload_err, dict) else None
-                if isinstance(err, dict):
-                    vendor_message = str(err.get("message") or "").strip()
-                elif isinstance(err, str):
-                    vendor_message = err.strip()
-            except ValueError:
-                vendor_message = ""
-            if vendor_message:
-                raise LLMError(f"{self.name}: {vendor_message}")
+            # The vendor's own wording goes to the log only, bounded and
+            # redacted: it can echo the key, the prompt or an email, and it is
+            # written for developers, not for the people using the console.
+            self._log_vendor_error(response.status_code, response.text or "")
             from app.core.user_messages import message_for_http_status
 
             raise LLMError(message_for_http_status(response.status_code, service=self.name))

@@ -1,139 +1,73 @@
 /**
- * AI Agents hub - the fleet, its switches, and the Configure dialog.
+ * Agents, grouped by goal, with one clear state each.
  *
- * Every card's status, autonomy label and countdown come from the API, so what
- * is shown is the agent's real state rather than an optimistic guess.
+ * "Running now" is shown only while a pass is actually in progress; an agent
+ * that is switched on and idle is "On" with its next run. See
+ * lib/agentState.ts for the one place that decides which is which.
  */
-import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { api } from '@/api/client'
-import type { AgentOut, LlmConnectorOut, NotifyChannelOut } from '@/api/types'
+import type { AgentOut } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { AgentIcon } from '@/components/AgentIcon'
-import { CardSection } from '@/components/CardSection'
-import { useConfirm } from '@/components/Confirm'
+import { AgentSetup } from '@/components/AgentSetup'
+import { Menu } from '@/components/Menu'
+import { PracticeBadge } from '@/components/SafetyBits'
 import { useToasts } from '@/components/Toasts'
-import {
-  Blueprint,
-  Dialog,
-  ErrorState,
-  Field,
-  Loading,
-  Segmented,
-  Tag,
-  statusTone,
-} from '@/components/ui'
+import { MoreIcon, SearchIcon } from '@/components/icons'
+import { EmptyState, ErrorState, Loading, PageHeader, StatusDot } from '@/components/ui'
 import { useResource } from '@/hooks/useResource'
-
-/** Which channels cannot be picked, and what to connect for them. */
-function unavailableHint(channels: NotifyChannelOut[]): string {
-  const blocked = channels.filter((channel) => !channel.available)
-  if (blocked.length === 0) return ''
-  return `${blocked.map((channel) => channel.value).join(' and ')} need a connector first.`
-}
-
-/** The sections, worst-first.
- *
- * An agent that was working and has stopped is the most urgent thing on the
- * screen, which is why it sorts above the ones that are working rather than
- * below them. `group` is computed on the server by the same function that
- * orders the list. */
-const AGENT_SECTIONS: {
-  key: string
-  title: string
-  description?: string
-  tone?: 'plain' | 'attention'
-}[] = [
-  {
-    key: 'attention',
-    title: 'Needs attention',
-    description: 'These were running and have stopped.',
-    tone: 'attention',
-  },
-  {
-    key: 'running',
-    title: 'Active',
-    description:
-      'Working on their own schedule, on the server - they keep going when ' +
-      'you close this page, until you pause them.',
-  },
-  {
-    key: 'ready',
-    title: 'Configured, not started',
-    description: 'Set up and one click from live.',
-  },
-  {
-    key: 'idle',
-    title: 'Not set up yet',
-    description: 'Nothing here touches your site until you configure and start it.',
-  },
-]
+import { STATE_FILTERS, STATE_ORDER, agentState, filterKey } from '@/lib/agentState'
+import type { AgentStateKey } from '@/lib/agentState'
+import { AGENT_GROUPS } from '@/lib/plain'
+import { softenErrorMessage } from '@/lib/softenError'
 
 export function AgentsPage() {
   const { canWrite, session } = useAuth()
   const { push, fromResult, fromError } = useToasts()
-  // Re-fetched whenever the workspace-wide autonomy switch in the header
-  // changes. That control writes to the server and refreshes the session, but
-  // the cards are a separate request - without this dependency they kept
-  // showing the old autonomy labels until a navigation, which read as the
-  // toggle doing nothing at all.
+  const navigate = useNavigate()
   const globalAutonomy = session?.organization.global_autonomy
-  const { data, loading, error, reload } = useResource(
-    (signal) => api.agents(signal),
-    [globalAutonomy],
-    'agents',
-  )
-  const [optionsData, setOptionsData] = useState<Awaited<
-    ReturnType<typeof api.agentOptions>
-  > | null>(null)
-
-  const [configuring, setConfiguring] = useState<AgentOut | null>(null)
+  const { data, loading, error, reload } = useResource((signal) => api.agents(signal), [globalAutonomy], 'agents')
+  const [options, setOptions] = useState<Awaited<ReturnType<typeof api.agentOptions>> | null>(null)
+  const [setupSlug, setSetupSlug] = useState<string | null>(null)
   const [busySlug, setBusySlug] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<AgentStateKey | 'all'>('all')
 
   const writable = canWrite('agents')
 
-  const openConfigure = async (agent: AgentOut) => {
+  const openSetup = async (slug: string) => {
     if (!writable) {
       push('View-only access for your role', 'warning')
       return
     }
-    // Load options only when Configure opens - not on every Agents visit.
     try {
-      setOptionsData(await api.agentOptions())
-      setConfiguring(agent)
+      setOptions(await api.agentOptions())
+      setSetupSlug(slug)
     } catch (caught) {
       fromError(caught)
     }
   }
 
-  // While any agent has a pass open, refresh often enough that the step
-  // line moves. Stops the moment nothing is running, so an idle fleet costs
-  // no requests at all.
+  // Refresh quickly while anything is running now, so progress moves.
   const anyBusy = (data ?? []).some((agent) => agent.busy)
   useEffect(() => {
-    if (!anyBusy) return
     const timer = window.setInterval(() => {
       if (!document.hidden) void reload()
-    }, 4000)
+    }, anyBusy ? 4000 : 30000)
     return () => window.clearInterval(timer)
   }, [anyBusy, reload])
 
-  // Timers for the follow-up reloads after a run is started, cleared on
-  // unmount so a reload cannot fire against a page that has gone.
   const followUps = useRef<number[]>([])
-  useEffect(
-    () => () => {
-      followUps.current.forEach(window.clearTimeout)
-    },
-    [],
-  )
+  useEffect(() => () => followUps.current.forEach(window.clearTimeout), [])
+  const scheduleFollowUps = () => {
+    followUps.current.forEach(window.clearTimeout)
+    followUps.current = [1500, 5000, 12000].map((delay) => window.setTimeout(() => void reload(), delay))
+  }
 
-  const act = async (
-    slug: string,
-    action: () => Promise<unknown>,
-    { follow = false }: { follow?: boolean } = {},
-  ) => {
+  const act = async (slug: string, action: () => Promise<unknown>, follow = false) => {
     if (!writable) {
       push('View-only access for your role', 'warning')
       return
@@ -141,20 +75,9 @@ export function AgentsPage() {
     setBusySlug(slug)
     try {
       const result = (await action()) as { toast?: unknown } | null
-      if (result && typeof result === 'object' && 'toast' in result) {
-        fromResult(result as { toast: null })
-      }
+      if (result && typeof result === 'object' && 'toast' in result) fromResult(result as { toast: null })
       await reload()
-      if (follow) {
-        // The pass runs on the server and this response only said it began,
-        // so the first reload above sees the state from before it started.
-        followUps.current.forEach(window.clearTimeout)
-        followUps.current = [3000, 9000, 20000].map((delay) =>
-          window.setTimeout(() => {
-            void reload()
-          }, delay),
-        )
-      }
+      if (follow) scheduleFollowUps()
     } catch (caught) {
       fromError(caught)
     } finally {
@@ -162,272 +85,159 @@ export function AgentsPage() {
     }
   }
 
-  if (loading && !data) return <Loading label="Loading the fleet…" />
+  const withState = useMemo(() => (data ?? []).map((agent) => ({ agent, state: agentState(agent) })), [data])
+
+  const counts = useMemo(() => {
+    const out: Record<string, number> = { all: withState.length }
+    for (const { state } of withState) out[filterKey(state)] = (out[filterKey(state)] ?? 0) + 1
+    return out
+  }, [withState])
+
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return withState
+      .filter(({ state }) => filter === 'all' || filterKey(state) === filter)
+      .filter(
+        ({ agent }) =>
+          !needle ||
+          agent.name.toLowerCase().includes(needle) ||
+          (agent.summary || agent.description).toLowerCase().includes(needle),
+      )
+      .sort((a, b) => STATE_ORDER.indexOf(a.state.key) - STATE_ORDER.indexOf(b.state.key))
+  }, [withState, filter, query])
+
+  if (loading && !data) return <Loading label="Loading agents…" />
   if (error && !data) return <ErrorState message={error} onRetry={reload} />
   if (!data) return null
 
-  const fleetCounts = {
-    attention: data.filter((a) => a.group === 'attention').length,
-    running: data.filter((a) => a.group === 'running').length,
-    ready: data.filter((a) => a.group === 'ready').length,
-    idle: data.filter((a) => a.group === 'idle').length,
-  }
+  const setupAgent = setupSlug ? data.find((a) => a.slug === setupSlug) ?? null : null
+  const known = new Set(AGENT_GROUPS.map((g) => g.category))
+  const groups = [
+    ...AGENT_GROUPS,
+    ...[...new Set(data.map((a) => a.category))]
+      .filter((c) => !known.has(c))
+      .map((c) => ({ category: c, title: c, description: '' })),
+  ]
 
   return (
     <>
-      <section className="agents-masthead" aria-label="Fleet overview">
-        <div className="agents-masthead-copy">
-          <div className="agents-masthead-eyebrow">Fleet · {data.length} agents</div>
-          <h2 className="agents-masthead-title">Run the pipeline end to end</h2>
-          <p className="agents-masthead-lede">
-            Configure schedule, daily cap, and LLM connector, then start - nothing
-            touches your site until you do. Toggle autonomy vs review once live.
-          </p>
-        </div>
-        <ul className="agents-masthead-stats">
-          <li className="agents-stat">
-            <span className="agents-stat-value">{fleetCounts.running}</span>
-            <span className="agents-stat-label">Active</span>
-          </li>
-          <li className="agents-stat">
-            <span className="agents-stat-value">{fleetCounts.ready}</span>
-            <span className="agents-stat-label">Ready</span>
-          </li>
-          <li className="agents-stat">
-            <span className="agents-stat-value">{fleetCounts.idle}</span>
-            <span className="agents-stat-label">Not set up</span>
-          </li>
-          <li className={`agents-stat${fleetCounts.attention ? ' is-alert' : ''}`}>
-            <span className="agents-stat-value">{fleetCounts.attention}</span>
-            <span className="agents-stat-label">Needs care</span>
-          </li>
-        </ul>
-      </section>
+      <PageHeader
+        title="Agents"
+        description="Agents work for you on a schedule. Open one to see what it is doing, what it has produced, and its settings."
+        actions={
+          <label className="search-input">
+            <SearchIcon size={16} />
+            <input
+              type="search"
+              placeholder="Search agents"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              aria-label="Search agents"
+            />
+          </label>
+        }
+      />
 
-      {AGENT_SECTIONS.map(({ key, title, description, tone }) => {
-        const rows = data.filter((agent) => agent.group === key)
+      <div className="state-strip" role="tablist" aria-label="Filter agents by state">
+        {STATE_FILTERS.map((option) => {
+          const count = counts[option.key] ?? 0
+          if (option.key !== 'all' && count === 0) return null
+          return (
+            <button
+              key={option.key}
+              type="button"
+              role="tab"
+              aria-selected={filter === option.key}
+              className={`state-chip is-${option.key}${filter === option.key ? ' is-active' : ''}`}
+              onClick={() => setFilter(option.key)}
+            >
+              {option.key === 'running_now' ? <span className="live-dot" aria-hidden="true" /> : null}
+              <span className="state-chip-count">{count}</span>
+              <span className="state-chip-label">{option.label}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {groups.map((group) => {
+        const rows = visible.filter(({ agent }) => agent.category === group.category)
         if (rows.length === 0) return null
         return (
-          <CardSection
-            key={key}
-            title={title}
-            count={rows.length}
-            description={description}
-            tone={tone}
-          >
-            <div className="grid-cards">
-              {rows.map((agent) => {
-                const busy = busySlug === agent.slug
-                const disabled = !writable || busy
-                // An agent that has never been started and never configured has no
-                // state worth reporting: its status is "paused", its next run is a
-                // dash and its metric line is a placeholder. Showing all of that
-                // makes eleven identical cards of nothing and buries the one thing
-                // that matters, which is how to set it up. So the operational block
-                // appears once there is something true to say - the agent is live,
-                // it has been configured, or it has errored.
-                const live = agent.status !== 'paused' || agent.configured
-                const paused = agent.status !== 'running'
-                // Configured and stopped: starting it is the obvious next move, so
-                // that button carries the emphasis.
-                const startable = paused && agent.configured
-                return (
-                  <Blueprint key={agent.slug} className="card elev-sm agent-card">
-                    {/* The mark sits beside the kicker rather than above it:
-                  twelve cards in a grid are scanned by shape first, and an
-                  icon on its own line pushes every title down a row. */}
-                    <div className="card-head">
-                      <AgentIcon slug={agent.slug} />
-                      <div className="card-head-text">
-                        <div className="card-kicker">{agent.category}</div>
-                        <div className="card-title">{agent.name}</div>
-                      </div>
-                    </div>
-                    <p className="card-body">{agent.description}</p>
-
-                    {/* The state block. Everything a card says about itself lives
-                  here, so every card has the same three regions - identity,
-                  state, actions - and the action row lands at the same height
-                  whether the agent has one line to report or four. */}
-                    <div className="agent-state">
-                      {live ? (
-                        <>
-                          <div className="row">
-                            <Tag tone={statusTone(agent.status)}>
-                              {agent.status_label}
-                            </Tag>
-                            {/* The autonomy switch, not a label plus a button that
-                          said the same thing in the imperative. Two controls
-                          for one setting is what made this card read as four
-                          buttons of unrelated things. */}
-                            <Segmented
-                              name={`autonomy-${agent.slug}`}
-                              value={agent.autonomy ? 'auto' : 'review'}
-                              options={[
-                                { value: 'auto', label: 'Autonomous' },
-                                { value: 'review', label: 'Review' },
-                              ]}
-                              disabled={disabled}
-                              onChange={(next) =>
-                                void act(agent.slug, () =>
-                                  api.setAgentAutonomy(agent.slug, next === 'auto'),
-                                )
-                              }
-                            />
-                          </div>
-
-                    {agent.busy ? (
-                      <div className="agent-progress">
-                        <div className="agent-progress-step">
-                          <span className="agent-progress-dot" />
-                          {agent.step || 'Working'}
-                          {agent.step_percent === null ? null : (
-                            <span className="agent-progress-pct">
-                              {agent.step_percent}%
-                            </span>
-                          )}
-                        </div>
-                        {/* Only where there is a real total behind it. */}
-                        {agent.step_percent === null ? null : (
-                          <div
-                            className="agent-progress-track"
-                            role="progressbar"
-                            aria-valuenow={agent.step_percent}
-                            aria-valuemin={0}
-                            aria-valuemax={100}
-                            aria-label={agent.step}
-                          >
-                            <div
-                              className="agent-progress-fill"
-                              style={{ width: `${agent.step_percent}%` }}
-                            />
-                          </div>
-                        )}
-                        <div className="card-meta">{agent.busy_for}</div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="card-meta">
-                          {agent.metric_label || 'No activity yet'} · next run{' '}
-                          {agent.next_run}
-                        </div>
-                        {/* What the last pass actually did, in its own words.
-                            A status without an outcome is what made an agent
-                            that had skipped six times look healthy. */}
-                        {agent.last_run_summary ? (
-                          <div
-                            className={
-                              agent.last_run_status === 'skipped'
-                                ? 'agent-last-run is-skipped'
-                                : 'agent-last-run'
-                            }
-                          >
-                            {agent.last_run_status === 'skipped'
-                              ? 'Last run did not proceed: '
-                              : 'Last run: '}
-                            {agent.last_run_summary}
-                          </div>
-                        ) : null}
-                      </>
-                    )}
-
-                          {agent.configured ? (
-                            <div className="card-meta">{agent.config_summary}</div>
-                          ) : null}
-                          {agent.last_error ? (
-                            <div className="agent-error">{agent.last_error}</div>
-                          ) : null}
-                        </>
-                      ) : (
-                        <div className="card-meta">Not configured yet.</div>
-                      )}
-                    </div>
-
-                    <div className="agent-actions">
-                      {/* Configure leads when it is the prerequisite. An agent
-                    cannot be started until somebody has looked at its
-                    settings, so that button is offered first and styled as
-                    the action to take. */}
-                      {!agent.configured ? (
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          disabled={disabled}
-                          onClick={() => void openConfigure(agent)}
-                        >
-                          Configure
-                        </button>
-                      ) : null}
-
-                      <button
-                        type="button"
-                        className={`btn ${startable ? 'btn-primary' : 'btn-secondary'}`}
-                        disabled={disabled || (paused && !agent.configured)}
-                        // Shown rather than hidden, so the sequence is discoverable:
-                        // a missing button teaches nothing, a disabled one with a
-                        // reason teaches the rule once.
-                        title={
-                          paused && !agent.configured
-                            ? 'Configure it first - schedule, LLM connector (when needed) and daily cap'
-                            : undefined
-                        }
-                        onClick={() =>
-                          void act(agent.slug, () =>
-                            agent.status === 'running'
-                              ? api.pauseAgent(agent.slug)
-                              : api.resumeAgent(agent.slug),
-                          )
-                        }
-                      >
-                        {agent.status === 'running' ? 'Pause' : 'Start'}
-                      </button>
-
-                      {agent.configured ? (
-                        <>
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            disabled={disabled}
-                            onClick={() => void openConfigure(agent)}
-                          >
-                            Configure
-                          </button>
-                          {/* A manual run is not a preview - it publishes and spends
-                        like any other run - so it is gated on configuration
-                        with everything else. */}
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            disabled={disabled}
-                            onClick={() =>
-                              void act(agent.slug, () => api.runAgent(agent.slug), {
-                                follow: true,
-                              })
-                            }
-                          >
-                            {busy ? 'Starting…' : 'Run now'}
-                          </button>
-                        </>
-                      ) : null}
-                    </div>
-                  </Blueprint>
-                )
-              })}
+          <section key={group.category} className="agent-group">
+            <div className="agent-group-head">
+              <h2 className="agent-group-title">{group.title}</h2>
+              {group.description ? <p className="agent-group-desc">{group.description}</p> : null}
             </div>
-          </CardSection>
+            <ul className="agent-list">
+              {rows.map(({ agent, state }) => (
+                <AgentRow
+                  key={agent.slug}
+                  agent={agent}
+                  state={state}
+                  busy={busySlug === agent.slug}
+                  writable={writable}
+                  onOpen={() => navigate(`/agents/${agent.slug}`)}
+                  onSetup={() => void openSetup(agent.slug)}
+                  onToggle={() =>
+                    void act(agent.slug, () =>
+                      agent.status === 'running' ? api.pauseAgent(agent.slug) : api.resumeAgent(agent.slug),
+                    )
+                  }
+                  onRunNow={() => void act(agent.slug, () => api.runAgent(agent.slug), true)}
+                />
+              ))}
+            </ul>
+          </section>
         )
       })}
 
-      {configuring ? (
-        <ConfigureDialog
-          agent={configuring}
-          schedules={optionsData?.schedules ?? []}
-          channels={optionsData?.notify_channels ?? []}
-          llmConnectors={optionsData?.llm_connectors ?? []}
-          onClose={() => setConfiguring(null)}
-          onSaved={async () => {
-            setConfiguring(null)
+      {data.length === 0 ? (
+        <EmptyState
+          title="No agents in this workspace yet"
+          description="Agents are added when a workspace is created. If this list stays empty, ask a workspace admin to check that the Agents module is turned on."
+        />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          title="No agents match"
+          description={
+            query.trim()
+              ? `Nothing matches “${query.trim()}”${filter === 'all' ? '' : ' with this filter'}. Try a shorter word, or show every agent.`
+              : 'No agents are in this state right now. Show every agent to see the rest.'
+          }
+          action={
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                setQuery('')
+                setFilter('all')
+              }}
+            >
+              Show all agents
+            </button>
+          }
+        />
+      ) : null}
+
+      {setupAgent ? (
+        <AgentSetup
+          key={setupAgent.slug}
+          agent={setupAgent}
+          schedules={options?.schedules ?? []}
+          channels={options?.notify_channels ?? []}
+          llmConnectors={options?.llm_connectors ?? []}
+          onClose={() => {
+            setSetupSlug(null)
+            void reload()
+          }}
+          onSaved={async (started) => {
+            setSetupSlug(null)
             await reload()
+            if (started) scheduleFollowUps()
+          }}
+          onOpenAgent={(slug) => {
+            void reload()
+            void openSetup(slug)
           }}
         />
       ) : null}
@@ -435,296 +245,98 @@ export function AgentsPage() {
   )
 }
 
-function ConfigureDialog({
+function AgentRow({
   agent,
-  schedules,
-  channels,
-  llmConnectors,
-  onClose,
-  onSaved,
+  state,
+  busy,
+  writable,
+  onOpen,
+  onSetup,
+  onToggle,
+  onRunNow,
 }: {
   agent: AgentOut
-  schedules: string[]
-  channels: NotifyChannelOut[]
-  llmConnectors: LlmConnectorOut[]
-  onClose: () => void
-  onSaved: () => Promise<void>
+  state: ReturnType<typeof agentState>
+  busy: boolean
+  writable: boolean
+  onOpen: () => void
+  onSetup: () => void
+  onToggle: () => void
+  onRunNow: () => void
 }) {
-  const { push, fromError } = useToasts()
-  const confirm = useConfirm()
-  const [schedule, setSchedule] = useState(agent.schedule)
-  const [scope, setScope] = useState(agent.scope)
-  // A channel the workspace can no longer deliver falls back to None, so
-  // the dialog opens in a state that will actually save. The notice below
-  // says what happened rather than changing it quietly.
-  const deadChannel = channels.find(
-    (channel) => channel.value === agent.notify_channel && !channel.available,
-  )
-  const [notify, setNotify] = useState(
-    deadChannel ? 'None' : agent.notify_channel,
-  )
-  const deadModel = llmConnectors.find(
-    (option) => option.slug === agent.llm_connector && !option.available,
-  )
-  const firstAvailableModel =
-    llmConnectors.find((option) => option.available)?.slug ?? ''
-  const [llmConnector, setLlmConnector] = useState(
-    deadModel ? firstAvailableModel : agent.llm_connector || firstAvailableModel,
-  )
-  const [maxActions, setMaxActions] = useState(String(agent.max_actions_per_day))
-  const [busy, setBusy] = useState(false)
-  const [removing, setRemoving] = useState(false)
-
-  const remove = async () => {
-    // Confirmed, because it also stops the agent - an irreversible-feeling
-    // action deserves one question, and the question names the consequence.
-    const ok = await confirm({
-      title: `Remove ${agent.name}?`,
-      message: 'This clears its configuration and stops the agent.',
-      detail:
-        'You will need to configure it again before it can run. Run history is kept.',
-      confirmLabel: 'Remove configuration',
-      tone: 'danger',
-      icon: <AgentIcon slug={agent.slug} size={40} />,
-    })
-    if (!ok) return
-    setRemoving(true)
-    try {
-      await api.resetAgentConfig(agent.slug)
-      push(`${agent.name} configuration removed`, 'info')
-      await onSaved()
-    } catch (caught) {
-      fromError(caught)
-    } finally {
-      setRemoving(false)
-    }
-  }
-
-  const save = async () => {
-    const parsed = Number(maxActions)
-    if (!Number.isFinite(parsed) || parsed < 1) {
-      push('Maximum actions must be at least 1', 'warning')
-      return
-    }
-    if (agent.requires_llm && !llmConnector) {
-      push(
-        'Choose which AI model this agent should use, or connect one under Connectors first.',
-        'warning',
-      )
-      return
-    }
-    setBusy(true)
-    try {
-      const saved = await api.configureAgent(agent.slug, {
-        schedule,
-        scope,
-        notify_channel: notify,
-        llm_connector: agent.requires_llm ? llmConnector : '',
-        max_actions_per_day: Math.floor(parsed),
-      })
-      push('Configuration saved', 'success')
-      // A warning means it saved and will not do everything the operator
-      // probably expects - a notify channel with nothing behind it, say.
-      // Shown after the success so the order matches what happened. Errors
-      // never reach here: the API refuses those, and fromError shows why.
-      for (const warning of saved.warnings ?? []) {
-        push(warning, 'warning')
-      }
-      await onSaved()
-    } catch (caught) {
-      fromError(caught)
-    } finally {
-      setBusy(false)
-    }
-  }
-
+  const isOn = agent.status === 'running'
+  // A stopped agent's detail is its last error; never show it raw.
+  const detail =
+    state.tone === 'danger' ? softenErrorMessage(state.detail, 'It stopped. Open it to see why.') : state.detail
   return (
-    <Dialog
-      title={`Configure ${agent.name}`}
-      onClose={onClose}
-      actions={
-        <>
-          {/* The counterpart of saving. Without it the dialog is a one-way
-              door: you can change a schedule but never take back the decision
-              that let the agent run, which makes the configuration gate feel
-              like a trap rather than a switch. Only offered once there is a
-              configuration to remove. */}
-          {agent.configured ? (
-            <button
-              type="button"
-              className="btn btn-ghost danger"
-              disabled={busy || removing}
-              onClick={() => void remove()}
-            >
-              {removing ? 'Removing…' : 'Remove configuration'}
-            </button>
-          ) : null}
-          <div className="dialog-actions-spacer" />
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={
-              busy ||
-              (agent.requires_llm &&
-                (!llmConnector ||
-                  !llmConnectors.some(
-                    (option) => option.slug === llmConnector && option.available,
-                  )))
-            }
-            onClick={() => void save()}
-          >
-            {busy ? 'Saving…' : 'Save configuration'}
-          </button>
-        </>
-      }
-    >
-      <Field label="Run schedule" htmlFor="cfg-schedule" required>
-        <select
-          id="cfg-schedule"
-          className="input"
-          value={schedule}
-          onChange={(event) => setSchedule(event.target.value)}
-        >
-          {(schedules.length ? schedules : [agent.schedule]).map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </Field>
+    <li className={`agent-row is-${state.key}`}>
+      <button type="button" className="agent-row-main" onClick={onOpen}>
+        <AgentIcon slug={agent.slug} size={36} />
+        <span className="agent-row-text">
+          <span className="agent-row-name">
+            {agent.name}
+            {agent.practice_source ? <> <PracticeBadge title={agent.practice_note} /></> : null}
+          </span>
+          <span className="agent-row-summary">{agent.summary || agent.description}</span>
+        </span>
+      </button>
 
-      {agent.requires_llm ? (
-        <>
-          <Field
-            label="LLM connector"
-            htmlFor="cfg-llm"
-            required
-            hint={
-              llmConnectors.find((option) => option.slug === llmConnector)?.reason ||
-              (llmConnectors.some((option) => option.available)
-                ? 'Pick the connected AI model this agent should write with. Connect more under Connectors.'
-                : undefined)
-            }
-          >
-            <select
-              id="cfg-llm"
-              className="input"
-              value={llmConnector}
-              onChange={(event) => setLlmConnector(event.target.value)}
-            >
-              <option value="" disabled>
-                Select an LLM connector
-              </option>
-              {llmConnectors.map((option) => (
-                <option
-                  key={option.slug}
-                  value={option.slug}
-                  disabled={!option.available}
-                >
-                  {option.name}
-                  {option.available ? '' : ' - not connected'}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          {!llmConnectors.some((option) => option.available) ? (
-            <div className="notice">
-              No AI model is connected yet. Open{' '}
-              <Link to="/connectors">Connectors</Link>, connect OpenAI, Anthropic
-              Claude, Google Gemini, or Perplexity, then choose it here.
-            </div>
-          ) : null}
-
-          {deadModel ? (
-            <div className="notice">
-              This agent was set to use {deadModel.name}, but that connector is no
-              longer connected - so it could not write. {deadModel.reason}
-            </div>
-          ) : null}
-        </>
-      ) : null}
-
-      {/* Not required, and deliberately so: blank means the whole site,
-          which is the right default. The placeholder comes from the agent
-          itself - scope means a path here, a list of domains there, and a
-          set of schema types somewhere else. */}
-      <Field
-        label="Scope / target"
-        htmlFor="cfg-scope"
-        hint="Leave blank to let the agent decide its own scope."
-      >
-        <input
-          id="cfg-scope"
-          className="input"
-          placeholder={agent.scope_placeholder || 'Leave blank for everything'}
-          value={scope}
-          onChange={(event) => setScope(event.target.value)}
-        />
-      </Field>
-
-      <Field
-        label="Notify channel on action"
-        htmlFor="cfg-notify"
-        required
-        hint={
-          // The reason for whichever channel is selected, or for the ones
-          // that cannot be picked, so the dialog explains itself without a
-          // round trip.
-          channels.find((channel) => channel.value === notify)?.reason ||
-          unavailableHint(channels)
-        }
-      >
-        <select
-          id="cfg-notify"
-          className="input"
-          value={notify}
-          onChange={(event) => setNotify(event.target.value)}
-        >
-          {(channels.length
-            ? channels
-            : [{ value: agent.notify_channel, available: true, reason: '' }]
-          ).map((option) => (
-            <option
-              key={option.value}
-              value={option.value}
-              // Shown and unselectable rather than hidden: a missing choice
-              // teaches nothing about why it is missing.
-              disabled={!option.available}
-            >
-              {option.value}
-              {option.available ? '' : ' - needs a connector'}
-            </option>
-          ))}
-        </select>
-      </Field>
-
-      {deadChannel ? (
-        <div className="notice">
-          This agent was set to notify by {deadChannel.value}, but nothing is
-          connected that can send it - so those notifications were never
-          arriving. Reset to None. {deadChannel.reason}
+      <div className="agent-row-state">
+        {state.key === 'running_now' ? (
+          <span className="state-pill is-live">
+            <span className="live-dot" aria-hidden="true" />
+            Running now
+          </span>
+        ) : (
+          <StatusDot tone={state.tone}>{state.label}</StatusDot>
+        )}
+        <div className={`agent-row-detail${state.tone === 'danger' ? ' is-error' : ''}`} title={detail}>
+          {detail}
         </div>
-      ) : null}
+        {agent.busy ? (
+          <div
+            className={`progress-track is-small${agent.step_percent === null ? ' is-indeterminate' : ''}`}
+            role="progressbar"
+            aria-label={agent.step || 'Working'}
+            aria-valuenow={agent.step_percent ?? undefined}
+          >
+            <div className="progress-fill" style={agent.step_percent === null ? undefined : { width: `${agent.step_percent}%` }} />
+          </div>
+        ) : null}
+      </div>
 
-      <Field
-        label="Max autonomous actions / day"
-        htmlFor="cfg-max"
-        required
-        hint="Actions beyond this are held until the next day rather than queued."
-      >
-        <input
-          id="cfg-max"
-          className="input"
-          type="number"
-          min={1}
-          value={maxActions}
-          onChange={(event) => setMaxActions(event.target.value)}
+      <div className="agent-row-actions">
+        {!agent.configured ? (
+          <button type="button" className="btn btn-secondary btn-sm" disabled={!writable} onClick={onSetup}>
+            Set up
+          </button>
+        ) : agent.busy ? (
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onOpen}>
+            View progress
+          </button>
+        ) : (
+          <button type="button" className="btn btn-secondary btn-sm" disabled={!writable || busy} onClick={onToggle}>
+            {isOn ? 'Pause' : agent.status === 'error' ? 'Restart' : 'Turn on'}
+          </button>
+        )}
+        <Menu
+          label={`More actions for ${agent.name}`}
+          trigger={<MoreIcon />}
+          items={[
+            { label: 'Open (activity & results)', onSelect: onOpen },
+            { label: agent.configured ? 'Settings' : 'Set up', disabled: !writable, onSelect: onSetup },
+            {
+              label: busy ? 'Starting…' : 'Run once now',
+              hint: agent.makes_changes ? 'Changes follow your approval setting' : 'Only reports, changes nothing',
+              disabled: !writable || busy || !agent.configured || agent.busy,
+              onSelect: onRunNow,
+            },
+            ...(agent.configured && isOn && agent.busy
+              ? [{ label: 'Pause after this run', onSelect: onToggle, disabled: !writable }]
+              : []),
+          ]}
         />
-      </Field>
-    </Dialog>
+      </div>
+    </li>
   )
 }

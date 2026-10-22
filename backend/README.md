@@ -1,4 +1,4 @@
-# AutoMarket AI — backend
+# Synaprank.ai — backend
 
 FastAPI over PostgreSQL, the agent fleet, and the connector catalogue.
 
@@ -13,12 +13,17 @@ app/
 │   ├── crypto.py        AES-256-GCM envelope encryption, blind indexes
 │   ├── security.py      one-time passcodes, access tokens
 │   ├── rbac.py          the role/module access matrix
-│   └── exceptions.py    domain errors mapped to HTTP responses
+│   ├── exceptions.py    domain errors mapped to HTTP responses
+│   ├── user_messages.py plain-English error text; vendor detail stays in logs
+│   ├── client_ip.py     client address behind TRUSTED_PROXIES
+│   ├── egress.py        outbound-URL guard (private and metadata IPs blocked)
+│   └── csv_safe.py      spreadsheet formula neutralisation for exports
 ├── db/
 │   ├── base.py          declarative base, UUID keys, JSONB, tenant FK
 │   ├── session.py       engine, session factory, tenant pinning
 │   ├── types.py         encrypted column types
-│   └── rls.py           row-level security policies
+│   ├── rls.py           row-level security policies
+│   └── audit_guard.py   append-only audit log (trigger + REVOKE)
 ├── models/
 │   ├── identity.py      the two tables read before a session exists
 │   └── ...              the rest, all tenant-scoped
@@ -33,13 +38,30 @@ app/
 ├── connectors/
 │   ├── base/            the connector contract, capabilities, registry
 │   └── <slug>/          one package per connector
-├── llm/                 the model provider (Anthropic)
+├── llm/                 model providers (hosted vendors, Ollama/vLLM), pricing
 ├── orchestration/
 │   ├── runner.py        runs one agent; decides apply vs queue
 │   ├── scheduler.py     in-process scheduler with claim-before-run
-│   └── tasks.py         Celery tasks for horizontal scale
+│   └── tasks.py         Celery tasks: default and "render" queues, beat jobs
 └── services/            encryption, auth, approvals, metrics, connectors, …
+    ├── creative/        Creative Studio: formats, copy QA, model choice,
+    │                    quotas, rendering (Chromium or Pillow), pipeline
+    ├── storage/         stored files (PostgreSQL backend)
+    ├── history/         numbered version history, compare and restore
+    ├── brand_kits.py    brand kits and products
+    ├── social_schedule.py  scheduled social posts
+    ├── insights.py      dashboard and reports figures
+    ├── llm_usage.py     model usage and estimated cost
+    └── retention.py     daily pruning
+scripts/
+└── bootstrap.sql        one-time database roles (run as a superuser)
 ```
+
+New in this release: Creative Studio and Brand Kit, Reddit publishing (off
+by default), post metrics and insights, model usage and cost, version
+history with compare and restore, audit-log export, and self-hosted models
+(Ollama, vLLM). Deployment settings for all of them are in
+[`docs/deployment.md`](../docs/deployment.md).
 
 ## Running it
 
@@ -62,19 +84,32 @@ python -c "import os,base64;print('MASTER_ENCRYPTION_KEY='+base64.b64encode(os.u
 python -c "import os,base64;print('BLIND_INDEX_KEY='+base64.b64encode(os.urandom(32)).decode())"
 ```
 
-Then create the database and roles once, as a superuser, and migrate:
+Then create the database and roles once, as a superuser, and migrate. The
+two role passwords are psql variables with no defaults: at least 16
+characters each, and different. Put the same values in `MIGRATION_DATABASE_URL`
+(owner) and `DATABASE_URL` (app) in `.env`.
 
 ```bash
-psql -h localhost -U postgres -f scripts/bootstrap.sql
+export AUTOMARKET_OWNER_PASSWORD="$(openssl rand -hex 32)"
+export AUTOMARKET_APP_PASSWORD="$(openssl rand -hex 32)"
+psql -h localhost -U postgres \
+     -v owner_password="$AUTOMARKET_OWNER_PASSWORD" \
+     -v app_password="$AUTOMARKET_APP_PASSWORD" \
+     -f scripts/bootstrap.sql
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
 Then create a workspace from the console's sign-up screen. Sign-up and
-sign-in both send a one-time code by email; with `SMTP_HOST` empty the code is
-printed to this process's log instead, so a local install needs no mail
-server. The workspace starts empty: connect a CMS or an ad account and the
-agents pick it up on the next tick.
+sign-in both send a one-time code by email. For a local install with no mail
+server, set `APP_ENV=development`, leave `SMTP_HOST` empty and set
+`DEV_LOG_SIGN_IN_CODES=true`: the code is then written to this process's log.
+Any other `APP_ENV` refuses to start with that switch on. The workspace starts
+empty: connect a CMS or an ad account and the agents pick it up on the next
+tick.
+
+Self-hosted production deployment (compose services, settings, proxies,
+upgrades) is documented in [`docs/deployment.md`](../docs/deployment.md).
 
 `http://localhost:8000/docs` has the full API. `python manage.py check` reports
 configuration and connectivity before you deploy.
@@ -99,14 +134,14 @@ python manage.py rotate-keys     re-wrap data keys under a new master key
 | `BLIND_INDEX_KEY` | Separate HMAC key for email lookup and token hashing. Must differ from the master key. |
 | `POSTGRES_SSLMODE` | `require` or stricter in production; startup refuses an unencrypted link. |
 | `DB_ENFORCE_RLS` | Leave on. It is the backstop that keeps one organisation's rows out of another's console. |
-| `SMTP_HOST` | Mail is the authentication channel, not a notification channel — sign-in is a code emailed to the address. Unset, codes go to the log; production refuses to start that way. |
+| `SMTP_HOST` | Mail is the authentication channel, not a notification channel — sign-in is a code emailed to the address. Unset, codes are not sent (in development, `DEV_LOG_SIGN_IN_CODES=true` writes them to the log); production refuses to start that way. |
 | `LOGIN_CODE_TTL_MINUTES` | How long a mailed code stays live. It is a credential sitting in a mailbox, so this is the number that matters most; production caps it at 30. |
 | `LOGIN_CODE_MAX_ATTEMPTS` | Wrong guesses before the code is dead. With `MAX_FAILED_LOGINS`, this is what makes a six-digit space unwalkable; production caps it at 10. |
 | `LOGIN_CODE_RESEND_SECONDS` | Minimum gap between codes for one address, so the sign-in form is not a mail cannon. |
 | `CURRENCY_SYMBOL` / `CURRENCY_GROUPING` | What the customer's spend and CAC are reported in. `indian` grouping gives ₹12,34,567 and ₹4.57Cr; `western` gives 1,234,567 and 1.2M. `agent_runs.cost_usd` is exempt — Anthropic bills in dollars. |
 | `SCHEDULER_SPEED` | Divides every agent interval. Raise it in development so runs are observable in minutes rather than hours. |
 | `LLM_PROVIDER` / `LLM_MODEL` | Which vendor runs the agents (`anthropic`, `openai`, `gemini`, `grok`) and which model. `LLM_MODEL` has **no default anywhere**: the model decides what gets written to a customer's site and what it costs, so it is named explicitly or no provider is built. |
-| `LLM_PRICE_INPUT_PER_MTOK` / `..._OUTPUT_...` | Your contracted rates. Unset, run costs read zero and a startup warning says so — rather than a built-in price table that goes stale silently in a number the console reports as spend. |
+| `LLM_PRICE_INPUT_PER_MTOK` / `..._OUTPUT_...` | Your contracted rates. Unset, run costs read zero and a startup warning says so — rather than a built-in price table that goes stale silently in a number the console reports as spend. `LLM_PRICE_TABLE` sets prices per connector and model pattern. |
 | `<PROVIDER>_BASE_URL` | Route through your own gateway, a regional endpoint or an audited proxy, with no code change. |
 | `ANTHROPIC_API_KEY` | The agents cannot generate content without it. There is deliberately no offline substitute: a provider that invents copy must not be reachable by configuration when the target is a customer's live site. Without a key, agents run and skip their generating work, reporting "waiting on a model credential". |
 | `CELERY_ENABLED` | `true` turns the scheduler into a dispatcher and moves agent runs to workers. |
@@ -433,9 +468,22 @@ fabricating a result.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                                              # logic only — see below
+# Logic only (see below). DATABASE_URL points at an unreachable dummy:
+env -u TEST_DATABASE_URL \
+  DATABASE_URL="postgresql+psycopg://nobody:nopass@127.0.0.1:1/none_test" \
+  python -m pytest -q -p no:cacheprovider
+# Plus the integration suite, against a throwaway database:
 TEST_DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/automarket_test pytest
 ```
+
+> **Warning:** `env -u DATABASE_URL pytest` is **not** safe. `config.py`
+> re-reads `backend/.env`, so an unset `DATABASE_URL` silently falls back to
+> whatever database `.env` names, which may be a real one. Always set
+> `DATABASE_URL` to the unreachable dummy above for logic-only runs.
+
+Current baseline without a database: **3439 passed, 195 skipped, 1 xfailed**.
+The skips are the database-backed tests; the xfail is a tracked console
+label (see `tests/test_frontend_guards.py`).
 
 **Run it with the database.** Without `TEST_DATABASE_URL` every
 database-backed test skips: the API flows, the scheduler, row-level security

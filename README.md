@@ -1,4 +1,4 @@
-# AutoMarket AI
+# Synaprank.ai
 
 Autonomous SEO, AEO and programmatic ads for enterprise teams — a multi-tenant
 platform where eleven agents run the whole pipeline, and one guardrail per
@@ -6,10 +6,12 @@ workspace decides whether each action publishes itself or waits for a person.
 
 ```
 .
-├── backend/     Python — FastAPI, PostgreSQL, the agent fleet and connectors
-├── frontend/    React — the enterprise console
-├── idea/        the PRD and design canvas this was built from
-└── docker-compose.yml
+├── backend/               Python — FastAPI, PostgreSQL, the agent fleet and connectors
+├── frontend/              React — the enterprise console (nginx image for production)
+├── docs/                  deployment, OAuth app setup, verification guides
+├── docker-compose.yml     the self-hosted production stack
+├── .env.compose.example   settings for that stack
+└── render.yaml            TEST ONLY: a free Render test environment
 ```
 
 ## What it does
@@ -59,33 +61,61 @@ schedule, with the channel split held at exactly 100% by both the engine and
 the manual slider. Builds first-party lookalike audiences without cookie pools. Drops
 invalid traffic in real time and records what it saved.
 
-Every one of those is an agent in its own package under
+**Creative Studio and Brand Kit.** Turns a brand kit (logo, colours, fonts,
+voice, banned phrases, disclaimer) and a product's approved claims into
+banners, social images, email headers, flyers and brochures, with copy
+checked against those claims and every design sent for approval. Only AI
+models an administrator has approved can be used, within monthly quotas.
+
+**Social publishing and insights.** Schedules approved posts to Facebook,
+Instagram, LinkedIn, X, Pinterest and (with Reddit's approval) Reddit, then
+reads back how each post did. Dashboards and reports show search, ads, social
+and model usage with estimated cost, and say plainly when a figure is not
+reported rather than showing zero.
+
+**Version history and audit.** Brand kits, products, agent settings, the
+workspace review setting and SEO analyses are numbered versions that can be
+compared and restored. The audit log is append-only in the database and can
+be exported.
+
+Every agent is in its own package under
 [`backend/app/agents/`](backend/app/agents), and every external system is a
 connector in its own package under
 [`backend/app/connectors/`](backend/app/connectors).
 
 ## Quick start
 
-Docker is the shortest path — it brings up PostgreSQL with TLS, Redis, the API
-and the console, and migrates:
+Production is self-hosted with Docker. The compose stack brings up
+PostgreSQL with TLS, Redis, a one-shot migration job, the API, two Celery
+workers (general and rendering), Celery beat and the nginx console:
 
 ```bash
-cp .env.compose.example .env    # then fill in the three secrets it asks for
-docker compose up --build
+cp .env.compose.example .env    # fill in every value it asks for
+docker compose up -d postgres
+export AUTOMARKET_OWNER_PASSWORD="$(openssl rand -hex 32)"
+export AUTOMARKET_APP_PASSWORD="$(openssl rand -hex 32)"
+docker compose exec postgres psql -U automarket -d postgres \
+  -v owner_password="$AUTOMARKET_OWNER_PASSWORD" \
+  -v app_password="$AUTOMARKET_APP_PASSWORD" \
+  -f /bootstrap/bootstrap.sql   # one-time roles; put the same passwords in the DSNs in .env
+docker compose --profile production up -d --build
 ```
 
-Open <http://localhost:5173> and create a workspace from the sign-up screen.
-There is no password to choose: you give an address, and a six-digit code is
-emailed to it. The compose stack has no mail server, so that code is printed
-to the API log — `docker compose logs -f api` is your inbox until you point
-`SMTP_HOST` at a real relay.
+**[`docs/deployment.md`](docs/deployment.md) is the deployment guide**:
+architecture, database roles, every setting with its default,
+`TRUSTED_PROXIES` for your proxy or load balancer, platform app reviews,
+security notes, and upgrade and rollback.
 
-For a free cloud deploy, see [`RENDER_DEPLOY.md`](RENDER_DEPLOY.md): Render
-Docker API + Render static console + Neon Postgres (no Redis/Celery). Local
-`docker compose` stays the full stack for development.
+Put a TLS reverse proxy in front and create a workspace from the sign-up
+screen. There is no password to choose: you give an address, and a six-digit
+code is emailed to it, so production needs `RESEND_API_KEY` or `SMTP_HOST`.
+
+[`RENDER_DEPLOY.md`](RENDER_DEPLOY.md) is a **test environment only**: Render
+Docker API + Render static console + Neon Postgres, with no workers, Redis or
+Chromium, on instances that sleep.
 
 The workspace starts empty, as a real one does: connect a CMS or an ad account
-on the Connectors screen, and the agents begin working on the next tick.
+on the Integrations screen, and the agents begin working on the next tick.
 
 There is no demo data and no seeded login. Nothing in the platform fabricates
 pages, spend or performance — every figure the console shows came from a
@@ -238,16 +268,28 @@ can do cannot drift apart.
 
 ```bash
 cd backend
-pytest                                    # logic tests, no database needed
+# Logic tests, no database needed. DATABASE_URL is an unreachable dummy:
+env -u TEST_DATABASE_URL \
+  DATABASE_URL="postgresql+psycopg://nobody:nopass@127.0.0.1:1/none_test" \
+  python -m pytest -q -p no:cacheprovider
 TEST_DATABASE_URL=postgresql+psycopg://... pytest   # plus the integration suite
+cd ../frontend && npm run build                     # typecheck and production build
 ```
 
-390 tests: encryption (including key rotation and cross-tenant isolation), the
+> **Warning:** do not use `env -u DATABASE_URL pytest`. `config.py` re-reads
+> `backend/.env`, so the tests would connect to whatever database `.env`
+> names. Always set `DATABASE_URL` to the dummy above.
+
+Current baseline without a database: **3439 passed, 195 skipped, 1 xfailed** (the skips
+are the database-backed tests). The suite covers encryption (including key rotation and cross-tenant isolation), the
 one-time-code rules and token handling, money formatting, the RBAC matrix, the autonomy policy,
 the budget allocator, the fraud and spam detectors, creative validation,
 audience clustering, the cross-tenant scheduler, and end-to-end API flows
 against a real PostgreSQL — sign-up, tenant isolation, the connect-run-approve
-loop, and role enforcement.
+loop, and role enforcement. Source guards
+(`backend/tests/test_frontend_guards.py`) also check the console: no raw HTML,
+no production sourcemaps, `noopener` on new-tab links, link-free assistant
+markdown, a strict nginx CSP, and no exception text in API responses.
 
 The sign-in rules are tested as rules, not as happy paths: that a code works
 exactly once, that a new one retires the old, that an expired one is refused,
@@ -271,8 +313,9 @@ Anthropic bills in and an invented conversion rate would be worse than a
 second unit.
 
 Python 3.12 · FastAPI · SQLAlchemy 2 · PostgreSQL 17+ · Alembic ·
-AES-256-GCM · HMAC-SHA256 · Celery + Redis (optional) ·
-Anthropic Claude / OpenAI / Gemini / Grok · React 18 · TypeScript · Vite
+AES-256-GCM · HMAC-SHA256 · Celery + Redis · headless Chromium / Pillow ·
+Anthropic Claude / OpenAI / Gemini / Grok / Perplexity / Ollama / vLLM ·
+React 18 · TypeScript · Vite
 
 Four model vendors are supported and exactly one runs, chosen by
 `LLM_PROVIDER` and `LLM_MODEL` — neither of which has a default, because the

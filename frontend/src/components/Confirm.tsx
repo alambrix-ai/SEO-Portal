@@ -14,6 +14,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -44,9 +45,87 @@ type Pending = ConfirmOptions & {
   resolve: (value: boolean) => void
 }
 
+/** The confirm panel's controls are buttons; links are covered for safety. */
+const FOCUSABLE = 'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Keyboard handling for the open confirm (WAI-ARIA alertdialog): Tab and
+ * Shift+Tab stay inside it, Escape cancels, and focus goes back to the
+ * control that asked once it closes.
+ *
+ * Same behaviour as `useModalFocus` in ui.tsx, which is not exported. The
+ * listener runs in the capture phase and stops Tab and Escape there, because
+ * a confirm usually opens over a Dialog or Drawer whose own document-level
+ * handler would otherwise pull focus back into that panel (Tab) or close it
+ * too (Escape).
+ */
+function useConfirmFocus(
+  open: boolean,
+  containerRef: RefObject<HTMLElement>,
+  triggerRef: RefObject<HTMLElement | null>,
+  onCancel: () => void,
+): void {
+  const onCancelRef = useRef(onCancel)
+  onCancelRef.current = onCancel
+
+  useEffect(() => {
+    if (!open) return
+    // Read from the ref, not document.activeElement: the Cancel button's
+    // autoFocus has already moved focus by the time this effect runs.
+    const trigger = triggerRef.current
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        onCancelRef.current()
+        return
+      }
+      const container = containerRef.current
+      if (event.key !== 'Tab' || !container) return
+      event.stopPropagation()
+      const items = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (element) => element.getClientRects().length > 0,
+      )
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (!first || !last) {
+        event.preventDefault()
+        return
+      }
+      const active = document.activeElement
+      const inside = container.contains(active)
+      if (event.shiftKey && (!inside || active === first)) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (!inside || active === last)) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKey, true)
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    pushModalOpen()
+    return () => {
+      document.removeEventListener('keydown', onKey, true)
+      document.body.style.overflow = previous
+      popModalOpen()
+      // Back to the control that asked, if it is still on the page.
+      if (trigger && trigger.isConnected && trigger !== document.body) {
+        trigger.focus({ preventScroll: true })
+      }
+    }
+  }, [open, containerRef, triggerRef])
+}
+
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<Pending | null>(null)
   const pendingRef = useRef<Pending | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  /** What had focus when the question was asked, to return to on close. */
+  const triggerRef = useRef<HTMLElement | null>(null)
 
   const close = useCallback((value: boolean) => {
     const current = pendingRef.current
@@ -55,21 +134,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     current?.resolve(value)
   }, [])
 
-  useEffect(() => {
-    if (!pending) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close(false)
-    }
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    pushModalOpen()
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = previous
-      popModalOpen()
-    }
-  }, [pending, close])
+  useConfirmFocus(pending !== null, containerRef, triggerRef, () => close(false))
 
   const confirm = useCallback((options: ConfirmOptions) => {
     return new Promise<boolean>((resolve) => {
@@ -77,6 +142,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       // callers are never left hanging.
       if (pendingRef.current) {
         pendingRef.current.resolve(false)
+      } else {
+        triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
       }
       const next: Pending = { ...options, resolve }
       pendingRef.current = next
@@ -92,6 +159,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {pending
         ? createPortal(
             <div
+              ref={containerRef}
               className="dialog-backdrop confirm-backdrop"
               role="presentation"
               onClick={() => close(false)}

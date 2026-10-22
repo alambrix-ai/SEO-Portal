@@ -83,6 +83,33 @@ def fake_llm():  # noqa: ANN201
 
 
 @pytest.fixture(autouse=True)
+def no_saved_sign_in_apps():  # noqa: ANN201
+    """Sign-in provider apps saved in Portal Admin: none, unless a test says.
+
+    The resolver otherwise reads the table on a session of its own, which a
+    pure test has no database for. Tests that save apps install their own
+    loader (``platform_oauth_apps.set_loader``).
+    """
+    from app.services import platform_oauth_apps
+
+    platform_oauth_apps.set_loader(platform_oauth_apps.Snapshot)
+    yield
+    platform_oauth_apps.set_loader(platform_oauth_apps.Snapshot)
+
+
+@pytest.fixture(autouse=True)
+def no_verification_results():  # noqa: ANN201
+    """Connector verification results: none (every connector unverified,
+    nothing hidden), unless a test installs its own snapshot
+    (``verification.set_loader``). Same reason as above: no database here."""
+    from app.services import verification
+
+    verification.set_loader(verification.Snapshot)
+    yield
+    verification.set_loader(verification.Snapshot)
+
+
+@pytest.fixture(autouse=True)
 def fake_connectors():  # noqa: ANN201
     """Register the fake connectors, and clear what they recorded."""
     from tests.support import fake_connectors as fakes
@@ -91,6 +118,19 @@ def fake_connectors():  # noqa: ANN201
     fakes.reset_recordings()
     yield
     fakes.reset_recordings()
+
+
+@pytest.fixture(autouse=True)
+def fresh_login_failures():  # noqa: ANN201
+    """Forget the per-network login-failure counts before each test, so one
+    test's wrong codes never lock out the next. Looked up by name: the
+    counter is optional in older auth modules."""
+    from app.services import auth
+
+    reset = getattr(auth, "reset_source_failures", None)
+    if callable(reset):
+        reset()
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -116,7 +156,12 @@ def engine():  # noqa: ANN201
 
 @pytest.fixture(scope="session")
 def schema(engine) -> Iterator[None]:  # noqa: ANN001
-    """Create the schema once for the session, and tear it down after."""
+    """Create the schema once for the session, and tear it down after.
+
+    The audit-log guard (append-only and no-TRUNCATE triggers) is installed
+    too, so tests run against the schema the migrations produce.
+    """
+    from app.db import audit_guard
     from app.db.base import Base
     from app.db.rls import apply_policies
     from app.db.session import assert_disposable
@@ -131,6 +176,7 @@ def schema(engine) -> Iterator[None]:  # noqa: ANN001
         Base.metadata.drop_all(bind=conn)
         Base.metadata.create_all(bind=conn)
         apply_policies(conn)
+        audit_guard.install(conn)
     yield
     with engine.begin() as conn:
         Base.metadata.drop_all(bind=conn)
@@ -151,15 +197,24 @@ def db(schema) -> Iterator:  # noqa: ANN001, ANN201
 
 @pytest.fixture
 def clean_db(schema) -> Iterator:  # noqa: ANN001, ANN201
-    """A session that truncates every table first, for isolation."""
+    """A session that truncates every table first, for isolation.
+
+    The audit log refuses TRUNCATE. The test role owns the schema, so it
+    lifts that trigger for this one transaction only, the same controlled
+    path an owner-run purge would take; the trigger is back on at commit.
+    """
     from sqlalchemy import text
 
+    from app.db import audit_guard
     from app.db.base import Base
     from app.db.session import SessionLocal
 
     session = SessionLocal()
     tables = ", ".join(t.name for t in reversed(Base.metadata.sorted_tables))
+    guard = f"{audit_guard.TABLE} {{}} TRIGGER {audit_guard.TRUNCATE_TRIGGER}"
+    session.execute(text(f"ALTER TABLE {guard.format('DISABLE')}"))
     session.execute(text(f"TRUNCATE {tables} CASCADE"))
+    session.execute(text(f"ALTER TABLE {guard.format('ENABLE')}"))
     session.commit()
     try:
         yield session

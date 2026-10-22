@@ -23,6 +23,8 @@ class FieldKind(StrEnum):
     NUMBER = "number"
     URL = "url"
     OAUTH = "oauth"
+    #: An AI model, picked from the vendor's live list (see app.llm.model_catalog).
+    MODEL = "model"
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +39,8 @@ class CredentialField:
     oauth_label: str = ""
     #: Shown in the connect form when the workspace has no saved hint yet.
     default: str = ""
+    #: For MODEL fields: which models the list offers, ``text`` or ``image``.
+    model_kind: str = ""
 
     @property
     def is_oauth(self) -> bool:
@@ -58,6 +62,7 @@ class CredentialField:
             "is_oauth": self.is_oauth,
             "oauth_label": self.oauth_label,
             "default": self.default,
+            "model_kind": self.model_kind,
         }
 
 
@@ -81,17 +86,24 @@ def number(key: str, label: str, placeholder: str = "", **kw: Any) -> Credential
     )
 
 
+def model(key: str, label: str, *, model_kind: str = "text", **kw: Any) -> CredentialField:  # noqa: ANN401
+    """An AI model chosen from the vendor's own list. Never has a default."""
+    return CredentialField(
+        key=key, label=label, kind=FieldKind.MODEL, model_kind=model_kind, **kw
+    )
+
+
 def apply_defaults(
     fields: tuple[CredentialField, ...], values: dict[str, str]
 ) -> dict[str, str]:
     """Fill blank optional (and empty) fields with their declared defaults."""
     out = dict(values)
-    for field in fields:
-        if field.is_oauth or field.is_secret:
+    for declared in fields:
+        if declared.is_oauth or declared.is_secret:
             continue
-        current = (out.get(field.key) or "").strip()
-        if not current and field.default:
-            out[field.key] = field.default
+        current = (out.get(declared.key) or "").strip()
+        if not current and declared.default:
+            out[declared.key] = declared.default
     return out
 
 
@@ -164,13 +176,44 @@ def split_hints(fields: tuple[CredentialField, ...], values: dict[str, str]) -> 
     return {k: v for k, v in values.items() if k not in secret_keys and v}
 
 
-def validate(fields: tuple[CredentialField, ...], values: dict[str, str], *, oauth_done: bool) -> None:
-    """Raise when a required field or OAuth step is missing."""
+#: Non-secret marker stored with a connection made through the platform's own
+#: sign-in ("Sign in with Google"). Its presence means the OAuth client id and
+#: secret are the platform's — read from settings, never stored per workspace.
+OAUTH_SOURCE_KEY = "oauthSource"
+PLATFORM_SOURCE = "platform"
+#: The account that signed in (an email address), shown back as
+#: "Signed in as …" and used to pre-select the same account next time.
+OAUTH_ACCOUNT_KEY = "oauthAccount"
+#: Secret: the expiry (unix seconds) of the stored access token.
+ACCESS_TOKEN_EXPIRY_KEY = "accessTokenExpiry"
+#: Non-secret: when a sign-in that cannot renew itself ends (unix seconds) —
+#: a Meta or LinkedIn token with no refresh token. Absent when it renews.
+SIGN_IN_EXPIRY_KEY = "oauthExpiresAt"
+
+
+def from_platform_sign_in(values: dict[str, str]) -> bool:
+    """True when these credentials came from the platform sign-in flow."""
+    return (values.get(OAUTH_SOURCE_KEY) or "") == PLATFORM_SOURCE
+
+
+def validate(
+    fields: tuple[CredentialField, ...],
+    values: dict[str, str],
+    *,
+    oauth_done: bool,
+    platform_supplied: frozenset[str] = frozenset(),
+) -> None:
+    """Raise when a required field or OAuth step is missing.
+
+    ``platform_supplied`` names fields the platform fills in itself — the
+    OAuth client id and secret (and, for Google Ads, the developer token)
+    when the connection came from the platform's sign-in.
+    """
     from app.core.exceptions import InvalidInputError
 
     missing: list[str] = []
     for f in fields:
-        if not f.required:
+        if not f.required or f.key in platform_supplied:
             continue
         if f.is_oauth:
             if not oauth_done:

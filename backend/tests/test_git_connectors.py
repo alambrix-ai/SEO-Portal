@@ -243,7 +243,7 @@ def test_a_write_opens_a_pull_request_and_never_touches_the_deploy_branch():
     commits = [k for k in github.calls if k[0] == "PUT" and "/contents/" in k[1]]
     assert len(commits) == 1
     body = commits[0][2]["json_body"]
-    assert body["branch"].startswith("automarket/"), body["branch"]
+    assert body["branch"].startswith("synaprank/"), body["branch"]
     assert body["branch"] != "main"
     # Compare-and-set, so a concurrent edit is rejected rather than clobbered.
     assert body["sha"] == "blob-sha"
@@ -346,7 +346,7 @@ def test_bitbucket_commits_as_a_form_post_keyed_on_the_file_path():
     form = commits[0][2]["form"]
     assert "content/blog/a.md" in form
     assert "New copy." in form["content/blog/a.md"]
-    assert form["branch"].startswith("automarket/")
+    assert form["branch"].startswith("synaprank/")
     assert form["branch"] != "main"
 
     prs = [c for c in bitbucket.calls if c[1].endswith("/pullrequests")]

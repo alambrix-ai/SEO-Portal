@@ -54,20 +54,24 @@ class SiteCrawlerConnector(CmsConnector):
             text(
                 "discovery",
                 "Discovery",
-                "sitemap",
+                "auto",
+                required=False,
+                default="auto",
                 help_text=(
-                    "sitemap reads sitemap.xml, which is faster and complete. "
-                    "crawl follows internal links from the home page, for a "
-                    "site without one."
+                    "Leave blank for auto. auto finds the sitemap (listed in robots.txt, or at "
+                    "/sitemap.xml) and follows links from the home page when "
+                    "there is none. sitemap reads only the sitemap path below. "
+                    "crawl always follows internal links from the home page."
                 ),
             ),
             text(
                 "sitemapPath",
                 "Sitemap path",
                 "/sitemap.xml",
+                required=False,
                 help_text=(
-                    "Required when Discovery is sitemap — for example "
-                    "/sitemap.xml. There is no default."
+                    "Needed only when Discovery is sitemap. With auto, a path "
+                    "entered here is tried first."
                 ),
             ),
         ),
@@ -75,9 +79,9 @@ class SiteCrawlerConnector(CmsConnector):
         requirements=(
             "The site must be reachable over HTTPS from this server — a "
             "staging site behind a VPN or basic auth cannot be crawled.",
-            "When Discovery is sitemap, enter the sitemap path explicitly. "
-            "Without a sitemap, switch Discovery to crawl and it follows "
-            "internal links from the home page instead.",
+            "Only the website address is needed: the sitemap is found "
+            "automatically, and without one the crawler follows internal "
+            "links from the home page.",
             "robots.txt is respected. If it disallows everything, nothing is "
             "crawled — which is itself worth knowing.",
             "It reads the published site and cannot write to it. Pair it with "
@@ -94,7 +98,7 @@ class SiteCrawlerConnector(CmsConnector):
 
     @property
     def discovery(self) -> str:
-        return self.credentials.require("discovery").strip().lower()
+        return (self.credentials.get("discovery") or "auto").strip().lower()
 
     @property
     def max_pages(self) -> int:
@@ -118,15 +122,63 @@ class SiteCrawlerConnector(CmsConnector):
             return []
         return hp.disallowed_paths(body)
 
+    def _sitemap_url(self, path: str) -> str:
+        return f"{self.site}{path if path.startswith('/') else '/' + path}"
+
     def _from_sitemap(self) -> list[str]:
         configured = (self.credentials.get("sitemapPath") or "").strip()
         if not configured:
             raise ConnectorConfigError(
-                "Enter the sitemap path (for example /sitemap.xml). "
-                "There is no default."
+                "Enter the sitemap path (for example /sitemap.xml), or set "
+                "Discovery to auto."
             )
+        found = self._collect_sitemaps([self._sitemap_url(configured)])
+        if not found:
+            raise ConnectorError(
+                f"No usable sitemap at {configured}. Point Sitemap path at the "
+                "right file, or switch Discovery to 'auto' or 'crawl' to follow internal "
+                "links from the home page instead."
+            )
+        return found[: self.max_pages]
+
+    def _robots_sitemaps(self) -> list[str]:
+        """Sitemaps the site lists in robots.txt (``Sitemap:`` lines)."""
+        try:
+            body, _ = self._fetch(f"{self.site}/robots.txt")
+        except ConnectorError:
+            return []
+        out: list[str] = []
+        for line in body.splitlines():
+            key, _, value = line.partition(":")
+            if key.strip().lower() == "sitemap":
+                url = value.strip()
+                if url and hp.same_site(url, self.site):
+                    out.append(url)
+        return out
+
+    def _from_auto(self) -> list[str]:
+        """The sitemap wherever the site says it is, else follow links.
+
+        This is what makes "just the website address" enough: robots.txt
+        names the sitemap on most sites, the conventional paths cover most
+        of the rest, and a site with none is crawled from its home page.
+        """
+        configured = (self.credentials.get("sitemapPath") or "").strip()
+        candidates = [
+            *([self._sitemap_url(configured)] if configured else []),
+            *self._robots_sitemaps(),
+            *(self._sitemap_url(p) for p in ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml")),
+        ]
+        for candidate in dict.fromkeys(candidates):
+            found = self._collect_sitemaps([candidate])
+            if found:
+                return found[: self.max_pages]
+        return self._from_crawl()
+
+    def _collect_sitemaps(self, starts: list[str]) -> list[str]:
+        """Page URLs from these sitemaps, following sitemap indexes."""
         found: list[str] = []
-        queue = deque([f"{self.site}{configured if configured.startswith('/') else '/' + configured}"])
+        queue = deque(starts)
         seen_sitemaps: set[str] = set()
 
         while queue and len(found) < self.max_pages:
@@ -151,14 +203,7 @@ class SiteCrawlerConnector(CmsConnector):
                 queue.extend(locations[: self.max_pages])
                 continue
             found.extend(loc for loc in locations if hp.same_site(loc, self.site))
-
-        if not found:
-            raise ConnectorError(
-                f"No usable sitemap at {configured}. Point Sitemap path at the "
-                "right file, or switch Discovery to 'crawl' to follow internal "
-                "links from the home page instead."
-            )
-        return found[: self.max_pages]
+        return found
 
     def _from_crawl(self) -> list[str]:
         """Breadth-first from the home page, following internal links."""
@@ -188,7 +233,13 @@ class SiteCrawlerConnector(CmsConnector):
 
     # ── Reads ──────────────────────────────────────────────────────────────
     def list_pages(self, *, limit: int = 100, path_prefix: str = "") -> list[RemotePage]:
-        urls = self._from_sitemap() if self.discovery == "sitemap" else self._from_crawl()
+        mode = self.discovery
+        if mode == "sitemap":
+            urls = self._from_sitemap()
+        elif mode == "crawl":
+            urls = self._from_crawl()
+        else:
+            urls = self._from_auto()
         disallow = self._robots()
 
         pages: list[RemotePage] = []
@@ -245,6 +296,37 @@ class SiteCrawlerConnector(CmsConnector):
             "Connect the CMS or the repository the site is built from, and the "
             "rewrite will go there."
         )
+
+    # ── Live verification ──────────────────────────────────────────────────
+    def verify_steps(self) -> list:
+        """One read: fetch the home page and parse it as the agents do."""
+        from app.connectors.base.verification import VerifyStep
+
+        def fetch_home() -> tuple[str, dict]:
+            body, _ = self._fetch(f"{self.site}/")
+            home = hp.parse(self.site, body)
+            if not body.strip():
+                raise ConnectorError("The home page came back empty.")
+            return (
+                f"Fetched the home page: {home.word_count} words, "
+                f"{len(home.links)} links"
+                + (", content assembled in the browser" if home.client_side_rendered else ""),
+                {
+                    "title": home.title,
+                    "words": home.word_count,
+                    "links": len(home.links),
+                    "client_side_rendered": home.client_side_rendered,
+                },
+            )
+
+        return [
+            VerifyStep(
+                key="fetch_home_page",
+                label="Fetch and read the site's home page",
+                kind="read",
+                run=fetch_home,
+            )
+        ]
 
     # ── Health ─────────────────────────────────────────────────────────────
     def check_health(self) -> HealthReport:

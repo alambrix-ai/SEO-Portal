@@ -201,3 +201,117 @@ export function ExternalIcon(props: IconProps) {
     </Icon>
   )
 }
+
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5.5 8L10 12.5L14.5 8" />
+    </Icon>
+  )
+}
+
+export function ChevronRightIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 5.5L12.5 10L8 14.5" />
+    </Icon>
+  )
+}
+
+export function MenuIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <line x1="3" y1="5.5" x2="17" y2="5.5" />
+      <line x1="3" y1="10" x2="17" y2="10" />
+      <line x1="3" y1="14.5" x2="17" y2="14.5" />
+    </Icon>
+  )
+}
+
+export function SearchIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="9" cy="9" r="5.5" />
+      <line x1="13" y1="13" x2="17" y2="17" />
+    </Icon>
+  )
+}
+
+export function MoreIcon(props: IconProps) {
+  return (
+    <Icon {...props} strokeWidth={2.4}>
+      <line x1="5" y1="10" x2="5.01" y2="10" />
+      <line x1="10" y1="10" x2="10.01" y2="10" />
+      <line x1="15" y1="10" x2="15.01" y2="10" />
+    </Icon>
+  )
+}
+
+export function CloseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <line x1="5" y1="5" x2="15" y2="15" />
+      <line x1="15" y1="5" x2="5" y2="15" />
+    </Icon>
+  )
+}
+
+export function SidebarIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2.5" y="3.5" width="15" height="13" rx="2" />
+      <line x1="7.5" y1="3.5" x2="7.5" y2="16.5" />
+    </Icon>
+  )
+}
+
+export function PlusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <line x1="10" y1="4" x2="10" y2="16" />
+      <line x1="4" y1="10" x2="16" y2="10" />
+    </Icon>
+  )
+}
+
+export function SettingsIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="10" cy="10" r="2.5" />
+      <path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4" />
+    </Icon>
+  )
+}
+
+export function SignOutIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 3.5H4.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1H8" />
+      <path d="M12.5 6.5L16 10l-3.5 3.5" />
+      <line x1="16" y1="10" x2="7.5" y2="10" />
+    </Icon>
+  )
+}
+
+/** Creative Studio: a picture frame with a spark - "make an image". */
+export function CreativeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2.5" y="4.5" width="12" height="11" rx="1" />
+      <path d="M2.5 13L6.5 9.5L9.5 12L11.5 10.5L14.5 13" />
+      <path d="M16.5 2v4M14.5 4h4" />
+    </Icon>
+  )
+}
+
+/** Brand kit: a palette - the colours, fonts and logos creatives use. */
+export function BrandKitIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M10 2.5a7.5 7.5 0 1 0 0 15c1.1 0 1.6-.8 1.3-1.7-.4-1 .2-1.8 1.2-1.8h1.5a3.5 3.5 0 0 0 3.5-3.5C17.5 5.7 14.1 2.5 10 2.5Z" />
+      <circle cx="6.5" cy="9" r="1" />
+      <circle cx="9.5" cy="6" r="1" />
+      <circle cx="13.5" cy="7.5" r="1" />
+    </Icon>
+  )
+}

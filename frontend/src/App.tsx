@@ -22,9 +22,14 @@ import { AcceptInvitePage } from '@/pages/AcceptInvitePage'
 import { AccountPage } from '@/pages/AccountPage'
 import { AdminPage } from '@/pages/AdminPage'
 import { AdsPage } from '@/pages/AdsPage'
+import { AgentDetailPage } from '@/pages/AgentDetailPage'
 import { AgentsPage } from '@/pages/AgentsPage'
 import { ApprovalsPage } from '@/pages/ApprovalsPage'
+import { BrandKitPage } from '@/pages/BrandKitPage'
+import { BrandProfilePage } from '@/pages/BrandProfilePage'
 import { ConnectorsPage } from '@/pages/ConnectorsPage'
+import { ContentPage } from '@/pages/ContentPage'
+import { CreativeStudioPage } from '@/pages/CreativeStudioPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { OffPagePage } from '@/pages/OffPagePage'
@@ -33,6 +38,7 @@ import { PortalAdminPage } from '@/pages/PortalAdminPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { ReportsPage } from '@/pages/ReportsPage'
 import { SeoPage } from '@/pages/SeoPage'
+import { SiteAnalysisPage } from '@/pages/SiteAnalysisPage'
 import { TechnicalSeoPage } from '@/pages/TechnicalSeoPage'
 
 /** Paths reachable while the workspace still has unfinished onboarding. */
@@ -142,6 +148,62 @@ export function App() {
           element={
             <RequireModule module="agents">
               <AgentsPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/agents/:slug"
+          element={
+            <RequireModule module="agents">
+              <AgentDetailPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/content"
+          element={
+            <RequireModule module="content">
+              <ContentPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/brand"
+          element={
+            <RequireModule module="content">
+              <BrandProfilePage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/creative"
+          element={
+            <RequireModule module="content">
+              <CreativeStudioPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/brand-kit"
+          element={
+            <RequireModule module="brand_kit">
+              <BrandKitPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/analysis"
+          element={
+            <RequireModule module="seo">
+              <SiteAnalysisPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/analysis/:id"
+          element={
+            <RequireModule module="seo">
+              <SiteAnalysisPage />
             </RequireModule>
           }
         />

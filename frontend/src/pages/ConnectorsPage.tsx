@@ -1,9 +1,9 @@
 /**
- * Connectors marketplace - the catalogue, filters, and the connect dialog.
+ * Integrations - what is connected (with health) and the catalogue.
  *
- * The dialog's fields come from the connector's own declaration on the server,
- * so a new integration needs no frontend change. Secrets are write-only: the
- * API never returns them, and the form shows the non-secret hints instead.
+ * The connect drawer's fields come from the connector's own declaration on
+ * the server, so a new integration needs no frontend change. Secrets are
+ * write-only: the API never returns them.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -11,51 +11,34 @@ import { useSearchParams } from 'react-router-dom'
 import { api } from '@/api/client'
 import type { ConnectorOut } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
-import { CardSection } from '@/components/CardSection'
 import { useConfirm } from '@/components/Confirm'
 import { ConnectDialog } from '@/components/ConnectDialog'
+import { BetaPill } from '@/components/BetaPill'
 import { ConnectorIcon } from '@/components/ConnectorIcon'
+import { Menu } from '@/components/Menu'
 import { useToasts } from '@/components/Toasts'
-import { ErrorState, Loading, Tag } from '@/components/ui'
+import { MoreIcon, SearchIcon } from '@/components/icons'
+import { ErrorState, Loading, PageHeader, StatusDot } from '@/components/ui'
+import { CONNECTOR_CATEGORY, CONNECTOR_CATEGORY_ORDER, categoryTitle } from '@/lib/plain'
+import { softenErrorMessage } from '@/lib/softenError'
 import { useResource } from '@/hooks/useResource'
 
-/** The sections, in the order somebody scans them.
- *
- * `group` comes from the server, from the same rule that sorts the list, so
- * the headings and the order cannot disagree. */
-const CONNECTOR_SECTIONS: {
-  key: string
-  title: string
-  description?: string
-  tone?: 'plain' | 'attention'
-}[] = [
-  {
-    key: 'attention',
-    title: 'Needs attention',
-    description:
-      'Connected, and not working. Every agent relying on one of these is ' +
-      'either failing or quietly doing nothing.',
-    tone: 'attention',
-  },
-  {
-    key: 'connected',
-    title: 'Connected',
-    description: 'Live, and available to every agent that needs what they do.',
-  },
-  {
-    key: 'available',
-    title: 'Available to connect',
-    description: 'Nothing here is running yet.',
-  },
-]
+type View = 'connected' | 'catalog'
 
-function statusTagTone(
-  connector: ConnectorOut,
-): 'accent' | 'accent-2' | 'neutral' | 'outline' {
-  if (!connector.connected) return 'neutral'
-  if (connector.health === 'failing' || connector.health === 'degraded')
-    return 'outline'
-  return 'accent'
+/** Shown instead of a stored error that reads like code. */
+const CONNECTION_PROBLEM = 'This integration reported a problem. Open it to check the connection.'
+
+function healthOf(connector: ConnectorOut): {
+  tone: 'success' | 'warning' | 'danger' | 'neutral'
+  label: string
+} {
+  if (connector.group === 'attention' || connector.health === 'failing') {
+    return { tone: 'danger', label: connector.status_label || 'Failing' }
+  }
+  if (connector.health === 'degraded') {
+    return { tone: 'warning', label: connector.status_label || 'Degraded' }
+  }
+  return { tone: 'success', label: connector.status_label || 'Healthy' }
 }
 
 export function ConnectorsPage() {
@@ -65,6 +48,8 @@ export function ConnectorsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [category, setCategory] = useState('All')
+  const [query, setQuery] = useState('')
+  const [view, setView] = useState<View | null>(null)
   const categories = useResource(
     (signal) => api.connectorCategories(signal),
     [],
@@ -81,6 +66,13 @@ export function ConnectorsPage() {
 
   const writable = canWrite('connectors')
 
+  // A sign-in finished elsewhere on the page (see OAuthReturn): refresh.
+  useEffect(() => {
+    const onChange = () => void reload()
+    window.addEventListener('connectors:changed', onChange)
+    return () => window.removeEventListener('connectors:changed', onChange)
+  }, [reload])
+
   // Deep-link from onboarding (and elsewhere): /connectors?configure=wordpress
   useEffect(() => {
     const slug = searchParams.get('configure')
@@ -92,17 +84,53 @@ export function ConnectorsPage() {
     setSearchParams(next, { replace: true })
   }, [data, searchParams, setSearchParams])
 
-  const visible = useMemo(() => {
-    if (!data) return []
-    if (category === 'All') return data
-    return data.filter((connector) => connector.category === category)
-  }, [data, category])
+  const connected = useMemo(
+    () =>
+      (data ?? [])
+        .filter((c) => c.connected)
+        // Problems first.
+        .sort((a, b) => Number(b.group === 'attention') - Number(a.group === 'attention')),
+    [data],
+  )
 
-  const connectedCount = data?.filter((c) => c.connected).length ?? 0
+  const catalog = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return (data ?? []).filter((connector) => {
+      if (category !== 'All' && connector.category !== category) return false
+      if (!needle) return true
+      return (
+        connector.name.toLowerCase().includes(needle) ||
+        connector.category.toLowerCase().includes(needle) ||
+        connector.description.toLowerCase().includes(needle)
+      )
+    })
+  }, [data, category, query])
+
+  // The catalogue as sections, ordered by what most agents need first.
+  const sections = useMemo(() => {
+    const order = (category: string) => {
+      const index = CONNECTOR_CATEGORY_ORDER.indexOf(category)
+      return index === -1 ? CONNECTOR_CATEGORY_ORDER.length : index
+    }
+    const byCategory = new Map<string, ConnectorOut[]>()
+    for (const connector of catalog) {
+      const list = byCategory.get(connector.category) ?? []
+      list.push(connector)
+      byCategory.set(connector.category, list)
+    }
+    return [...byCategory.entries()]
+      .sort(([a], [b]) => order(a) - order(b) || a.localeCompare(b))
+      .map(([category, items]) => ({ category, items }))
+  }, [catalog])
+
+  // Land on what matters: the health table once something is connected,
+  // the catalogue for a fresh workspace.
+  const activeView: View = view ?? (connected.length > 0 ? 'connected' : 'catalog')
+  const attention = connected.filter((c) => c.group === 'attention').length
 
   const guard = (): boolean => {
     if (!writable) {
-      push('View-only access - ask an admin to manage connectors', 'warning')
+      push('View-only access - ask an admin to manage integrations', 'warning')
       return false
     }
     return true
@@ -113,8 +141,7 @@ export function ConnectorsPage() {
     const ok = await confirm({
       title: `Disconnect ${connector.name}?`,
       message: 'Stored credentials will be removed from this workspace.',
-      detail:
-        'Agents that rely on this connector will report that they are waiting on a connection.',
+      detail: 'Agents that rely on this integration will pause their work until it is reconnected.',
       confirmLabel: 'Disconnect',
       tone: 'danger',
       icon: <ConnectorIcon slug={connector.slug} name={connector.name} size={40} />,
@@ -123,7 +150,7 @@ export function ConnectorsPage() {
     setBusySlug(connector.slug)
     try {
       await api.disconnect(connector.slug)
-      push('Disconnected', 'info')
+      push(`${connector.name} disconnected`, 'info')
       await reload()
     } catch (caught) {
       fromError(caught)
@@ -132,113 +159,258 @@ export function ConnectorsPage() {
     }
   }
 
-  if (loading && !data) return <Loading label="Loading the catalogue…" />
+  if (loading && !data) return <Loading label="Loading integrations…" />
   if (error && !data) return <ErrorState message={error} onRetry={reload} />
   if (!data) return null
 
   return (
     <>
-      <div className="row-between filter-tabs-bar">
-        <div className="filter-tabs" role="tablist" aria-label="Connector categories">
-          {(categories.data ?? ['All']).map((name) => (
-            <button
-              key={name}
-              type="button"
-              role="tab"
-              aria-selected={category === name}
-              className={`filter-tab${category === name ? ' is-active' : ''}`}
-              onClick={() => setCategory(name)}
-            >
-              {name}
+      <PageHeader
+        title="Integrations"
+        description="Integrations give your agents access to your website, data and accounts. Most agents write with an AI service, and the website agents also need your website connected — start with those two."
+        actions={
+          activeView === 'connected' ? (
+            <button type="button" className="btn btn-primary" onClick={() => setView('catalog')}>
+              Add integration
             </button>
-          ))}
+          ) : null
+        }
+      />
+
+      {attention ? (
+        <div className="banner is-danger" role="alert">
+          <strong>
+            {attention} integration{attention === 1 ? ' is' : 's are'} failing.
+          </strong>{' '}
+          Agents that depend on {attention === 1 ? 'it' : 'them'} cannot run until{' '}
+          {attention === 1 ? 'it is' : 'they are'} reconnected.
         </div>
-        <div className="small muted nowrap">
-          {connectedCount} of {data.length} connected
-        </div>
+      ) : null}
+
+      <div className="tabs tabs-underline" role="tablist" aria-label="Integrations view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeView === 'connected'}
+          className={`tab${activeView === 'connected' ? ' is-active' : ''}`}
+          onClick={() => setView('connected')}
+        >
+          Connected <span className="tab-count">{connected.length}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeView === 'catalog'}
+          className={`tab${activeView === 'catalog' ? ' is-active' : ''}`}
+          onClick={() => setView('catalog')}
+        >
+          Catalog <span className="tab-count">{data.length}</span>
+        </button>
       </div>
 
-      {CONNECTOR_SECTIONS.map(({ key, title, description, tone }) => {
-        const rows = visible.filter((connector) => connector.group === key)
-        if (rows.length === 0) return null
-        return (
-          <CardSection
-            key={key}
-            title={title}
-            count={rows.length}
-            description={description}
-            tone={tone}
-          >
-            <div className="grid-cards-sm">
-              {rows.map((connector) => (
-                <div key={connector.slug} className="card connector-card">
-                  <div className="card-head">
-                    <ConnectorIcon slug={connector.slug} name={connector.name} />
-                    <div className="card-head-text">
-                      <div className="card-kicker">{connector.category}</div>
-                      <div className="card-title" style={{ fontSize: 15 }}>
-                        {connector.name}
-                      </div>
+      {activeView === 'connected' ? (
+        connected.length === 0 ? (
+          <div className="empty-panel">
+            <div className="empty-panel-title">No integrations connected</div>
+            <p className="empty-panel-text">
+              Agents work on whatever you connect. Start with your website and your analytics.
+            </p>
+            <button type="button" className="btn btn-primary" onClick={() => setView('catalog')}>
+              Browse catalog
+            </button>
+          </div>
+        ) : (
+          <div className="panel">
+            <div className="table-wrap">
+              <table className="table data-table">
+                <thead>
+                  <tr>
+                    <th>Integration</th>
+                    <th>Category</th>
+                    <th>Health</th>
+                    <th>Last activity</th>
+                    <th className="col-actions">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {connected.map((connector) => {
+                    const health = healthOf(connector)
+                    return (
+                      <tr key={connector.slug}>
+                        <td data-label="Integration">
+                          <div className="entity-cell">
+                            <ConnectorIcon slug={connector.slug} name={connector.name} size={28} />
+                            <div className="entity-cell-text">
+                              <div className="entity-cell-title">
+                                {connector.name}
+                                <BetaPill verification={connector.verification} />
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td data-label="Category" className="muted">
+                          {categoryTitle(connector.category)}
+                        </td>
+                        <td data-label="Health">
+                          <StatusDot tone={health.tone}>{health.label}</StatusDot>
+                        </td>
+                        <td data-label="Last activity" className="cell-wide">
+                          {connector.last_error ? (
+                            <div className="cell-error" title={softenErrorMessage(connector.last_error, CONNECTION_PROBLEM)}>
+                              {softenErrorMessage(connector.last_error, CONNECTION_PROBLEM)}
+                            </div>
+                          ) : (
+                            <span className="muted">{connector.activity_label || '—'}</span>
+                          )}
+                        </td>
+                        <td className="col-actions">
+                          <div className="row-actions">
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                if (!guard()) return
+                                setEditing(connector)
+                              }}
+                            >
+                              Manage
+                            </button>
+                            <Menu
+                              label={`More actions for ${connector.name}`}
+                              trigger={<MoreIcon />}
+                              items={[
+                                ...(connector.docs_url
+                                  ? [
+                                      {
+                                        label: 'API documentation',
+                                        onSelect: () =>
+                                          window.open(connector.docs_url, '_blank', 'noopener'),
+                                      },
+                                    ]
+                                  : []),
+                                {
+                                  label: 'Disconnect',
+                                  tone: 'danger' as const,
+                                  disabled: busySlug === connector.slug,
+                                  onSelect: () => void disconnect(connector),
+                                },
+                              ]}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      ) : (
+        <>
+          <div className="catalog-toolbar">
+            <label className="search-input">
+              <SearchIcon size={16} />
+              <input
+                type="search"
+                placeholder="Search integrations"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                aria-label="Search integrations"
+              />
+            </label>
+            <div className="chip-row" role="tablist" aria-label="Categories">
+              {(categories.data ?? ['All']).map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  role="tab"
+                  aria-selected={category === name}
+                  className={`chip${category === name ? ' is-active' : ''}`}
+                  onClick={() => setCategory(name)}
+                >
+                  {name === 'All' ? 'All' : categoryTitle(name)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {sections.map((section) => (
+          <section key={section.category} className="catalog-section">
+            <div className="catalog-section-head">
+              <h2 className="catalog-section-title">{categoryTitle(section.category)}</h2>
+              {CONNECTOR_CATEGORY[section.category]?.description ? (
+                <p className="catalog-section-desc">{CONNECTOR_CATEGORY[section.category]!.description}</p>
+              ) : null}
+            </div>
+          <div className="catalog-grid">
+            {section.items.map((connector) => (
+              <div key={connector.slug} className="catalog-tile">
+                <div className="catalog-tile-head">
+                  <ConnectorIcon slug={connector.slug} name={connector.name} size={32} />
+                  <div className="catalog-tile-text">
+                    <div className="catalog-tile-name">
+                      {connector.name}
+                      <BetaPill verification={connector.verification} />
                     </div>
+                    <div className="catalog-tile-category">{categoryTitle(connector.category)}</div>
                   </div>
-                  {connector.description ? (
-                    <p className="card-body">{connector.description}</p>
-                  ) : null}
-
-                  <div className="agent-state">
-                    {connector.connected ? (
-                      <>
-                        <div>
-                          <Tag tone={statusTagTone(connector)}>
-                            {connector.status_label}
-                          </Tag>
-                        </div>
-                        {connector.activity_label ? (
-                          <div className="card-meta">{connector.activity_label}</div>
-                        ) : null}
-                        {connector.last_error ? (
-                          <div className="agent-error">{connector.last_error}</div>
-                        ) : null}
-                      </>
-                    ) : null}
+                </div>
+                {connector.description ? (
+                  <p className="catalog-tile-desc">{connector.description}</p>
+                ) : null}
+                {connector.used_by?.length ? (
+                  <div className="catalog-tile-used" title={connector.used_by.map((a) => a.name).join(', ')}>
+                    Used by {connector.used_by.length} agent{connector.used_by.length === 1 ? '' : 's'}
                   </div>
-
-                  <div className="agent-actions">
-                    <button
-                      type="button"
-                      className={`btn ${connector.connected ? 'btn-secondary' : 'btn-primary'}`}
-                      disabled={busySlug === connector.slug}
-                      onClick={() => {
-                        if (connector.connected) {
-                          void disconnect(connector)
-                        } else {
-                          if (!guard()) return
-                          setEditing(connector)
-                        }
-                      }}
-                    >
-                      {connector.connected ? 'Disconnect' : 'Connect'}
-                    </button>
-
-                    {connector.connected ? (
+                ) : connector.abilities?.includes('Read website visits') ? (
+                  <div className="catalog-tile-used">Used for your reports</div>
+                ) : null}
+                <div className="catalog-tile-foot">
+                  {connector.connected ? (
+                    <>
+                      <StatusDot tone={healthOf(connector).tone}>
+                        {healthOf(connector).tone === 'success' ? 'Connected' : healthOf(connector).label}
+                      </StatusDot>
                       <button
                         type="button"
-                        className="btn btn-ghost"
+                        className="btn btn-ghost btn-sm"
                         onClick={() => {
                           if (!guard()) return
                           setEditing(connector)
                         }}
                       >
-                        Edit
+                        Manage
                       </button>
-                    ) : null}
-                  </div>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        if (!guard()) return
+                        setEditing(connector)
+                      }}
+                    >
+                      Connect
+                    </button>
+                  )}
                 </div>
-              ))}
+              </div>
+            ))}
+          </div>
+          </section>
+          ))}
+          {catalog.length === 0 ? (
+            <div className="empty-panel">
+              <div className="empty-panel-title">No integrations match</div>
+              <p className="empty-panel-text">Try another search term or category.</p>
             </div>
-          </CardSection>
-        )
-      })}
+          ) : null}
+        </>
+      )}
 
       {editing ? (
         <ConnectDialog

@@ -1,280 +1,966 @@
 /**
- * Dashboard - four KPI tiles, what is actually running, and the approval queue.
+ * Overview - the enterprise dashboard: headline figures for a chosen period
+ * (compared with the period before it), one section per area (search, social,
+ * ads, content, AI usage), the get-started checklist until the workspace is
+ * live, agent activity, the approval queue and integration health.
  *
- * "What is actually running" rather than "the fleet": the panels list the
- * agents that are working and the systems that are connected. A workspace
- * where nothing has been started shows an empty state that says so and points
- * at the screen that fixes it, instead of six paused cards that look like the
- * product is broken.
+ * The figures come from `/insights/overview`. The rule that runs through the
+ * whole screen: a figure nobody measured is shown in words ("Not tracked
+ * yet", "Not reported by Instagram"), never as 0. A section with no data
+ * source says how to connect one instead of drawing an empty chart.
+ *
+ * Only agents that are working or configured are listed; a workspace where
+ * nothing has started shows the checklist that gets it there instead of a
+ * grid of paused rows.
  */
-import { Link } from 'react-router-dom'
+import { useId, useState } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { api } from '@/api/client'
-import type { AgentOut } from '@/api/types'
+import {
+  formatMetric,
+  formatValue,
+  insightsApi,
+  notReportedBy,
+  type InsightMetric,
+  type InsightSectionBase,
+  type InsightSeries,
+  type InsightsOverview,
+} from '@/api/insights'
 import { useAuth } from '@/auth/AuthContext'
 import { AgentIcon } from '@/components/AgentIcon'
 import { ConnectorIcon } from '@/components/ConnectorIcon'
+import { BarList } from '@/components/charts/BarList'
+import { MetricDelta } from '@/components/charts/DeltaBadge'
+import { LineChart } from '@/components/charts/LineChart'
+import { Sparkline } from '@/components/charts/Sparkline'
+import { DateRangePicker, describeRange, rangeForPreset, type DateRange } from '@/components/DateRangePicker'
+import { CheckIcon, ChevronRightIcon } from '@/components/icons'
 import { useResource } from '@/hooks/useResource'
-import {
-  Blueprint,
-  ErrorState,
-  Loading,
-  SectionHeading,
-  StatTile,
-  Tag,
-  statusTone,
-} from '@/components/ui'
+import { agentState, nextRunText } from '@/lib/agentState'
+import { EmptyState, ErrorState, PageHeader, StatusDot } from '@/components/ui'
+import type { ModuleKey } from '@/api/types'
 
-/**
- * One agent on the dashboard.
- *
- * Extracted because two panels render it now - working, and configured but
- * stopped - and a second copy would drift.
- *
- * It shows the last run's outcome, which the dashboard never did: a card
- * saying only "Paused" hid the fact that this agent had synced pages or
- * opened issues, which is the part somebody opening a dashboard wants.
- */
-function AgentCard({ agent }: { agent: AgentOut }) {
-  return (
-    <Blueprint className="card elev-sm">
-      <div className="card-head">
-        <AgentIcon slug={agent.slug} size={28} />
-        <div className="card-head-text">
-          <div className="card-title" style={{ fontSize: 15 }}>
-            {agent.name}
-          </div>
-        </div>
+function greeting(): string {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
+}
+
+// ── Wording ────────────────────────────────────────────────────────────────
+/** Shown in a tile whose data source is not connected. Never a 0. */
+const NOT_CONNECTED = 'Not connected yet'
+const NOT_TRACKED = 'Not tracked yet'
+/** Advice for a section the server left out (older server, or a hidden module). */
+const FALLBACK_HINTS: Record<SectionKey, string> = {
+  seo: 'Connect Google Search Console to see search clicks.',
+  social: 'Connect a social account and publish a post to see reach and engagement.',
+  ads: 'Connect an ad account, such as Google Ads or Meta Ads, to see spend, clicks and conversions.',
+  content: 'Nothing has been made yet. Ask a content agent or use Creative Studio to create something.',
+  agents: 'Start an agent to see its work here.',
+  llm: 'AI usage appears here once an agent or Creative Studio has run.',
+}
+/** Plainer names than the server's for a few figures. */
+const LABELS: Record<string, string> = {
+  pages_optimised: 'Pages improved',
+  issues_fixed: 'Issues fixed',
+  position: 'Average position',
+  engagement: 'Engagement',
+  pending_approvals: 'Waiting for your review',
+}
+
+type SectionKey = keyof InsightsOverview['sections']
+
+/** Which module decides whether the caller's role may see a section at all. */
+function roleCanSee(section: SectionKey, canView: (module: ModuleKey) => boolean): boolean {
+  switch (section) {
+    case 'seo':
+      return canView('seo')
+    case 'ads':
+      return canView('ads')
+    case 'social':
+    case 'content':
+      return canView('content')
+    case 'agents':
+      return canView('agents') || canView('approvals')
+    case 'llm':
+      // Only shown when the server sends it.
+      return false
+  }
+}
+
+function findMetric(section: InsightSectionBase | undefined, key: string): InsightMetric | undefined {
+  return section?.metrics.find((metric) => metric.key === key)
+}
+
+/** The daily series drawn beside a metric; social calls it "engagements". */
+function findSeries(section: InsightSectionBase | undefined, key: string): InsightSeries | undefined {
+  return section?.series.find((series) => series.key === key || series.key === `${key}s`)
+}
+
+function hasPoints(series: InsightSeries | undefined): series is InsightSeries {
+  return Boolean(series?.points.some((point) => point.value !== null && Number.isFinite(point.value)))
+}
+
+function metricLabel(metric: InsightMetric): string {
+  return LABELS[metric.key] ?? metric.label
+}
+
+function isKnown(value: number | null | undefined): value is number {
+  return value !== null && value !== undefined && Number.isFinite(value)
+}
+
+/** "1 Oct 2026" from `YYYY-MM-DD`. */
+function longDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return value
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+/** Only an absolute https link is ever rendered; the server builds it, this re-checks. */
+function safeHttpsUrl(value: string | null): string | null {
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
+/** Two counts added, but only when both were measured. */
+function addKnown(a: number | null | undefined, b: number | null | undefined): number | null {
+  return isKnown(a) && isKnown(b) ? a + b : null
+}
+
+// ── Tiles ──────────────────────────────────────────────────────────────────
+interface TileProps {
+  label: string
+  /** The figure; missing when the section is not there. */
+  metric?: InsightMetric
+  /** Shown instead of the value (no data source, role cannot see it). */
+  text?: string
+  meta?: string
+  /** A daily series for a small trend line. */
+  series?: InsightSeries
+  /** Makes the whole tile a link (keyboard-accessible). */
+  to?: string
+  attention?: boolean
+  /** For a live count or a fixed figure, where "vs previous period" means nothing. */
+  noDelta?: boolean
+}
+
+function Tile({ label, metric, text, meta, series, to, attention = false, noDelta = false }: TileProps) {
+  const known = !text && metric !== undefined && isKnown(metric.value)
+  const shown = text ?? (metric ? formatMetric(metric) : NOT_TRACKED)
+  const lowerIsBetter = metric?.better === 'down' && metric.unit === 'position'
+  const body = (
+    <>
+      <div className="kpi-label">
+        {label}
+        {lowerIsBetter ? <span className="kpi-total"> (lower is better)</span> : null}
       </div>
-      <div className="row">
-        <Tag tone={statusTone(agent.status)}>{agent.status_label}</Tag>
-        <Tag tone="outline">{agent.autonomy_label}</Tag>
+      <div className={known ? 'kpi-value' : 'kpi-value ins-missing'} style={known ? undefined : { fontSize: 15 }}>
+        {shown}
       </div>
-      {agent.busy ? (
-        <div className="card-meta">{agent.step || 'Working'}</div>
-      ) : (
-        <>
-          {agent.metric_label ? (
-            <div className="card-meta">{agent.metric_label}</div>
-          ) : null}
-          {agent.last_run_summary ? (
-            <div className="agent-last-run">
-              {agent.last_run_status === 'skipped'
-                ? 'Last run did not proceed: '
-                : 'Last run: '}
-              {agent.last_run_summary}
-            </div>
-          ) : null}
-        </>
-      )}
-    </Blueprint>
+      {known && metric && !noDelta && metric.key !== 'pending_approvals' ? <MetricDelta metric={metric} /> : null}
+      {known && metric && hasPoints(series) ? (
+        <Sparkline label={label} points={series.points} unit={series.unit} invert={metric.better === 'down'} />
+      ) : null}
+      {meta ? <div className="kpi-meta">{meta}</div> : null}
+    </>
+  )
+  const className = `kpi${attention ? ' is-attention' : ''}`
+  return to ? (
+    <Link to={to} className={`${className} kpi-link`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={className}>{body}</div>
   )
 }
 
+/** Every metric of a section as tiles, each with its delta and trend. */
+function MetricTiles({ section }: { section: InsightSectionBase }) {
+  if (!section.metrics.length) return null
+  return (
+    <div className="kpi-grid">
+      {section.metrics.map((metric) => (
+        <Tile
+          key={metric.key}
+          label={metricLabel(metric)}
+          metric={metric}
+          series={findSeries(section, metric.key)}
+          meta={metric.key === 'pending_approvals' ? 'Right now' : undefined}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ── Sections ───────────────────────────────────────────────────────────────
+interface InsightPanelProps {
+  title: string
+  description?: string
+  section: InsightSectionBase | undefined
+  sectionKey: SectionKey
+  /** Where the "fix this" button goes when there is no data. */
+  action?: ReactNode
+  /** Link in the panel head (e.g. to Reports). */
+  headLink?: ReactNode
+  children?: ReactNode
+}
+
+function InsightPanel({ title, description, section, sectionKey, action, headLink, children }: InsightPanelProps) {
+  const headingId = useId()
+  const missing = !section || !section.available
+  const hint = section?.connect_hint?.trim() || FALLBACK_HINTS[sectionKey]
+  return (
+    <section className="panel" aria-labelledby={headingId}>
+      <div className="panel-head">
+        <div>
+          <h2 className="panel-title" id={headingId} style={{ margin: 0 }}>
+            {title}
+          </h2>
+          {description ? <div className="panel-subtitle">{description}</div> : null}
+        </div>
+        {!missing ? headLink : null}
+      </div>
+      {missing ? (
+        <div className="panel-empty-state" role="note">
+          <p style={{ margin: action ? '0 0 12px' : 0 }}>{hint}</p>
+          {action}
+        </div>
+      ) : (
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* An available section can still carry advice ("Try a longer date range"). */}
+          {section.connect_hint?.trim() ? (
+            <p className="kpi-meta" role="note" style={{ margin: 0 }}>
+              {section.connect_hint}
+            </p>
+          ) : null}
+          {children}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function SubHeading({ children }: { children: ReactNode }) {
+  return (
+    <h3 className="panel-title" style={{ margin: 0 }}>
+      {children}
+    </h3>
+  )
+}
+
+/** Shown while the figures load: the shape of the tile row, hidden from screen readers. */
+function OverviewSkeleton() {
+  const bar = (width: string, height: number) => (
+    <div style={{ width, height, borderRadius: 4, background: 'var(--color-surface-subtle)' }} />
+  )
+  return (
+    <div aria-busy="true">
+      <p className="sr-only" role="status" aria-live="polite">
+        Loading your figures…
+      </p>
+      <div className="kpi-grid" aria-hidden="true">
+        {Array.from({ length: 8 }, (_, index) => (
+          <div key={index} className="kpi">
+            {bar('60%', 12)}
+            {bar('40%', 26)}
+            {bar('70%', 10)}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Page ───────────────────────────────────────────────────────────────────
 export function DashboardPage() {
   const { canView, session } = useAuth()
-  // Same reason as the agents page: the header's autonomy switch changes what
-  // this screen is showing.
+  const navigate = useNavigate()
   const globalAutonomy = session?.organization.global_autonomy
+  const [range, setRange] = useState<DateRange>(() => rangeForPreset('30d'))
+  const canSeeInsights = canView('reports')
+  const brand = useResource((signal) => api.brandProfile(signal), [], 'brand-profile')
   const { data, loading, error, reload } = useResource(
     (signal) => api.dashboard(signal),
     [globalAutonomy],
     'dashboard',
   )
+  const insights = useResource<InsightsOverview | null>(
+    (signal) => (canSeeInsights ? insightsApi.overview(range.from, range.to, signal) : Promise.resolve(null)),
+    [range.from, range.to, canSeeInsights],
+    `insights-overview:${range.from}:${range.to}:${canSeeInsights ? 'on' : 'off'}`,
+  )
 
-  if (loading && !data) return <Loading label="Loading your workspace…" />
-  if (error && !data) return <ErrorState message={error} onRetry={reload} />
+  if (!session) return null
+
+  const header = (
+    <PageHeader
+      title={`${greeting()}, ${session.user.name.split(' ')[0]}`}
+      description={
+        session.organization.primary_domain
+          ? `Here is what is happening on ${session.organization.primary_domain}.`
+          : 'Here is what is happening in your workspace.'
+      }
+    />
+  )
+
+  if (loading && !data) {
+    return (
+      <>
+        {header}
+        <OverviewSkeleton />
+      </>
+    )
+  }
+  if (error && !data) {
+    return (
+      <>
+        {header}
+        <ErrorState message={error} onRetry={reload} />
+      </>
+    )
+  }
   if (!data) return null
 
-  const { kpis, agents, connectors, approvals, active_agents, ready, ready_agents } =
-    data
-  // How many of the running agents act without asking. The dashboard's job is
-  // to answer that in one line rather than leave it to be counted off tags.
-  const autonomousCount = agents.filter((agent) => agent.autonomy).length
+  const { kpis, agents, connectors, approvals, ready } = data
+  const rows = [...agents, ...ready]
+
+  const hasBrand = Boolean(brand.data?.profile)
+  const steps = [
+    {
+      done: hasBrand,
+      title: 'Create your brand profile',
+      text: 'Paste your website address — every content agent writes from it.',
+      to: '/brand',
+      cta: 'Create profile',
+      visible: canView('content'),
+    },
+    {
+      done: kpis.connectors_connected > 0,
+      title: 'Connect your site and data',
+      text: 'Add your CMS, analytics and any ad platforms.',
+      to: '/connectors',
+      cta: 'Open integrations',
+      visible: canView('connectors'),
+    },
+    {
+      done: data.ready_agents + data.active_agents > 0,
+      title: 'Set up your first agent',
+      text: 'Open an agent and follow the three setup steps.',
+      to: '/agents',
+      cta: 'Open agents',
+      visible: canView('agents'),
+    },
+    {
+      done: kpis.agents_running > 0,
+      title: 'Start an agent',
+      text: 'It runs on its schedule. Changes that need your approval appear under Approvals.',
+      to: '/agents',
+      cta: 'Open agents',
+      visible: canView('agents'),
+    },
+  ].filter((step) => step.visible)
+  const remaining = steps.filter((step) => !step.done).length
+
+  // ── Figures ──
+  const overview = insights.data
+  const sections = overview?.sections ?? {}
+  const { seo, social, ads, content, agents: activity, llm } = sections
+  const integrationsButton = canView('connectors') ? (
+    <Link to="/connectors" className="btn btn-secondary btn-sm">
+      Go to Integrations
+    </Link>
+  ) : (
+    <p className="kpi-meta" style={{ margin: 0 }}>
+      Ask a workspace admin to connect it under Integrations.
+    </p>
+  )
+  /** A section is drawn when the server sent it, or when the role could see it (then its hint shows). */
+  const showSection = (key: SectionKey) => Boolean(sections[key]) || roleCanSee(key, canView)
+  /** A headline tile's value, or the words for why there is none. */
+  const tileText = (key: SectionKey, section: InsightSectionBase | undefined): string | undefined => {
+    if (!section) return roleCanSee(key, canView) ? NOT_CONNECTED : 'Not available to your role'
+    return section.available ? undefined : NOT_CONNECTED
+  }
+
+  const produced: InsightMetric | undefined = content
+    ? {
+        key: 'produced',
+        label: 'Content and creatives produced',
+        value: addKnown(findMetric(content, 'created')?.value, findMetric(content, 'creatives')?.value),
+        previous: addKnown(findMetric(content, 'created')?.previous, findMetric(content, 'creatives')?.previous),
+        change_pct: null,
+        unit: 'count',
+      }
+    : undefined
+  const visits = findMetric(seo, 'sessions')
+  const siteConversions = findMetric(seo, 'conversions')
+
+  const presentSections = (Object.keys(sections) as SectionKey[]).filter((key) => sections[key])
+  const brandNew =
+    Boolean(overview) &&
+    kpis.connectors_connected === 0 &&
+    presentSections.every((key) => key === 'agents' || !sections[key]?.available)
+
+  const platformLabel = (platform: string): string =>
+    social?.platforms.find((item) => item.platform === platform)?.label ??
+    platform.charAt(0).toUpperCase() + platform.slice(1)
+
+  const reportsLink = canView('reports') ? (
+    <Link to="/reports" className="panel-link">
+      Full report <ChevronRightIcon size={14} />
+    </Link>
+  ) : null
 
   return (
     <>
-      <div className="grid-tiles">
-        <StatTile
-          kicker="Organic Sessions"
-          value={kpis.organic_sessions}
-          meta="30-day rolling"
-        />
-        <StatTile
-          kicker="Agents Running"
-          value={`${kpis.agents_running} / ${kpis.agents_total}`}
-          meta="Autonomous fleet"
-        />
-        <StatTile
-          kicker="Connected Systems"
-          value={`${kpis.connectors_connected} / ${kpis.connectors_total}`}
-          meta="CMS, ads, analytics, CRM"
-        />
-        <StatTile
-          kicker="Pending Approvals"
-          value={kpis.pending_approvals}
-          meta="Human-in-the-loop queue"
-        />
-      </div>
+      {header}
 
-      <div className="split-2-1">
-        <div>
-          <SectionHeading
-            title={agents.length > 0 ? 'Running agents' : 'Your agents'}
-            /* The autonomy split, said once here rather than read off twelve
-               tags. It is the answer to "how much of this is acting on its
-               own?", which is the thing somebody wants from a dashboard  - 
-               and it used to require counting cards. */
-            description={
-              agents.length > 0
-                ? [
-                    active_agents > agents.length
-                      ? `Showing ${agents.length} of ${active_agents}`
-                      : `${agents.length} running`,
-                    `${autonomousCount} autonomous`,
-                    `${agents.length - autonomousCount} awaiting review`,
-                  ].join(' · ')
-                : ready.length > 0
-                  ? `${ready_agents} configured, none running`
-                  : undefined
-            }
-            action={
-              canView('agents') ? (
-                <Link to="/agents" className="btn btn-ghost">
-                  View all agents →
-                </Link>
-              ) : undefined
-            }
-          />
-          {agents.length > 0 ? (
-            <div className="grid-cards-sm">
-              {agents.map((agent) => (
-                <AgentCard key={agent.slug} agent={agent} />
-              ))}
-            </div>
-          ) : ready.length > 0 ? (
-            /* Set up, and stopped. The panel used to show nothing here and
-               then advise configuring an agent - advice for a step already
-               finished, with the results these agents had produced hidden
-               behind it. */
-            <>
-              <div className="grid-cards-sm">
-                {ready.map((agent) => (
-                  <AgentCard key={agent.slug} agent={agent} />
-                ))}
+      {steps.length > 0 && remaining > 0 ? (
+        <section className="panel setup-panel" aria-labelledby="dashboard-setup-heading">
+          <div className="panel-head">
+            <div>
+              <h2 className="panel-title" id="dashboard-setup-heading" style={{ margin: 0 }}>
+                Get started
+              </h2>
+              <div className="panel-subtitle">
+                {steps.length - remaining} of {steps.length} complete
               </div>
-              {canView('agents') ? (
-                <p className="panel-note">
-                  {ready.length === 1
-                    ? 'This agent is configured and stopped.'
-                    : `${ready_agents} agents are configured and stopped.`}{' '}
-                  Start {ready.length === 1 ? 'it' : 'them'} on the{' '}
-                  <Link to="/agents">AI&nbsp;Agents</Link> screen and they run on
-                  their own schedule from then on.
-                </p>
+            </div>
+            <div className="progress-bar" aria-hidden="true">
+              <div
+                className="progress-bar-fill"
+                style={{ width: `${((steps.length - remaining) / steps.length) * 100}%` }}
+              />
+            </div>
+          </div>
+          <ol className="setup-steps">
+            {steps.map((step, index) => (
+              <li key={step.title} className={`setup-step${step.done ? ' is-done' : ''}`}>
+                <span className="setup-step-mark" aria-hidden="true">
+                  {step.done ? <CheckIcon size={14} /> : index + 1}
+                </span>
+                <div className="setup-step-text">
+                  <div className="setup-step-title">{step.title}</div>
+                  <div className="setup-step-desc">{step.text}</div>
+                </div>
+                {!step.done ? (
+                  <Link to={step.to} className="btn btn-secondary btn-sm">
+                    {step.cta}
+                  </Link>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+
+      {canSeeInsights ? (
+        <section aria-labelledby="dashboard-figures-heading" style={{ marginBottom: 20 }}>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'flex-end',
+              justifyContent: 'space-between',
+              gap: 12,
+              marginBottom: 12,
+            }}
+          >
+            <div>
+              <h2 className="panel-title" id="dashboard-figures-heading" style={{ margin: 0 }}>
+                Your figures for {describeRange(range)}
+              </h2>
+              <div className="panel-subtitle">
+                {overview
+                  ? `Compared with ${longDate(overview.previous_from)} to ${longDate(overview.previous_to)}.`
+                  : 'Compared with the period before it.'}
+              </div>
+            </div>
+            <DateRangePicker value={range} onChange={setRange} disabled={insights.loading && !overview} />
+          </div>
+
+          {insights.loading && !overview ? (
+            <OverviewSkeleton />
+          ) : insights.error && !overview ? (
+            insights.forbidden ? (
+              <p className="kpi-meta">Your role cannot see these figures.</p>
+            ) : (
+              <ErrorState message={insights.error} onRetry={insights.reload} />
+            )
+          ) : overview ? (
+            <>
+              {brandNew ? (
+                <div style={{ marginBottom: 16 }}>
+                  <EmptyState
+                    title="Your dashboard fills in as you connect your data"
+                    description="Connect your website, analytics, ad and social accounts. Until then each figure stays blank rather than showing a made-up zero."
+                    action={canView('connectors') ? integrationsButton : undefined}
+                  />
+                </div>
+              ) : null}
+
+              <div className="kpi-grid">
+                <Tile label="Search clicks" metric={findMetric(seo, 'clicks')} text={tileText('seo', seo)} />
+                {/* Visits come from the analytics source for the chosen dates; with
+                    nothing reported, the metric's own note says how to connect it. */}
+                <Tile
+                  label="Website visits"
+                  metric={visits}
+                  text={visits ? undefined : tileText('seo', seo)}
+                  series={findSeries(seo, 'sessions')}
+                />
+                {siteConversions ? (
+                  <Tile
+                    label="Website conversions"
+                    metric={siteConversions}
+                    series={findSeries(seo, 'conversions')}
+                  />
+                ) : null}
+                <Tile label="Social reach" metric={findMetric(social, 'reach')} text={tileText('social', social)} />
+                <Tile label="Engagement" metric={findMetric(social, 'engagement')} text={tileText('social', social)} />
+                <Tile label="Ad spend" metric={findMetric(ads, 'spend')} text={tileText('ads', ads)} />
+                <Tile label="Conversions" metric={findMetric(ads, 'conversions')} text={tileText('ads', ads)} />
+                <Tile
+                  label="Content and creatives produced"
+                  metric={produced}
+                  text={content ? undefined : tileText('content', content)}
+                />
+                <Tile
+                  label="Waiting for your review"
+                  metric={{
+                    key: 'pending_approvals',
+                    label: 'Waiting for your review',
+                    value: kpis.pending_approvals,
+                    previous: null,
+                    change_pct: null,
+                    unit: 'count',
+                  }}
+                  meta={kpis.pending_approvals > 0 ? 'Right now' : 'Nothing is waiting'}
+                  to={canView('approvals') ? '/approvals' : undefined}
+                  attention={kpis.pending_approvals > 0}
+                />
+              </div>
+
+              {showSection('seo') ? (
+                <InsightPanel
+                  title="Search (SEO)"
+                  description="How people find you on Google and Bing."
+                  section={seo}
+                  sectionKey="seo"
+                  action={integrationsButton}
+                  headLink={reportsLink}
+                >
+                  {seo ? (
+                    <>
+                      <MetricTiles section={seo} />
+                      {hasPoints(findSeries(seo, 'clicks')) ? (
+                        <div>
+                          <SubHeading>Search clicks each day</SubHeading>
+                          <LineChart title="Search clicks" series={[findSeries(seo, 'clicks') as InsightSeries]} />
+                        </div>
+                      ) : null}
+                      {hasPoints(findSeries(seo, 'position')) ? (
+                        <div>
+                          <SubHeading>Average position each day (lower is better)</SubHeading>
+                          <LineChart
+                            title="Average search position"
+                            series={[findSeries(seo, 'position') as InsightSeries]}
+                            invert
+                          />
+                        </div>
+                      ) : null}
+                      {seo.top_queries.length > 0 ? (
+                        <div>
+                          <SubHeading>Top searches</SubHeading>
+                          <div className="table-scroll">
+                            <table className="table">
+                              <thead>
+                                <tr>
+                                  <th scope="col">Search</th>
+                                  <th scope="col">Clicks</th>
+                                  <th scope="col">Impressions</th>
+                                  <th scope="col">Position</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {seo.top_queries.map((query) => (
+                                  <tr key={query.query}>
+                                    <th scope="row">{query.query}</th>
+                                    <td>{formatValue(query.clicks, 'count')}</td>
+                                    <td>{formatValue(query.impressions, 'count')}</td>
+                                    <td>{formatValue(query.position, 'position')}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                </InsightPanel>
+              ) : null}
+
+              {showSection('social') ? (
+                <InsightPanel
+                  title="Social"
+                  description="Reach and engagement of the posts published in this period."
+                  section={social}
+                  sectionKey="social"
+                  action={integrationsButton}
+                  headLink={reportsLink}
+                >
+                  {social ? (
+                    <>
+                      <MetricTiles section={social} />
+                      {social.series.some(hasPoints) ? (
+                        <div>
+                          <SubHeading>Reach and engagement each day</SubHeading>
+                          <LineChart title="Reach and engagement" series={social.series.filter(hasPoints)} />
+                        </div>
+                      ) : null}
+                      {social.platforms.length > 0 ? (
+                        <div>
+                          <SubHeading>By platform</SubHeading>
+                          <div className="table-scroll">
+                            <table className="table">
+                              <thead>
+                                <tr>
+                                  <th scope="col">Platform</th>
+                                  <th scope="col">Reach</th>
+                                  <th scope="col">Engagement</th>
+                                  <th scope="col">Impressions</th>
+                                  <th scope="col">Clicks</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {social.platforms.map((platform) => {
+                                  const missing = notReportedBy(platform.label)
+                                  return (
+                                    <tr key={platform.platform}>
+                                      <th scope="row">{platform.label}</th>
+                                      <td>{formatValue(platform.reach, 'count', { note: missing })}</td>
+                                      <td>{formatValue(platform.engagement, 'count', { note: missing })}</td>
+                                      <td>{formatValue(platform.impressions, 'count', { note: missing })}</td>
+                                      <td>{formatValue(platform.clicks, 'count', { note: missing })}</td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : null}
+                      {social.top_posts.length > 0 ? (
+                        <div>
+                          <SubHeading>Top posts</SubHeading>
+                          <ul className="list">
+                            {social.top_posts.map((post) => {
+                              const url = safeHttpsUrl(post.url)
+                              const label = platformLabel(post.platform)
+                              const missing = notReportedBy(label)
+                              const title = post.title.trim() || 'Untitled post'
+                              return (
+                                <li key={post.id} className="list-row is-compact">
+                                  <div className="list-row-main">
+                                    <div className="list-row-title">
+                                      {url ? (
+                                        <a href={url} target="_blank" rel="noreferrer noopener">
+                                          {title}
+                                          <span className="sr-only"> (opens on {label})</span>
+                                        </a>
+                                      ) : (
+                                        title
+                                      )}
+                                    </div>
+                                    <div className="list-row-meta">
+                                      {label}
+                                      {post.posted_at ? ` · ${new Date(post.posted_at).toLocaleDateString()}` : ''}
+                                    </div>
+                                  </div>
+                                  <div className="list-row-side">
+                                    <span className="list-row-sub">
+                                      Impressions: {formatValue(post.impressions, 'count', { note: missing })}
+                                    </span>
+                                    <span className="list-row-sub">
+                                      Engagement: {formatValue(post.engagement, 'count', { note: missing })}
+                                    </span>
+                                  </div>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                </InsightPanel>
+              ) : null}
+
+              {showSection('ads') ? (
+                <InsightPanel
+                  title="Ads"
+                  description="Spend, clicks and conversions across your ad accounts."
+                  section={ads}
+                  sectionKey="ads"
+                  action={integrationsButton}
+                  headLink={reportsLink}
+                >
+                  {ads ? (
+                    <>
+                      <MetricTiles section={ads} />
+                      {hasPoints(findSeries(ads, 'spend')) ? (
+                        <div>
+                          <SubHeading>Ad spend each day</SubHeading>
+                          <LineChart title="Ad spend" series={[findSeries(ads, 'spend') as InsightSeries]} />
+                        </div>
+                      ) : null}
+                      {ads.channels.length > 0 ? (
+                        <div>
+                          <SubHeading>By channel</SubHeading>
+                          <div className="table-scroll">
+                            <table className="table">
+                              <thead>
+                                <tr>
+                                  <th scope="col">Channel</th>
+                                  <th scope="col">Spend</th>
+                                  <th scope="col">Clicks</th>
+                                  <th scope="col">Conversions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {ads.channels.map((channel) => {
+                                  const missing = notReportedBy(channel.label)
+                                  return (
+                                    <tr key={channel.channel}>
+                                      <th scope="row">{channel.label}</th>
+                                      <td>{formatValue(channel.spend, 'currency', { note: missing })}</td>
+                                      <td>{formatValue(channel.clicks, 'count', { note: missing })}</td>
+                                      <td>{formatValue(channel.conversions, 'count', { note: missing })}</td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                </InsightPanel>
+              ) : null}
+
+              {showSection('content') ? (
+                <InsightPanel
+                  title="Content and creatives produced"
+                  description="What your agents and Creative Studio made in this period."
+                  section={content}
+                  sectionKey="content"
+                  action={
+                    canView('content') ? (
+                      <Link to="/creative" className="btn btn-secondary btn-sm">
+                        Open Creative Studio
+                      </Link>
+                    ) : undefined
+                  }
+                >
+                  {content ? (
+                    <>
+                      <MetricTiles section={content} />
+                      {content.by_kind.length > 0 ? (
+                        <div>
+                          <SubHeading>By kind</SubHeading>
+                          <BarList label="Items made by kind" items={content.by_kind} />
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                </InsightPanel>
+              ) : null}
+
+              {activity ? (
+                <InsightPanel
+                  title="Agents and approvals"
+                  description="Work your agents did, and what is waiting for a person."
+                  section={activity}
+                  sectionKey="agents"
+                  action={
+                    canView('agents') ? (
+                      <Link to="/agents" className="btn btn-secondary btn-sm">
+                        Open agents
+                      </Link>
+                    ) : undefined
+                  }
+                >
+                  <MetricTiles section={activity} />
+                </InsightPanel>
+              ) : null}
+
+              {llm ? (
+                <InsightPanel
+                  title="AI usage"
+                  description="Tokens used and the estimated cost of the AI models."
+                  section={llm}
+                  sectionKey="llm"
+                  headLink={reportsLink}
+                >
+                  <MetricTiles section={llm} />
+                  {llm.note?.trim() ? (
+                    <p className="kpi-meta" style={{ margin: 0 }}>
+                      {llm.note}
+                    </p>
+                  ) : null}
+                </InsightPanel>
               ) : null}
             </>
-          ) : (
-            <div className="panel-empty">
-              <p>Nothing is set up yet.</p>
-              {canView('agents') ? (
-                <p className="small muted">
-                  Configure an agent on the{' '}
-                  <Link to="/agents">AI&nbsp;Agents</Link> screen, then start it.
-                  Nothing runs against your site until you do.
-                </p>
-              ) : null}
-            </div>
-          )}
+          ) : null}
+        </section>
+      ) : null}
 
-          <SectionHeading
-            title="Connected systems"
-            spaced
-            action={
-              canView('connectors') ? (
-                <Link to="/connectors" className="btn btn-ghost">
-                  View catalogue →
-                </Link>
-              ) : undefined
-            }
-          />
-          {connectors.length > 0 ? (
-            <div className="grid-cards-sm">
-              {connectors.map((connector) => (
-                <Blueprint key={connector.slug} className="card elev-sm">
-                  <div className="card-head">
-                    <ConnectorIcon slug={connector.slug} name={connector.name} size={28} />
-                    <div className="card-head-text">
-                      <div className="card-kicker">{connector.category}</div>
-                      <div className="card-title" style={{ fontSize: 15 }}>
-                        {connector.name}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="row">
-                    <Tag
-                      tone={
-                        connector.health === 'failing' || connector.health === 'degraded'
-                          ? 'outline'
-                          : 'accent'
-                      }
-                    >
-                      {connector.status_label}
-                    </Tag>
-                  </div>
-                  {connector.last_error ? (
-                    <div className="agent-error">{connector.last_error}</div>
-                  ) : connector.activity_label ? (
-                    <div className="card-meta">{connector.activity_label}</div>
-                  ) : null}
-                </Blueprint>
-              ))}
-            </div>
-          ) : (
-            <div className="panel-empty">
-              <p>Nothing is connected yet.</p>
-              {canView('connectors') ? (
-                <p className="small muted">
-                  The agents work on whatever you connect - a CMS, an ad account,
-                  analytics. Until then they run and report that they are waiting.
-                  Start on the <Link to="/connectors">Connectors</Link> screen.
-                </p>
-              ) : null}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <SectionHeading
-            title="Approval queue"
-            action={
-              canView('approvals') ? (
-                <Link to="/approvals" className="btn btn-ghost">
-                  View all →
-                </Link>
-              ) : undefined
-            }
-          />
-          <div className="stack-sm">
-            {approvals.map((item) => (
-              <div key={item.id} className="card">
-                <div className="row-between">
-                  <Tag tone="accent">{item.type}</Tag>
-                </div>
-                <div style={{ fontSize: 13, marginTop: 4 }}>{item.title}</div>
-                <div className="card-meta">
-                  from {item.agent} · {item.meta}
-                </div>
-              </div>
-            ))}
-            {approvals.length === 0 ? (
-              <div className="small muted">
-                {canView('approvals')
-                  ? 'Queue is clear.'
-                  : 'The approval queue is not visible to your role.'}
-              </div>
+      <div className="overview-grid">
+        <section className="panel" aria-labelledby="dashboard-activity-heading">
+          <div className="panel-head">
+            <h2 className="panel-title" id="dashboard-activity-heading" style={{ margin: 0 }}>
+              Agent activity
+            </h2>
+            {canView('agents') ? (
+              <Link to="/agents" className="panel-link">
+                View all <ChevronRightIcon size={14} />
+              </Link>
             ) : null}
           </div>
+          {rows.length > 0 ? (
+            <ul className="list">
+              {rows.map((agent) => (
+                // The agent's name is a real link (keyboard and screen
+                // readers); the rest of the row is a larger mouse target.
+                <li
+                  key={agent.slug}
+                  className="list-row is-link"
+                  onClick={(event: MouseEvent<HTMLLIElement>) => {
+                    if ((event.target as HTMLElement).closest('a')) return
+                    navigate(`/agents/${agent.slug}`)
+                  }}
+                >
+                  <AgentIcon slug={agent.slug} size={28} />
+                  <div className="list-row-main">
+                    <div className="list-row-title">
+                      <Link to={`/agents/${agent.slug}`} style={{ color: 'inherit' }}>
+                        {agent.name}
+                      </Link>
+                    </div>
+                    <div className="list-row-meta">
+                      {agent.busy
+                        ? agent.step || 'Working'
+                        : agent.last_run_summary || agent.metric_label || 'No runs yet'}
+                    </div>
+                  </div>
+                  <div className="list-row-side">
+                    <StatusDot tone={agentState(agent).tone}>{agentState(agent).label}</StatusDot>
+                    <span className="list-row-sub">
+                      {agent.busy ? 'In progress' : agent.status === 'running' ? nextRunText(agent) : ''}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="panel-empty-state">
+              No agents are set up yet.
+              {canView('agents') ? (
+                <>
+                  {' '}
+                  <Link to="/agents">Set one up</Link> to start optimizing.
+                </>
+              ) : null}
+            </div>
+          )}
+        </section>
+
+        <div className="overview-side">
+          <section className="panel" aria-labelledby="dashboard-approvals-heading">
+            <div className="panel-head">
+              <h2 className="panel-title" id="dashboard-approvals-heading" style={{ margin: 0 }}>
+                Needs your approval
+              </h2>
+              {canView('approvals') && approvals.length > 0 ? (
+                <Link to="/approvals" className="panel-link">
+                  Review <ChevronRightIcon size={14} />
+                </Link>
+              ) : null}
+            </div>
+            {approvals.length > 0 ? (
+              <ul className="list">
+                {approvals.map((item) => (
+                  <li key={item.id} className="list-row is-compact">
+                    <div className="list-row-main">
+                      <div className="list-row-title">{item.title}</div>
+                      <div className="list-row-meta">
+                        {item.type} · {item.agent} · {item.meta}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="panel-empty-state">
+                {canView('approvals')
+                  ? 'Nothing is waiting for review.'
+                  : 'The approval queue is not visible to your role.'}
+              </div>
+            )}
+          </section>
+
+          {canView('connectors') ? (
+            <section className="panel" aria-labelledby="dashboard-integrations-heading">
+              <div className="panel-head">
+                <h2 className="panel-title" id="dashboard-integrations-heading" style={{ margin: 0 }}>
+                  Integration health
+                </h2>
+                <Link to="/connectors" className="panel-link">
+                  Manage <ChevronRightIcon size={14} />
+                </Link>
+              </div>
+              {connectors.length > 0 ? (
+                <ul className="list">
+                  {connectors.map((connector) => {
+                    const failing =
+                      connector.health === 'failing' || connector.health === 'degraded'
+                    return (
+                      <li key={connector.slug} className="list-row is-compact">
+                        <ConnectorIcon slug={connector.slug} name={connector.name} size={24} />
+                        <div className="list-row-main">
+                          <div className="list-row-title">{connector.name}</div>
+                          {connector.last_error ? (
+                            <div className="list-row-meta is-error">{connector.last_error}</div>
+                          ) : connector.activity_label ? (
+                            <div className="list-row-meta">{connector.activity_label}</div>
+                          ) : null}
+                        </div>
+                        <StatusDot tone={failing ? 'danger' : 'success'}>
+                          {failing ? 'Issue' : 'Healthy'}
+                        </StatusDot>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <div className="panel-empty-state">
+                  Nothing connected yet. <Link to="/connectors">Add an integration</Link>.
+                </div>
+              )}
+            </section>
+          ) : null}
         </div>
       </div>
     </>

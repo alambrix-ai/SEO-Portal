@@ -1,0 +1,197 @@
+/* Insights kit: line chart, sparkline, bar list, delta badge and date range.
+   Colours come only from the theme tokens, so a dark theme that redefines
+   the tokens restyles these too. Every colour difference also has a
+   non-colour cue (dash pattern, arrow, words). */
+
+/* ── Line chart ─────────────────────────────────────────────────────────── */
+.ins-chart {
+  margin: 0;
+}
+.ins-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.ins-grid {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+.ins-axis {
+  fill: var(--color-text-muted);
+  font-size: 11px;
+  font-family: var(--font-body);
+}
+.ins-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.ins-dot {
+  fill: currentColor;
+}
+.ins-series-0 {
+  color: var(--color-accent);
+}
+.ins-series-1 {
+  color: var(--color-accent-2);
+}
+.ins-series-2 {
+  color: var(--color-warning);
+}
+.ins-series-3 {
+  color: var(--color-neutral-600);
+}
+.ins-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-2);
+  font-size: 12px;
+}
+.ins-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ins-legend-item svg {
+  flex: none;
+}
+.ins-chart-empty {
+  padding: var(--space-4);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+.ins-chart-empty p {
+  margin: 0;
+}
+
+/* ── Sparkline ──────────────────────────────────────────────────────────── */
+.ins-spark {
+  display: inline-block;
+  width: 100px;
+  height: 28px;
+  color: var(--color-accent);
+  vertical-align: middle;
+  overflow: visible;
+}
+.ins-spark .ins-line {
+  stroke-width: 1.5;
+}
+
+/* ── Bar list ───────────────────────────────────────────────────────────── */
+.ins-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.ins-bar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--space-3);
+  font-size: 13px;
+  color: var(--color-text);
+}
+.ins-bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ins-bar-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.ins-missing {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+.ins-bar-track {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-neutral-100);
+  overflow: hidden;
+}
+.ins-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+}
+
+/* ── Delta badge ────────────────────────────────────────────────────────── */
+.ins-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.ins-delta-arrow {
+  font-size: 10px;
+}
+.ins-delta-good {
+  color: var(--color-accent-2-800);
+  background: var(--color-success-soft);
+  border-color: var(--color-accent-2-200);
+}
+.ins-delta-bad {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+}
+.ins-delta-neutral {
+  color: var(--color-text-muted);
+  background: var(--color-surface-subtle);
+  border-color: var(--color-border);
+}
+
+/* ── Date range ─────────────────────────────────────────────────────────── */
+.ins-range {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+.ins-range-custom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+.ins-range-field {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+.ins-range-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* Windows high contrast: let the system colours through. */
+@media (forced-colors: active) {
+  .ins-series-0,
+  .ins-series-1,
+  .ins-series-2,
+  .ins-series-3,
+  .ins-spark {
+    color: CanvasText;
+  }
+  .ins-bar-fill {
+    background: Highlight;
+  }
+  .ins-delta {
+    border-color: CanvasText;
+  }
+}

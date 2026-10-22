@@ -9,22 +9,30 @@ import { useState } from 'react'
 import { api } from '@/api/client'
 import type { SeoPageDetail, SeoPageOut } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
+import { ScoreHistory, VersionHistory } from '@/components/AuditHistory'
+import { PageTabs } from '@/components/PageTabs'
 import { useToasts } from '@/components/Toasts'
 import {
   Dialog,
   EmptyState,
   ErrorState,
   Loading,
+  PageHeader,
   SectionHeading,
-  Tag,
   statusTone,
+  Tag,
 } from '@/components/ui'
 import { useDebounced, useResource } from '@/hooks/useResource'
 
+/** One line on what the comparison words mean, for a non-technical reader. */
+const COMPARE_HELP =
+  'Pick any two scoring runs to see the difference. New: a page scored for the first time. Fixed: a page whose topic gap went down. Worse: a page whose topic gap went up.'
+
 export function SeoPage() {
-  const { canWrite } = useAuth()
+  const { canView, canWrite } = useAuth()
   const { push, fromResult, fromError } = useToasts()
 
+  const [view, setView] = useState<'pages' | 'history'>('pages')
   const [search, setSearch] = useState('')
   const debounced = useDebounced(search)
   const { data, loading, error, reload } = useResource(
@@ -68,6 +76,33 @@ export function SeoPage() {
 
   return (
     <>
+      <PageHeader
+        title="SEO & AEO"
+        description="How well each page on your site covers its topic and answers the questions people ask search engines and AI assistants."
+      />
+      <PageTabs
+        value={view}
+        options={[
+          { value: 'pages', label: 'Pages' },
+          { value: 'history', label: 'Score history' },
+        ]}
+        onChange={setView}
+      />
+      {view === 'history' ? (
+        <>
+          <ScoreHistory />
+          {/* Scores are read-only records: the server marks them not
+              restorable, so the kit shows no restore button. */}
+          {canView('seo') ? (
+            <VersionHistory
+              kind="seo_scores"
+              title="Compare these scores with an earlier run"
+              description={COMPARE_HELP}
+            />
+          ) : null}
+        </>
+      ) : (
+      <>
       <div className="row-between" style={{ marginBottom: 14 }}>
         <input
           className="input w-280"
@@ -77,14 +112,14 @@ export function SeoPage() {
           aria-label="Search pages"
         />
         <div className="small muted">
-          {data.total} pages · webhook-synced to CMS live
+          {data.total} pages · kept up to date from your website automatically
         </div>
       </div>
 
       {data.pages.length === 0 ? (
         <EmptyState
           title="No pages synced yet"
-          description="Connect a CMS on the Connectors screen, then run On-Page SEO Sync. Pages appear here as soon as the crawler finds them."
+          description="Connect your website on the Integrations screen, then run On-Page SEO Sync. Pages appear here as soon as we find them."
         />
       ) : (
         <div className="table-scroll">
@@ -92,9 +127,15 @@ export function SeoPage() {
             <thead>
               <tr>
                 <th>Page</th>
-                <th>Semantic Gap</th>
-                <th>AEO Q&amp;A Pairs</th>
-                <th>Schema Injected</th>
+                <th title="How much of the page's topic is not yet covered. Lower is better.">
+                  Topic gaps
+                </th>
+                <th title="Questions and answers written for search engines and AI assistants">
+                  Questions answered
+                </th>
+                <th title="Extra details added to the page so search engines understand it">
+                  Search engine details
+                </th>
                 <th>Status</th>
                 <th />
               </tr>
@@ -140,7 +181,7 @@ export function SeoPage() {
 
       <SectionHeading
         title="Referral spam & traffic quality guard"
-        description="Blocks ghost, bot, and adult/spam referrers before they inflate bounce rate and pollute SEO signal quality."
+        description="Blocks fake and spam visits from other sites before they skew your traffic numbers and make your search reports less reliable."
         spaced
       />
 
@@ -178,6 +219,9 @@ export function SeoPage() {
         </div>
       )}
 
+      </>
+      )}
+
       {detail ? <PageDetailDialog page={detail} onClose={() => setDetail(null)} /> : null}
     </>
   )
@@ -205,8 +249,8 @@ function PageDetailDialog({
         <div className="mono-sub">{page.url}</div>
         <div className="row">
           <Tag tone={statusTone(page.status)}>{page.status_label}</Tag>
-          <Tag tone="neutral">Gap {page.gap_score}%</Tag>
-          <Tag tone="neutral">{page.aeo_pairs} Q&amp;A pairs</Tag>
+          <Tag tone="neutral">Topic gaps {page.gap_score}%</Tag>
+          <Tag tone="neutral">{page.aeo_pairs} questions answered</Tag>
           {page.schema_text ? <Tag tone="outline">{page.schema_text}</Tag> : null}
         </div>
 
@@ -274,13 +318,14 @@ function PageDetailDialog({
           </div>
         ) : null}
 
-        {/* The knowledge-graph agent's output, with the JSON-LD readable  - 
-            approving structured data for your own site without seeing it is
-            not something anyone can do responsibly. */}
+        {/* The knowledge-graph agent's output. The type and status are in
+            plain view; the JSON-LD itself sits under "Advanced" so a marketer
+            is not faced with code, while anyone who wants to check it before
+            approving still can. */}
         {page.schema_patches.length > 0 ? (
           <div>
             <div className="card-kicker">
-              Structured data ({page.schema_patches.length})
+              Search engine details ({page.schema_patches.length})
             </div>
             {page.schema_patches.map((patch, index) => (
               <div className="schema-patch" key={`${patch.schema_type}-${index}`}>
@@ -288,9 +333,12 @@ function PageDetailDialog({
                   <strong>{patch.schema_type}</strong>
                   <span className="qa-state">{patch.status}</span>
                 </div>
-                <pre className="schema-json">
-                  {JSON.stringify(patch.json_ld, null, 2)}
-                </pre>
+                <details className="advanced-disclosure">
+                  <summary>Advanced: show the code (JSON-LD)</summary>
+                  <pre className="schema-json">
+                    {JSON.stringify(patch.json_ld, null, 2)}
+                  </pre>
+                </details>
               </div>
             ))}
           </div>

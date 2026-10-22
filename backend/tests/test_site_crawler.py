@@ -128,6 +128,8 @@ def _crawler(handler, **overrides):  # noqa: ANN001, ANN003
     values = {
         "siteUrl": "https://alambrix.ai",
         "discovery": "sitemap",
+        # Required since the sitemap path stopped having a default.
+        "sitemapPath": "/sitemap.xml",
         **overrides,
     }
     connector = SiteCrawlerConnector(Credentials(values=values), org_id="o")

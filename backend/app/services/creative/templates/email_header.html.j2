@@ -1,0 +1,6 @@
+{#- Email header (600 px): rendered to a PNG and placed in the email as one
+    image, so mail clients that strip CSS still show it as designed. -#}
+{% extends "_base.html.j2" %}
+{% block extra_style %}
+.page { border-bottom: 2px solid {{ palette.accent|colour }}; box-sizing: border-box; }
+{% endblock %}

@@ -28,8 +28,9 @@ TENANT_SETTING = "app.current_tenant"
 # Tables carrying a tenant_id column that are read inside an authenticated,
 # tenant-pinned session.
 #
-# Four tables deliberately sit outside this list, because they are read
-# *before* a session exists and therefore cannot be scoped by one:
+# Some tables deliberately sit outside this list, because they are read
+# *before* a session exists and therefore cannot be scoped by one (the ones
+# with a tenant_id column are listed, with reasons, in RLS_EXEMPT_TABLES):
 #
 #   auth_identities   resolves which organisation an email belongs to at
 #                     sign-in; holds only an HMAC of the address (see
@@ -40,6 +41,12 @@ TENANT_SETTING = "app.current_tenant"
 #                     the code and a blind index of the address.
 #   refresh_tokens    redeemed by presenting a 32-byte token
 #   invitations       opened by presenting an invite token
+#   oauth_states      redeemed by the public OAuth callback, by presenting a
+#                     state signed with SECRET_KEY; keyed by a SHA-256 of
+#                     the state's nonce, and deleted as it is redeemed
+#   workspace_memberships
+#                     lists an address's workspaces at sign-in, before a
+#                     tenant is pinned; keyed by a blind index of the address
 #
 # In every case authorisation is possession of a secret that only ever went to
 # the account holder, and every one of them stores that secret as an HMAC
@@ -64,9 +71,44 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     "ad_creatives",
     "audience_clusters",
     "fraud_events",
+    "local_rank_checks",
+    "review_replies",
+    "marketing_assets",
+    "generated_images",
+    "site_analyses",
+    "audit_snapshots",
     "approval_items",
     "daily_metrics",
+    # Creative Studio (0019_creative_studio)
+    "stored_files",
+    "brand_kits",
+    "products",
+    "creative_jobs",
+    # Metrics and versions (0021_metrics_usage_versions)
+    "metric_points",
+    "social_post_metrics",
 )
+
+# Tables that carry a tenant_id column but are deliberately NOT under RLS,
+# each with the reason. tests/test_rls_coverage.py fails when a table with a
+# tenant_id column is in neither list (or in both), so a new table cannot
+# silently skip the decision.
+RLS_EXEMPT_TABLES: dict[str, str] = {
+    "auth_identities": (
+        "Resolves which organisation an email belongs to at sign-in, before a "
+        "session exists; keyed by an HMAC of the address."
+    ),
+    "refresh_tokens": "Redeemed by presenting a 32-byte token, before a session exists.",
+    "invitations": "Opened by presenting an invite token, before a session exists.",
+    "oauth_states": (
+        "Redeemed by the public OAuth callback with a state signed by SECRET_KEY; "
+        "keyed by a SHA-256 of the nonce and deleted as it is redeemed."
+    ),
+    "workspace_memberships": (
+        "Read at sign-in to list an address's workspaces before a tenant is "
+        "pinned (services/auth.py list_memberships); keyed by a blind index."
+    ),
+}
 
 _POLICY = "tenant_isolation"
 

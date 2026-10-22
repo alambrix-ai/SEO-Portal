@@ -1,6 +1,12 @@
-# Free deploy on Render + Neon
+# Render + Neon: TEST ENVIRONMENT ONLY
 
-This is the free path for AutoMarket AI:
+> **TEST ONLY.** This free path is for trying the product and testing
+> changes. It is not a supported production deployment: there are no Celery
+> workers, no Redis, no separate render worker or beat, no schema-owner/app
+> role split, no Chromium, and the free API sleeps. Production is self-hosted
+> with Docker; see [docs/deployment.md](docs/deployment.md).
+
+The test stack:
 
 | Piece | Where | Plan |
 |---|---|---|
@@ -12,8 +18,26 @@ This is the free path for AutoMarket AI:
 Agents run with the **in-process scheduler** (`SCHEDULER_ENABLED=true`,
 `CELERY_ENABLED=false`). No Redis or worker service is required.
 
-Local `docker compose` is unchanged for development. Render does **not** run
-`docker-compose.yml` as one unit.
+Render does **not** run `docker-compose.yml` as one unit.
+
+What is different from production here:
+
+- **Creative Studio** renders with Pillow (`CREATIVE_RENDERER=pillow`), and
+  the image is built without Chromium (`INSTALL_CHROMIUM=false`), so designs
+  are simpler than in production. Jobs run in a thread inside the API.
+- **Creative Studio offers no AI model** until you paste the
+  `CREATIVE_*_MODELS` lists (recommended values are in `backend/.env.example`).
+- **Scheduled work runs late.** The free API sleeps after about 15 minutes
+  idle, so scheduled social posts, metric collection, retention and agent
+  runs happen only while it is awake.
+- **Client addresses.** Render's proxy addresses are not published, so
+  `TRUSTED_PROXIES` is not set and per-IP rate limits are shared by every
+  tester. Never set it to `0.0.0.0/0`.
+- **Console security headers** (CSP, HSTS, nosniff, frame and referrer
+  policy) are set in `render.yaml` under `headers`, matching the production
+  nginx console. The CSP is Report-Only at first; rename the header to
+  `Content-Security-Policy` once the browser console shows no violations.
+  If your API subdomain differs, update it in the CSP too.
 
 ## OTP / email on Render
 
@@ -111,6 +135,8 @@ On **automarket-api**:
 On **automarket-console**:
 
 - `VITE_API_BASE_URL` = `https://<actual-api>.onrender.com/api/v1`
+- In `render.yaml` `headers`, replace `https://automarket-api.onrender.com`
+  in the CSP (`img-src` and `connect-src`) with the actual API origin.
 
 Then **redeploy the console** (static env vars are baked at build time).
 
@@ -127,10 +153,11 @@ Then **redeploy the console** (static env vars are baked at build time).
 - Start / docker command:
 
 ```bash
-sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers"
+sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-proxy-headers"
 ```
 
-Set the env vars listed in `render.yaml` under `automarket-api`.
+Set the env vars listed in `render.yaml` under `automarket-api`, including
+`INSTALL_CHROMIUM=false` and `CREATIVE_RENDERER=pillow`.
 
 ### Frontend — New Static Site
 
@@ -138,17 +165,24 @@ Set the env vars listed in `render.yaml` under `automarket-api`.
 - Publish directory: `frontend/dist`
 - Env: `VITE_API_BASE_URL=https://<your-api>.onrender.com/api/v1`
 - Rewrite: `/*` → `/index.html`
+- Headers: add the `headers` entries from `render.yaml` (path `/*`).
 
 ## Free-tier limits
 
 - The free API sleeps after ~15 minutes with no traffic.
 - Cold starts are slow.
-- Scheduled agents only run while the API is awake.
+- Scheduled agents, social posts and metric collection only run while the
+  API is awake.
 - Neon free storage and compute are capped; fine for demos, not heavy production.
 
 ## What this path deliberately skips
 
 - Render Postgres (paid / limited free history)
 - Render Key Value / Redis
-- Celery worker
+- Celery workers (general and render) and beat
+- The schema-owner/app database role split (`backend/scripts/bootstrap.sql`)
+- Chromium rendering for Creative Studio
 - Dockerized frontend on Render (static site is free and enough)
+
+For anything beyond testing, use the self-hosted stack in
+[docs/deployment.md](docs/deployment.md).

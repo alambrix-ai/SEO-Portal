@@ -8,11 +8,11 @@ from app.core.money import compact as money_compact
 from app.core.rbac import Module
 from app.models.agent import AgentStatus
 from app.schemas.common import Message
+from app.schemas.insights import ReportsOut
 from app.schemas.workspace import (
     DashboardOut,
     KpiOut,
     NotificationsOut,
-    ReportsOut,
 )
 from app.services import approvals as approval_service
 from app.services import audit
@@ -162,21 +162,36 @@ def reports(
     db: DbSession,
     range: str = Query(default="30d", pattern="^(7d|30d|90d)$"),
 ) -> ReportsOut:
-    """KPI tiles and the organic-session trend for one range."""
+    """KPI tiles and the organic-session trend for one range.
+
+    ``available`` is False when analytics measured no website visits in the
+    range (rows agents write do not count), so the screen can say what to
+    connect rather than show a page of zeros. Backlinks come from the
+    backlink tracker; ``None`` means not tracked. Ad spend and cost per
+    conversion are ``None`` with a note when no ad account was measured.
+    """
     current.require_view(Module.REPORTS)
     snapshot = metrics.snapshot(db, tenant_id=current.tenant_id, range_key=range)
+    backlinks = metrics.backlinks_won(db, tenant_id=current.tenant_id, range_key=range)
 
     return ReportsOut(
         range=snapshot.range_key,
         organic_sessions=metrics.compact(snapshot.organic_sessions),
         aeo_citations=snapshot.aeo_citations,
-        backlinks_won=snapshot.backlinks_won,
+        backlinks_won=backlinks,
+        backlinks_won_note="" if backlinks is not None else metrics.NOT_TRACKED,
         blended_cac=snapshot.blended_cac,
-        # Money, so the money formatter — not the count formatter.
-        ad_spend=money_compact(snapshot.ad_spend),
+        blended_cac_note=snapshot.blended_cac_note,
+        # Money, so the money formatter — not the count formatter. None when
+        # no ad account was measured: "Not tracked yet", never a zero spend.
+        ad_spend=money_compact(snapshot.ad_spend) if snapshot.ad_spend is not None else None,
+        ad_spend_note=snapshot.ad_spend_note,
         fraud_blocked=snapshot.fraud_blocked,
         referral_spam_blocked=snapshot.referral_spam_blocked,
         pages_optimised=snapshot.pages_optimised,
         trend=snapshot.trend,
-        # Pre-rendered for the SVG polyline the Reports chart draws.
+        trend_with_gaps=snapshot.trend_with_gaps,
+        trend_days=snapshot.days,
+        available=snapshot.available,
+        connect_hint="" if snapshot.available else metrics.REPORTS_CONNECT_HINT,
     )

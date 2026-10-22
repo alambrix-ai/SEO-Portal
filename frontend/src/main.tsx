@@ -9,6 +9,15 @@ import { ToastProvider } from './components/Toasts'
 
 import './styles/industry.css'
 import './styles/app.css'
+import './styles/enterprise.css'
+import './styles/guided.css'
+import './styles/activity.css'
+import './styles/states.css'
+import './styles/content.css'
+import './styles/analysis.css'
+import './styles/site-analysis.css'
+import './styles/connect.css'
+import './styles/verification.css'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('#root is missing from index.html')

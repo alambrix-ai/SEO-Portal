@@ -15,7 +15,7 @@ import {
   type ReactNode,
 } from 'react'
 
-import { ApiError } from '@/api/client'
+import { ApiError, type ApiErrorFields } from '@/api/client'
 import type { Toast } from '@/api/types'
 import { softenErrorMessage } from '@/lib/softenError'
 
@@ -37,6 +37,26 @@ interface ToastState {
 const ToastContext = createContext<ToastState | null>(null)
 
 const VISIBLE_MS = 4500
+
+/**
+ * Keys in `fields` that are not about a form field: `reason` is a code such
+ * as "too_large" and `request_id` is for support. Neither means anything to
+ * the person reading the toast.
+ */
+const NON_FIELD_KEYS = new Set(['reason', 'request_id'])
+
+/** A bare code ("too_large", "rate_limited"), not a sentence. */
+const CODE_SHAPED = /^[a-z0-9]+(?:[_.-][a-z0-9]+)*$/
+
+/** The first field error worth showing, or undefined to use the summary. */
+function fieldErrorMessage(fields: ApiErrorFields | undefined): string | undefined {
+  for (const [key, value] of Object.entries(fields ?? {})) {
+    if (NON_FIELD_KEYS.has(key) || typeof value !== 'string') continue
+    const text = value.trim()
+    if (text && !CODE_SHAPED.test(text)) return text
+  }
+  return undefined
+}
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
@@ -67,8 +87,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (error: unknown, fallback = 'Something went wrong. Please try again.') => {
       if (error instanceof ApiError) {
         // Field errors are more useful than the summary when present.
-        const fieldMessage = Object.values(error.fields ?? {})[0]
-        const raw = fieldMessage ?? error.message
+        const raw = fieldErrorMessage(error.fields) ?? error.message
         push(softenErrorMessage(raw, fallback), error.isForbidden ? 'warning' : 'error')
         return
       }

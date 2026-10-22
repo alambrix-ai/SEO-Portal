@@ -1,0 +1,58 @@
+{#-
+  Shared page for every creative. Rules (threat model D, research R3):
+  * never use |safe, never build markup from a string;
+  * every value inside <style> or a style attribute is a number from geo(),
+    a colour through |colour (validated #rrggbb), a font family f_<id> from
+    the allow-list, or a data: URI built by compose.py;
+  * the CSP below is the last line of defence if a request ever got past
+    the browser-level block.
+-#}
+{% macro box_style(box) -%}
+left: {{ geo(box.x) }}; top: {{ geo(box.y) }}; width: {{ geo(box.width) }}; height: {{ geo(box.height) }};
+{%- endmacro %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="{{ csp }}">
+<meta name="referrer" content="no-referrer">
+<title>Creative</title>
+<style>
+{% for face in faces %}
+@font-face { font-family: {{ face.family }}; font-weight: {{ face.weight }}; font-style: normal; src: url({{ face.data_uri }}) format("truetype"); }
+{% endfor %}
+{% if print_page %}
+@page { size: {{ page_w }} {{ page_h }}; margin: 0; }
+{% endif %}
+html, body { margin: 0; padding: 0; background: {{ palette.background|colour }}; }
+body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.page { position: relative; overflow: hidden; width: {{ page_w }}; height: {{ page_h }}; background: {{ palette.background|colour }}; break-after: page; }
+.page:last-child { break-after: auto; }
+.abs { position: absolute; margin: 0; padding: 0; box-sizing: border-box; }
+.text { overflow: hidden; white-space: nowrap; font-synthesis: none; font-optical-sizing: none; font-kerning: normal; line-height: {{ line_height }}; }
+.cover { object-fit: cover; }
+.contain { object-fit: contain; }
+{% block extra_style %}{% endblock %}
+</style>
+</head>
+<body>
+{% for page in pages %}
+<section class="page page-{{ loop.index }}">
+{% if page.background is not none %}
+<img class="abs cover background" alt="" src="{{ page.background.image.data_uri }}" style="{{ box_style(page.background.box) }}">
+{% endif %}
+{% for rect in page.rects %}
+<div class="abs rect {{ rect.role }}" style="{{ box_style(rect.box) }} background: {{ rect.colour|colour }}; opacity: {{ rect.opacity|round(2) }}; border-radius: {{ geo(rect.radius_px) }};"></div>
+{% endfor %}
+{% for image in page.images %}
+<img class="abs contain {{ image.role }}" alt="" src="{{ image.image.data_uri }}" style="{{ box_style(image.box) }}">
+{% endfor %}
+{% for block in page.texts %}
+<p class="abs text {{ block.role }}" style="{{ box_style(block.box) }} font-family: f_{{ block.font_id }}; font-weight: {{ block.weight }}; font-size: {{ geo(block.size_px) }}; color: {{ block.colour|colour }}; text-align: {{ 'center' if block.align == 'center' else 'left' }};">
+{% for line in block.lines %}{{ line }}{% if not loop.last %}<br>{% endif %}{% endfor %}
+</p>
+{% endfor %}
+</section>
+{% endfor %}
+</body>
+</html>

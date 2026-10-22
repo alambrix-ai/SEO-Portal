@@ -4,9 +4,9 @@
  * Two steps: give an address, then type the code that arrives in it. SSO
  * buttons sit above a divider when a deployment offers any.
  *
- * If the address has no account, the API says so immediately so we can guide
- * the operator to create a workspace (or ask for an invite) instead of
- * waiting for a code that will never arrive.
+ * The API answers every code request the same way, whether or not the address
+ * has an account, so this screen never reveals who has one. It shows the
+ * server's one message and points newcomers to sign-up underneath.
  */
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
@@ -17,8 +17,23 @@ import { softenErrorMessage } from '@/lib/softenError'
 import type { RegistrationPolicy } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { CodeEntry } from '@/components/CodeEntry'
-import { WillyBot } from '@/components/WillyBot'
 import { useFitDensity } from '@/hooks/useFitDensity'
+
+/**
+ * A sign-in button only links to a same-site path ("/api/...") or an https
+ * address; anything else (javascript:, data:, "//host") is not shown.
+ */
+function isSafeStartUrl(value: string): boolean {
+  const text = (value || '').trim()
+  if (!text || /\s/.test(text)) return false
+  if (text.startsWith('/')) return !text.startsWith('//') && !text.startsWith('/\\')
+  try {
+    const url = new URL(text)
+    return url.protocol === 'https:' && url.hostname !== '' && url.username === '' && url.password === ''
+  } catch {
+    return false
+  }
+}
 
 const CAPABILITIES = [
   {
@@ -43,6 +58,10 @@ const CAPABILITIES = [
   },
 ] as const
 
+/** Shown if the server's message is missing; mirrors its wording. */
+const SENT_FALLBACK =
+  "If that address has an account, we've sent it a sign-in code. Check your inbox."
+
 export function LoginPage() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
@@ -53,7 +72,8 @@ export function LoginPage() {
   const [step, setStep] = useState<'email' | 'code'>('email')
   const [resendIn, setResendIn] = useState(0)
   const [error, setError] = useState('')
-  const [noAccount, setNoAccount] = useState(false)
+  /** The server's uniform "if that address has an account…" message. */
+  const [sentNote, setSentNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [policy, setPolicy] = useState<RegistrationPolicy | null>(null)
 
@@ -64,7 +84,7 @@ export function LoginPage() {
       .catch(() => setPolicy(null))
   }, [])
 
-  const ssoProviders = policy?.sso_providers ?? []
+  const ssoProviders = (policy?.sso_providers ?? []).filter((provider) => isSafeStartUrl(provider.start_url))
   const codeLength = policy?.code_length ?? 6
   const signupOpen = policy?.public_signup !== false
 
@@ -78,32 +98,17 @@ export function LoginPage() {
     const address = email.trim()
     if (!address) {
       setError('Enter your email address')
-      setNoAccount(false)
       return
     }
     setError('')
-    setNoAccount(false)
     setBusy(true)
     try {
       const challenge = await api.requestCode(address)
+      setSentNote(softenErrorMessage(challenge.detail, SENT_FALLBACK))
       setResendIn(challenge.resend_in)
       setStep('code')
     } catch (caught) {
-      if (caught instanceof ApiError && caught.status === 404) {
-        setNoAccount(true)
-        setError(
-          caught.message ||
-            'No account found for that email. Create a workspace to get started.',
-        )
-      } else if (caught instanceof ApiError && caught.status === 403) {
-        setNoAccount(false)
-        setError(
-          caught.message ||
-            'That account is deactivated. Ask a workspace admin to restore access.',
-        )
-      } else {
-        setError(message(caught, 'Could not send a code'))
-      }
+      setError(message(caught, 'We could not send a code just now. Please try again.'))
     } finally {
       setBusy(false)
     }
@@ -111,7 +116,6 @@ export function LoginPage() {
 
   const submitCode = async (code: string) => {
     setError('')
-    setNoAccount(false)
     setBusy(true)
     try {
       const nextSession = await signIn(email.trim(), code)
@@ -138,47 +142,21 @@ export function LoginPage() {
         data-fit-w={fit.widthBand}
         data-fit-h={fit.heightBand}
       >
-        <aside className="auth-stage" aria-label="What AutoMarket AI runs">
-          <div className="auth-stage-glow" aria-hidden="true" />
-          <div className="auth-stage-grid" aria-hidden="true" />
-
+        <aside className="auth-stage auth-stage-enterprise" aria-label="What Synaprank.ai runs">
           <header className="auth-stage-top">
-            <BrandLogo height={34} />
-            <span className="auth-stage-live">
-              <span className="auth-stage-live-dot" />
-              Agents online
-            </span>
+            <BrandLogo height={26} />
           </header>
 
           <div className="auth-stage-content">
             <div className="auth-stage-copy">
-              <div className="auth-stage-hero">
-                <p className="auth-stage-kicker">SEO · AEO · Ads console</p>
-                <h1 className="auth-stage-title">Analyse. Rank. Convert.</h1>
-                <p className="auth-stage-lead">
-                  Autonomous SEO, answer-engine visibility, technical health, and
-                  programmatic ads in one branded workspace.
-                </p>
-              </div>
-
-              <div className="auth-serp" aria-hidden="true">
-                <div className="auth-serp-bar">
-                  <span className="auth-serp-url">yourbrand.com</span>
-                  <span className="auth-serp-query">best midsize SUV near me</span>
-                </div>
-                <div className="auth-serp-row is-aeo">
-                  <span className="auth-serp-badge">AI overview</span>
-                  <span>Cited in answer engines · AEO injector</span>
-                </div>
-                <div className="auth-serp-row is-organic">
-                  <span className="auth-serp-rank">#1</span>
-                  <span>Organic listing synced from CMS · On-page SEO</span>
-                </div>
-                <div className="auth-serp-row is-ads">
-                  <span className="auth-serp-badge is-ads">Sponsored</span>
-                  <span>Programmatic creative live · fraud-checked</span>
-                </div>
-              </div>
+              <p className="auth-stage-kicker">Search &amp; growth automation platform</p>
+              <h1 className="auth-stage-title">
+                Autonomous SEO, AEO and paid media, governed by your team.
+              </h1>
+              <p className="auth-stage-lead">
+                Agents audit, optimize and publish on schedule. Every change follows the
+                approval policy you set.
+              </p>
 
               <ul className="auth-capabilities">
                 {CAPABILITIES.map((item) => (
@@ -192,17 +170,11 @@ export function LoginPage() {
                 ))}
               </ul>
             </div>
-
-            <div className="auth-stage-willy" aria-hidden="true">
-              <div className="auth-willy-stack">
-                <WillyBot mode="hero" className="auth-willy" />
-                <div className="auth-willy-pad">
-                  <span className="auth-willy-pad-disc" />
-                  <span className="auth-willy-pad-shadow" />
-                </div>
-              </div>
-            </div>
           </div>
+
+          <footer className="auth-stage-foot">
+            Role-based access · Encrypted credentials · Full audit trail
+          </footer>
         </aside>
 
         <section className="auth-card auth-card-login" aria-label="Sign in">
@@ -219,8 +191,21 @@ export function LoginPage() {
               <p className="auth-tagline">
                 {step === 'email'
                   ? 'Work email only. We send a one-time code, so there is no password to manage.'
-                  : `We sent a ${codeLength}-digit code to ${email.trim() || 'your email'}.`}
+                  : sentNote || SENT_FALLBACK}
               </p>
+              {step === 'code' ? (
+                <p className="field-hint">
+                  The code has {codeLength} digits. Nothing arrived? Check the address
+                  {signupOpen ? (
+                    <>
+                      , or <Link to="/register">create a workspace</Link> if you are new
+                    </>
+                  ) : (
+                    <>, or ask your workspace admin for an invitation</>
+                  )}
+                  .
+                </p>
+              ) : null}
             </div>
 
             {step === 'email' ? (
@@ -261,7 +246,6 @@ export function LoginPage() {
                       value={email}
                       onChange={(event) => {
                         setEmail(event.target.value)
-                        if (noAccount) setNoAccount(false)
                         if (error) setError('')
                       }}
                     />
@@ -270,21 +254,7 @@ export function LoginPage() {
                     </div>
                   </div>
 
-                  {noAccount ? (
-                    <div className="auth-error" role="alert">
-                      <strong>No account for that email.</strong>
-                      <div style={{ marginTop: 6 }}>
-                        {signupOpen ? (
-                          <>
-                            <Link to="/register">Create a workspace</Link> to get
-                            started, or ask your admin for an invitation.
-                          </>
-                        ) : (
-                          <>Ask your workspace admin for an invitation to join.</>
-                        )}
-                      </div>
-                    </div>
-                  ) : error ? (
+                  {error ? (
                     <div className="auth-error" role="alert">
                       {error}
                     </div>
@@ -313,7 +283,7 @@ export function LoginPage() {
                 onChangeEmail={() => {
                   setStep('email')
                   setError('')
-                  setNoAccount(false)
+                  setSentNote('')
                 }}
               />
             )}

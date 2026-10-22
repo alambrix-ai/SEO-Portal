@@ -100,6 +100,9 @@ class BaseAdsConnector(AdsConnector):
         call_to_action: str,
         dimensions: str,
         audience_segment: str = "",
+        final_url: str = "",
+        extra_headlines: tuple[str, ...] = (),
+        extra_descriptions: tuple[str, ...] = (),
     ) -> str:
         return self._live_upload_creative(
             headline=headline,
@@ -107,6 +110,9 @@ class BaseAdsConnector(AdsConnector):
             call_to_action=call_to_action,
             dimensions=dimensions,
             audience_segment=audience_segment,
+            final_url=final_url or self.credentials.get("finalUrl", ""),
+            extra_headlines=tuple(extra_headlines),
+            extra_descriptions=tuple(extra_descriptions),
         )
 
     def _live_upload_creative(
@@ -117,6 +123,9 @@ class BaseAdsConnector(AdsConnector):
         call_to_action: str,
         dimensions: str,
         audience_segment: str,
+        final_url: str = "",
+        extra_headlines: tuple[str, ...] = (),
+        extra_descriptions: tuple[str, ...] = (),
     ) -> str:
         raise NotImplementedError(f"{self.name} does not accept uploaded creatives")
 

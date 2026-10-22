@@ -1,0 +1,8 @@
+# Keep the image small and free of secrets and local state.
+node_modules
+dist
+.env*
+!.env.example
+.git
+.vite
+*.log

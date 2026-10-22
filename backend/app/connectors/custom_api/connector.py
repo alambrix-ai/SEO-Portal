@@ -44,12 +44,17 @@ Page = {
   "schema_types": ["FAQPage", ...],   # optional
   "updated_at": "ISO-8601"            # optional
 }
+
+Every request carries X-AutoMarket-Timestamp and
+X-AutoMarket-Signature: sha256=HEX(HMAC-SHA256(secret, timestamp + "." + raw body))
+where raw body is the exact UTF-8 bytes received (empty for GET).
 """
 
 
 class CustomApiConnector(CmsConnector):
     spec = ConnectorSpec(
         slug="custom_api",
+        advanced=True,
         name="Custom API / Webhook",
         category="CMS",
         description=(
@@ -57,7 +62,7 @@ class CustomApiConnector(CmsConnector):
             "with your shared secret."
         ),
         fields=(
-            text("webhookUrl", "Base URL", "https://yourdomain.com/automarket"),
+            text("webhookUrl", "Base URL", "https://yourdomain.com/synaprank"),
             secret("secret", "Shared secret", "••••••••"),
         ),
         capabilities=frozenset(
@@ -89,11 +94,15 @@ class CustomApiConnector(CmsConnector):
         return self._sign("")
 
     def _signed_post(self, method: str, path: str, payload: dict) -> object:
-        body = json.dumps(payload, separators=(",", ":"))
+        # Serialised once, and those exact bytes are both signed and sent.
+        # Passing the dict as json_body let httpx re-serialise it its own way
+        # (non-ASCII escaping, separators), so the receiver's HMAC over what
+        # arrived could never match.
+        body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
         return self.request(
             method,
             path,
-            json_body=payload,
+            content=body.encode("utf-8"),
             headers={**self._sign(body), "Content-Type": "application/json"},
         )
 
@@ -147,6 +156,82 @@ class CustomApiConnector(CmsConnector):
             detail="Endpoint reachable" if ok else "Endpoint reported not ok",
             checked_at=utcnow(),
         )
+
+    # ── Live checks ────────────────────────────────────────────────────────
+    def verify_steps(self) -> list:
+        """Check ``/health`` and the page reads; send one marked, signed write.
+
+        The contract has no create or delete, so the write step sends one
+        page back exactly as it was read — same body, same title — through
+        the signed ``PUT /pages/{id}`` the agents use, marked ``"test": true``
+        with a note, and reads it back to confirm it is unchanged. It lands in
+        the customer's own system, so it needs a test endpoint.
+        """
+        from app.connectors.base import verify_helpers as vh
+
+        def health() -> tuple[str, dict]:
+            data = self.request("GET", "/health")
+            if isinstance(data, dict) and data.get("ok", True) is False:
+                raise ConnectorError("The endpoint answered /health but reported it is not ok.")
+            return "Reached the endpoint's /health check with a signed request.", {}
+
+        def pages() -> tuple[str, dict]:
+            found = self.list_pages(limit=5)
+            return (
+                f"Read {vh.plural(len(found), 'page')} from /pages.",
+                {"count": len(found), "ids": [p.remote_id for p in found]},
+            )
+
+        def one_page() -> tuple[str, dict]:
+            found = self.list_pages(limit=1)
+            if not found:
+                return "The endpoint listed no pages, so there was nothing to open.", {"count": 0}
+            page = self.read_page(found[0].remote_id)
+            return (
+                f"Opened one page and read {vh.plural(page.word_count, 'word')} of its text.",
+                {"id": page.remote_id, "words": page.word_count},
+            )
+
+        def signed_write() -> tuple[str, dict]:
+            found = self.list_pages(limit=1)
+            if not found:
+                raise ConnectorError(
+                    "The endpoint listed no pages, so there is no page to send back unchanged."
+                )
+            before = self.read_page(found[0].remote_id)
+            self._signed_post(
+                "PUT",
+                f"/pages/{before.remote_id}",
+                {
+                    "body": before.body,
+                    "title": before.title,
+                    "test": True,
+                    "note": "Synaprank.ai verification ping: this page is sent back unchanged.",
+                },
+            )
+            after = self.read_page(before.remote_id)
+            if after.body.strip() != before.body.strip() or after.title != before.title:
+                raise ConnectorError(
+                    f"Page {before.remote_id} was sent back unchanged, but now reads differently. "
+                    "Check it in your system."
+                )
+            return (
+                "Sent one signed, marked test write that returned a page unchanged, "
+                "and read it back unchanged.",
+                {"id": before.remote_id, "test": True},
+            )
+
+        return [
+            vh.read_step("health", "Reach the endpoint's health check", health),
+            vh.read_step("list_pages", "Read pages", pages),
+            vh.read_step("read_page", "Open one page and read its text", one_page),
+            vh.write_step(
+                "signed_unchanged_write",
+                "Send one signed, marked test write that leaves a page unchanged",
+                signed_write,
+                requires_test_account=True,
+            ),
+        ]
 
     # ── Mapping ────────────────────────────────────────────────────────────
     def _to_remote(self, row: dict) -> RemotePage:

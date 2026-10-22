@@ -1,14 +1,21 @@
 /**
- * Admin - team and role-based access, invitations, billing, audit log.
+ * Admin - team and role-based access, invitations, billing, audit log, the
+ * activity log download, the review setting's version history and how long
+ * versions are kept.
  *
  * The role select is disabled where the server would refuse the change (the
  * owner, and yourself), so the UI does not offer an action that cannot succeed.
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { api } from '@/api/client'
-import type { Role } from '@/api/types'
+import { needsConfirmation } from '@/api/history'
+import type { AuditExportFormat, Role } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
+import { saveFile } from '@/components/AnalysisReport'
+import { RetentionSettings, VersionHistory } from '@/components/AuditHistory'
+import { useConfirm } from '@/components/Confirm'
+import { SpendingSafetySettings } from '@/components/SafetyBits'
 import { useToasts } from '@/components/Toasts'
 import {
   Blueprint,
@@ -17,32 +24,103 @@ import {
   Field,
   Loading,
   Meter,
+  PageHeader,
   SectionHeading,
   Segmented,
   Tag,
 } from '@/components/ui'
-import { useDebounced, useResource } from '@/hooks/useResource'
+import { invalidateResourceCache, useDebounced, useResource } from '@/hooks/useResource'
+import {
+  GUARDRAIL_DETAIL,
+  GUARDRAIL_NAME,
+  PUBLISH_AUTOMATICALLY_CONFIRM,
+  REVIEW_SETTING_NAME,
+  isReviewSetting,
+  type ReviewSetting,
+} from '@/lib/plain'
+
+/** Most careful first, the same order onboarding offers them in. */
+const REVIEW_CHOICES: ReviewSetting[] = ['human', 'hybrid', 'full']
+
+/** Mirrors the server's default `audit_export_max_days`; the server enforces it. */
+const AUDIT_EXPORT_MAX_DAYS = 366
+const AUDIT_EXPORT_DEFAULT_DAYS = 30
+const DAY_MS = 86_400_000
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 export function AdminPage() {
-  const { canWrite, session, refresh } = useAuth()
+  const { canWrite, canView, session, refresh } = useAuth()
   const { push, fromResult, fromError } = useToasts()
+  const confirm = useConfirm()
   const writable = canWrite('admin')
+  // One call saves the workspace choice (onboarding) and the agents' on/off
+  // switch (agents) together; the server requires write access to both.
+  const reviewWritable = writable && canWrite('onboarding') && canWrite('agents')
 
   // Read from the session rather than kept locally, so it agrees with
-  // whatever the guardrail is actually enforcing after a refresh.
+  // whatever the runner is actually enforcing after a refresh.
   const autonomous = Boolean(session?.organization.global_autonomy)
+  const orgId = session?.organization.id ?? ''
+  const canSeeSetting = canView('onboarding')
+  const onboarding = useResource(
+    (signal) => (canSeeSetting ? api.onboarding(signal) : Promise.resolve(null)),
+    [orgId, canSeeSetting],
+    orgId && canSeeSetting ? `onboarding:${orgId}` : undefined,
+  )
+  const stored = onboarding.data?.guardrail ?? ''
+  // With the agents switched off every change waits, whatever was chosen.
+  const reviewSetting: ReviewSetting = !autonomous
+    ? 'human'
+    : isReviewSetting(stored) && stored !== 'human'
+      ? stored
+      : 'hybrid'
+  const [savingReview, setSavingReview] = useState(false)
+  // Bumped after a save or restore so the history list shows the new version.
+  const [policyVersion, setPolicyVersion] = useState(0)
 
-  const setAutonomy = async (next: boolean) => {
-    if (!writable) {
+  const setReviewSetting = async (next: ReviewSetting) => {
+    if (!reviewWritable) {
       push('View-only access for your role', 'warning')
       return
     }
+    if (next === reviewSetting || savingReview) return
+    if (next === 'full') {
+      const ok = await confirm(PUBLISH_AUTOMATICALLY_CONFIRM)
+      if (!ok) return
+    }
+    setSavingReview(true)
     try {
-      fromResult(await api.setGlobalAutonomy(next))
-      await refresh()
+      // One atomic, versioned call: the workspace choice and the agents'
+      // switch change together or not at all. The server only flips the
+      // agents' own switches when the workspace switch actually changes.
+      const body = { guardrail: next, autonomous: next !== 'human', confirm: next === 'full' }
+      try {
+        await api.setWorkspacePolicy(body)
+      } catch (caught) {
+        // The server still wants a confirmation (e.g. the setting changed
+        // meanwhile): ask the same question once more, then retry once.
+        if (body.confirm || !needsConfirmation(caught)) throw caught
+        if (!(await confirm(PUBLISH_AUTOMATICALLY_CONFIRM))) {
+          await onboarding.reload()
+          return
+        }
+        await api.setWorkspacePolicy({ ...body, confirm: true })
+      }
+      push(`${REVIEW_SETTING_NAME}: ${GUARDRAIL_NAME[next]}`, 'success')
+      await policyChanged()
     } catch (caught) {
       fromError(caught)
+      await onboarding.reload()
+    } finally {
+      setSavingReview(false)
     }
+  }
+
+  /** After a save or a restore: re-read the setting, the session switch and the agent cards. */
+  const policyChanged = async () => {
+    invalidateResourceCache('agents')
+    setPolicyVersion((n) => n + 1)
+    await Promise.all([onboarding.reload(), refresh()])
   }
 
   const [search, setSearch] = useState('')
@@ -79,8 +157,16 @@ export function AdminPage() {
     }
   }
 
-  const deactivate = async (id: string) => {
+  const deactivate = async (id: string, name: string) => {
     if (!guard()) return
+    const ok = await confirm({
+      title: 'Deactivate this member?',
+      message: `${name || 'This person'} will be signed out and will no longer be able to open this workspace.`,
+      confirmLabel: 'Deactivate',
+      cancelLabel: 'Keep them',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusyId(id)
     try {
       fromResult(await api.deactivateMember(id))
@@ -111,40 +197,51 @@ export function AdminPage() {
 
   return (
     <>
+      <PageHeader
+        title="Team & Access"
+        description="Members, roles and when agents ask you before publishing."
+      />
       {/* Moved here from the topbar, where it appeared on every screen next
           to controls it had nothing to do with - and, on the Agents screen,
           directly above twelve cards each carrying the same two words, which
           made it read as a filter for them. It is not a filter. It is the
-          ceiling: an agent set to Autonomous only acts on its own while this
+          ceiling: an agent set to publish on its own only does so while this
           allows it. */}
       <SectionHeading
-        title="Autonomy policy"
+        title={REVIEW_SETTING_NAME}
         description="Applies to every agent in the workspace."
       />
       <div className="card" style={{ marginBottom: 'var(--space-4)' }}>
         <div className="row-between">
           <div>
             <div className="card-title" style={{ fontSize: 15 }}>
-              {autonomous ? 'Autonomous execution' : 'Human review'}
+              {GUARDRAIL_NAME[reviewSetting]}
             </div>
             <p className="card-meta" style={{ marginTop: 4 }}>
-              {autonomous
-                ? 'Agents set to Autonomous apply low-impact changes themselves. High-impact ones still queue for approval.'
-                : 'Every change waits for a person, whatever an individual agent is set to.'}
+              {GUARDRAIL_DETAIL[reviewSetting]}
             </p>
           </div>
           <Segmented
-            name="autonomy-global"
-            value={autonomous ? 'auto' : 'human'}
-            options={[
-              { value: 'auto', label: 'Autonomous' },
-              { value: 'human', label: 'Human review' },
-            ]}
-            disabled={!writable}
-            onChange={(next) => void setAutonomy(next === 'auto')}
+            name="review-before-publishing"
+            value={reviewSetting}
+            options={REVIEW_CHOICES.map((value) => ({ value, label: GUARDRAIL_NAME[value] }))}
+            disabled={!reviewWritable || savingReview || (canSeeSetting && !onboarding.data)}
+            onChange={(next) => void setReviewSetting(next)}
           />
         </div>
       </div>
+
+      <VersionHistory
+        kind="workspace_policy"
+        title="Review setting history"
+        description={`A numbered version is kept each time "${REVIEW_SETTING_NAME}" changes. Open one to see who changed it and when, compare any two, or go back to an earlier setting.`}
+        refreshKey={String(policyVersion)}
+        onRestored={() => {
+          void policyChanged()
+        }}
+      />
+
+      <SpendingSafetySettings />
 
       <SectionHeading
         title="Team & role-based access"
@@ -209,7 +306,7 @@ export function AdminPage() {
                       type="button"
                       className="btn btn-ghost"
                       disabled={busyId === member.id}
-                      onClick={() => void deactivate(member.id)}
+                      onClick={() => void deactivate(member.id, member.name)}
                     >
                       Deactivate
                     </button>
@@ -310,6 +407,10 @@ export function AdminPage() {
         </div>
       </div>
 
+      {writable ? <AuditExportPanel /> : null}
+
+      <RetentionSettings />
+
       {inviting ? (
         <InviteDialog
           roles={data.role_options}
@@ -403,5 +504,203 @@ function InviteDialog({
         </select>
       </Field>
     </Dialog>
+  )
+}
+
+/** A calendar date as YYYY-MM-DD in the browser's own time zone. */
+function isoDate(value: Date): string {
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${value.getFullYear()}-${month}-${day}`
+}
+
+/** Days from `from` to `to`, both included; null when either is not a date. */
+function inclusiveDays(from: string, to: string): number | null {
+  if (!ISO_DATE.test(from) || !ISO_DATE.test(to)) return null
+  const start = Date.parse(`${from}T00:00:00Z`)
+  const end = Date.parse(`${to}T00:00:00Z`)
+  if (Number.isNaN(start) || Number.isNaN(end)) return null
+  return Math.round((end - start) / DAY_MS) + 1
+}
+
+/** A plain-English reason the range cannot be downloaded, or '' when it can. */
+function rangeProblem(from: string, to: string): string {
+  const days = inclusiveDays(from, to)
+  if (days === null) return 'Choose both a start and an end date.'
+  if (days < 1) return 'The end date must be on or after the start date.'
+  if (days > AUDIT_EXPORT_MAX_DAYS) {
+    return `Choose a range of ${AUDIT_EXPORT_MAX_DAYS} days or fewer.`
+  }
+  return ''
+}
+
+/**
+ * "Download activity log" - admin writers only (the server checks too).
+ *
+ * Large ranges arrive in parts: the server sends a cursor with each part
+ * while more entries remain, and the admin asks for the next part
+ * explicitly, so one click never starts an unbounded series of downloads.
+ * Changing the range or file type starts again from part 1.
+ */
+function AuditExportPanel() {
+  const { push, fromError } = useToasts()
+  const today = isoDate(new Date())
+  const [from, setFrom] = useState(() =>
+    isoDate(new Date(Date.now() - (AUDIT_EXPORT_DEFAULT_DAYS - 1) * DAY_MS)),
+  )
+  const [to, setTo] = useState(today)
+  const [format, setFormat] = useState<AuditExportFormat>('csv')
+  const [busy, setBusy] = useState(false)
+  // The cursor for the next part, and how many parts are already saved.
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [partsSaved, setPartsSaved] = useState(0)
+  const controller = useRef<AbortController | null>(null)
+
+  // Stop an unfinished download when the page is left.
+  useEffect(() => () => controller.current?.abort(), [])
+
+  const problem = rangeProblem(from, to)
+
+  const restart = () => {
+    setNextCursor(null)
+    setPartsSaved(0)
+  }
+
+  const download = async (cursor: string | null) => {
+    if (busy || problem) return
+    const abort = new AbortController()
+    controller.current = abort
+    setBusy(true)
+    try {
+      const file = await api.downloadAuditExport(
+        { from, to, format, ...(cursor ? { cursor } : {}) },
+        abort.signal,
+      )
+      saveFile(file)
+      const saved = cursor ? partsSaved + 1 : 1
+      setPartsSaved(saved)
+      setNextCursor(file.nextCursor)
+      if (file.nextCursor) {
+        push(`Part ${saved} downloaded. More entries remain.`, 'info')
+      } else {
+        push(saved > 1 ? `Last part (${saved}) downloaded` : 'Activity log downloaded', 'success')
+      }
+    } catch (caught) {
+      fromError(caught, 'The activity log could not be downloaded. Please try again.')
+    } finally {
+      if (controller.current === abort) controller.current = null
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <SectionHeading
+        title="Download activity log"
+        description="Every recorded action in this workspace - who did what, and when. Entries cannot be edited or deleted, so the file is a tamper-proof record."
+        spaced
+      />
+      <div className="card">
+        <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-start', gap: 16 }}>
+          <Field label="From" htmlFor="audit-export-from" required>
+            <input
+              id="audit-export-from"
+              className="input w-auto"
+              type="date"
+              value={from}
+              max={to || today}
+              disabled={busy}
+              onChange={(event) => {
+                setFrom(event.target.value)
+                restart()
+              }}
+            />
+          </Field>
+          <Field label="To" htmlFor="audit-export-to" required>
+            <input
+              id="audit-export-to"
+              className="input w-auto"
+              type="date"
+              value={to}
+              min={from || undefined}
+              max={today}
+              disabled={busy}
+              onChange={(event) => {
+                setTo(event.target.value)
+                restart()
+              }}
+            />
+          </Field>
+          <Field label="File type">
+            <Segmented
+              name="audit-export-format"
+              value={format}
+              options={[
+                { value: 'csv', label: 'Spreadsheet (CSV)' },
+                { value: 'json', label: 'JSON' },
+              ]}
+              disabled={busy}
+              onChange={(next) => {
+                setFormat(next)
+                restart()
+              }}
+            />
+          </Field>
+        </div>
+
+        {problem ? (
+          <p className="field-error" role="alert" style={{ marginTop: 0 }}>
+            {problem}
+          </p>
+        ) : (
+          <p className="card-meta" style={{ marginTop: 0 }}>
+            Up to {AUDIT_EXPORT_MAX_DAYS} days at a time. Large ranges download in parts.
+          </p>
+        )}
+
+        <div className="row" style={{ gap: 8, marginTop: 8 }} aria-live="polite">
+          {nextCursor ? (
+            <>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy || Boolean(problem)}
+                onClick={() => void download(nextCursor)}
+              >
+                {busy ? 'Downloading…' : `Download next part (part ${partsSaved + 1})`}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={busy}
+                onClick={restart}
+              >
+                Start again
+              </button>
+              <span className="small muted">
+                {partsSaved === 1 ? 'Part 1 is' : `Parts 1-${partsSaved} are`} saved. More
+                entries remain in this range.
+              </span>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy || Boolean(problem)}
+                onClick={() => void download(null)}
+              >
+                {busy ? 'Downloading…' : 'Download activity log'}
+              </button>
+              {partsSaved > 0 && !busy ? (
+                <span className="small muted">
+                  {partsSaved > 1 ? `All ${partsSaved} parts saved.` : 'Saved.'}
+                </span>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+    </>
   )
 }

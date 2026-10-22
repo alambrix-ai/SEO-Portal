@@ -100,12 +100,12 @@ def test_an_unrecognised_failure_leaves_the_original_error_alone():
         # A guessed channel means posting somewhere the customer's whole
         # company can see.
         ("slack", {}, "defaultChannel"),
-        # A guessed deal stage counts the wrong deals as conversions, and the
-        # number looks plausible either way.
-        ("hubspot", {"hubId": "1", "accessToken": "k"}, "wonStageId"),
-        # A guessed model changes what is asked and what it costs.
+        # A guessed model changes what is asked and what it costs. (HubSpot's
+        # won stage and Perplexity's model are no longer here: a blank won
+        # stage is read from the account's pipelines, and a blank Perplexity
+        # model uses the vendor's documented default — see
+        # tests/test_required_fields_audit.py.)
         ("openai", {"apiKey": "k"}, "model"),
-        ("perplexity", {"apiKey": "k"}, "model"),
     ],
 )
 def test_a_credential_nobody_gave_is_an_error_not_a_default(
@@ -133,9 +133,7 @@ def test_every_guessed_default_is_now_a_declared_field():
     for slug, key in (
         ("wordpress", "username"),
         ("slack", "defaultChannel"),
-        ("hubspot", "wonStageId"),
         ("openai", "model"),
-        ("perplexity", "model"),
         ("smtp_email", "notifyTo"),
     ):
         spec = registry.get_spec(slug)
@@ -148,14 +146,28 @@ def test_a_git_connector_will_not_guess_the_deploy_branch():
     """A repository on master would have every read fail with a stray 404.
 
     Worse, one that has a main *alongside* the branch that deploys would get
-    pull requests opened against the wrong one.
+    pull requests opened against the wrong one. So a blank branch is read
+    from the repository's own default branch, never assumed to be main — and
+    if the host reports none, that is an error that names the branch.
     """
+    import httpx
+
     klass = registry.get_class("github")
     instance = klass(
         Credentials(values={"repository": "acme/site", "token": "t"}), org_id="o"
     )
+    instance._client = httpx.Client(
+        base_url=instance.base_url,
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"default_branch": "trunk"})),
+    )
+    assert instance.branch == "trunk"
+
+    silent = klass(Credentials(values={"repository": "acme/site", "token": "t"}), org_id="o")
+    silent._client = httpx.Client(
+        base_url=silent.base_url, transport=httpx.MockTransport(lambda r: httpx.Response(200, json={}))
+    )
     with pytest.raises(ConnectorError, match="branch"):
-        _ = instance.branch
+        _ = silent.branch
 
 
 # ── Repository input, which is where the 404s came from ────────────────────

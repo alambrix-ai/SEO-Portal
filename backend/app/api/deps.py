@@ -11,19 +11,23 @@ read across tenants — even one that forgets its own ``WHERE tenant_id``.
 """
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Depends, Header, Request
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, aliased
 
+from app.core import client_ip as client_ip_module
 from app.core.exceptions import AuthError, ForbiddenError
 from app.core.rbac import ROLE_LABELS, Access, Module, Role, access_for
 from app.core.security import decode_access_token
 from app.core.config import settings
+from app.db.base import utcnow
 from app.db.session import bind_tenant, get_db
-from app.models.workspace import Organization, User
+from app.models.workspace import Organization, RefreshToken, User
 from app.services.encryption import OrgCipher
 
 # auto_error=False so a missing header raises our own AuthError with a
@@ -33,15 +37,13 @@ bearer_scheme = HTTPBearer(auto_error=False, scheme_name="Bearer")
 DbSession = Annotated[Session, Depends(get_db)]
 
 
-def client_ip(request: Request, x_forwarded_for: str | None = Header(default=None)) -> str:
-    """Best-effort client address for audit rows and rate limiting.
+def client_ip(request: Request) -> str:
+    """Client address for audit rows and rate limiting.
 
-    ``X-Forwarded-For`` is only trusted for its left-most entry, and only
-    because this service is expected to sit behind a proxy that sets it.
+    ``X-Forwarded-For`` counts only when the connecting peer is a trusted
+    proxy, walked from the right (see :mod:`app.core.client_ip`).
     """
-    if x_forwarded_for:
-        return x_forwarded_for.split(",")[0].strip()
-    return request.client.host if request.client else ""
+    return client_ip_module.resolve(request)
 
 
 ClientIp = Annotated[str, Depends(client_ip)]
@@ -133,6 +135,44 @@ class CurrentUser:
             raise ForbiddenError("Portal administration is restricted")
 
 
+def _is_uuid(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
+def session_is_live(db: Session, *, session_id: str, user_id: str, tenant_id: str) -> bool:
+    """Whether the token family behind ``session_id`` still has a live token.
+
+    An access token's ``sid`` is the refresh-token row it was minted with.
+    That row is spent on the next rotation, so the check is on its *family*:
+    rotation leaves a live successor (the session continues), while logout,
+    sign-out-everywhere and reuse detection revoke the whole family (the
+    access token stops working at once instead of at expiry).
+
+    One query: a primary-key lookup joined on the indexed ``family_id``.
+    """
+    issued = aliased(RefreshToken)
+    live = aliased(RefreshToken)
+    found = db.execute(
+        select(live.id)
+        .join(issued, issued.family_id == live.family_id)
+        .where(
+            issued.id == session_id,
+            issued.user_id == user_id,
+            issued.tenant_id == tenant_id,
+            live.revoked_at.is_(None),
+            live.expires_at > utcnow(),
+        )
+        .limit(1)
+    ).first()
+    return found is not None
+
+
 def get_current_user(
     db: DbSession,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
@@ -143,7 +183,8 @@ def get_current_user(
     claims = decode_access_token(credentials.credentials)
     user_id = claims.get("sub")
     tenant_id = claims.get("tid")
-    if not user_id or not tenant_id:
+    session_id = claims.get("sid")
+    if not user_id or not tenant_id or not _is_uuid(session_id):
         raise AuthError("Malformed session token")
 
     # Pin the organisation before loading anything, so even these first two
@@ -158,6 +199,9 @@ def get_current_user(
     # could still carry the old role; the database is the authority.
     if claims.get("role") != user.role:
         raise AuthError("Your access level changed — sign in again")
+
+    if not session_is_live(db, session_id=session_id, user_id=user_id, tenant_id=tenant_id):
+        raise AuthError("You've been signed out — sign in again")
 
     organization = db.get(Organization, tenant_id)
     if organization is None or not organization.is_active:

@@ -18,7 +18,7 @@ import {
 
 import { api, setSessionLostHandler, tokenStore } from '@/api/client'
 import type { Access, AuthResponse, ModuleKey, SessionOut } from '@/api/types'
-import { invalidateResourceCache } from '@/hooks/useResource'
+import { invalidateResourceCache, setResourceCacheScope } from '@/hooks/useResource'
 
 interface AuthState {
   session: SessionOut | null
@@ -53,19 +53,34 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null)
 
+/**
+ * Point the screens' data cache at this session (or at nobody), before the
+ * session itself changes, so a screen never paints another person's or
+ * another workspace's cached payload.
+ */
+function scopeCacheTo(session: SessionOut | null) {
+  setResourceCacheScope(session ? `${session.user.id}:${session.organization.id}` : '')
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<SessionOut | null>(null)
   const [loading, setLoading] = useState(true)
 
   const clear = useCallback(() => {
     tokenStore.clear()
+    invalidateResourceCache()
+    scopeCacheTo(null)
     setSession(null)
   }, [])
 
   // The client calls this when a refresh fails, so an expired session lands
   // on the login screen rather than a wall of failed requests.
   useEffect(() => {
-    setSessionLostHandler(() => setSession(null))
+    setSessionLostHandler(() => {
+      invalidateResourceCache()
+      scopeCacheTo(null)
+      setSession(null)
+    })
   }, [])
 
   // Restore on load: a stored token means the tab was reloaded, not closed.
@@ -78,7 +93,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       try {
         const restored = await api.me()
-        if (!cancelled) setSession(restored)
+        if (!cancelled) {
+          scopeCacheTo(restored)
+          setSession(restored)
+        }
       } catch {
         if (!cancelled) clear()
       } finally {
@@ -92,6 +110,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const adopt = useCallback((response: AuthResponse) => {
     tokenStore.set(response.tokens)
+    // A new sign-in or workspace: nothing cached for the previous one may show.
+    invalidateResourceCache()
+    scopeCacheTo(response.session)
     setSession(response.session)
   }, [])
 
@@ -153,7 +174,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      setSession(await api.me())
+      const fresh = await api.me()
+      scopeCacheTo(fresh)
+      setSession(fresh)
     } catch {
       clear()
     }

@@ -1,0 +1,8 @@
+{#- Folded brochure: page 1 is the outside (back, flap, cover on the right),
+    page 2 the inside. Each page is trim plus bleed; panels are laid out by
+    compose.py, so folds never cut through text. -#}
+{% extends "_base.html.j2" %}
+{% block extra_style %}
+.headline { letter-spacing: -0.01em; }
+.page-2 .body { text-align: left; }
+{% endblock %}

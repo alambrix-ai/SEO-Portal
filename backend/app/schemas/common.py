@@ -53,13 +53,13 @@ class ActionResult(ApiModel):
 
 
 class HealthStatus(ApiModel):
+    """Public readiness probe. Deliberately carries no build details."""
+
     status: str
-    app: str
-    environment: str
-    version: str
     database: str
     agents_registered: int
     connectors_registered: int
-    model: str
     scheduler: str
+    #: The creative renderer: chromium, pillow, degraded or not_started.
+    renderer: str | None = None
     checked_at: datetime

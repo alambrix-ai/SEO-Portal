@@ -1,0 +1,571 @@
+/* Creative Studio: the five-step wizard, previews and review actions. */
+
+.cs-topline {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.cs-quota {
+  margin: 0;
+  color: var(--color-text-subtle);
+  font-size: 13px;
+}
+.cs-note {
+  margin: 0 0 12px;
+  color: var(--color-text-subtle);
+  font-size: 13px;
+}
+.cs-subhead {
+  margin: 12px 0 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.cs-legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.cs-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 18px;
+  min-width: 0;
+}
+
+/* Callouts carry a text label ("Heads up", "Needs a fix") as well as colour. */
+.cs-callout {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  border-left-width: 4px;
+  font-size: 13.5px;
+  background: var(--color-surface-subtle);
+}
+.cs-callout.is-warning {
+  border-left-color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+.cs-callout.is-danger {
+  border-left-color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+/* ── Stepper ───────────────────────────────────────────────────────────── */
+.cs-stepper {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cs-stepper-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cs-stepper-button:disabled {
+  cursor: not-allowed;
+  color: var(--color-text-subtle);
+}
+.cs-stepper-item.is-current .cs-stepper-button {
+  border-color: var(--color-neutral-800);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--color-neutral-800);
+}
+.cs-stepper-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-strong);
+  font-size: 11.5px;
+}
+.cs-stepper-item.is-done .cs-stepper-mark {
+  background: var(--color-success-soft);
+  border-color: var(--color-success);
+}
+
+/* ── Panel and navigation ──────────────────────────────────────────────── */
+.cs-panel {
+  padding: 20px;
+}
+.cs-step-heading {
+  margin: 0 0 14px;
+  font-size: 18px;
+}
+.cs-step-heading:focus {
+  outline: none;
+}
+.cs-step-heading:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.cs-nav {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+/* Visible keyboard focus on every custom control. */
+.cs-tile:focus-visible,
+.cs-stepper-button:focus-visible,
+.cs-chip:focus-within,
+.cs-choice:focus-within,
+.cs-size:focus-within,
+.cs-model:focus-within,
+.cs-advanced summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ── Step 1: tiles and sizes ───────────────────────────────────────────── */
+.cs-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
+.cs-tile {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  text-align: left;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+.cs-tile:hover {
+  border-color: var(--color-border-strong);
+}
+.cs-tile.is-open {
+  border-color: var(--color-neutral-800);
+  box-shadow: inset 0 0 0 1px var(--color-neutral-800);
+}
+.cs-tile-icon {
+  color: var(--color-neutral-700);
+}
+.cs-tile-title {
+  font-weight: 600;
+}
+.cs-tile-text {
+  color: var(--color-text-subtle);
+  font-size: 12.5px;
+}
+.cs-tile-count {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-subtle);
+}
+.cs-tile.is-chosen .cs-tile-count {
+  color: var(--color-text);
+  font-weight: 600;
+}
+.cs-sizes {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.cs-size-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 6px;
+}
+.cs-size {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.cs-size.is-checked {
+  border-color: var(--color-neutral-800);
+  background: var(--color-surface-subtle);
+}
+.cs-size.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.cs-size-name {
+  font-weight: 500;
+}
+.cs-size-meta {
+  grid-column: 2;
+  color: var(--color-text-subtle);
+  font-size: 12px;
+}
+.cs-count {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
+/* ── Step 2: kit and product choices ───────────────────────────────────── */
+.cs-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+.cs-choice {
+  display: grid;
+  grid-template-columns: auto 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.cs-choice.is-checked {
+  border-color: var(--color-neutral-800);
+  box-shadow: inset 0 0 0 1px var(--color-neutral-800);
+}
+.cs-choice-thumb {
+  width: 56px;
+  height: 42px;
+  object-fit: contain;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-subtle);
+}
+.cs-choice-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.cs-choice-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.cs-choice-meta {
+  color: var(--color-text-subtle);
+  font-size: 12px;
+}
+.cs-swatches {
+  display: flex;
+  gap: 4px;
+}
+.cs-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-strong);
+}
+.cs-product-detail {
+  margin-top: 4px;
+}
+.cs-photos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cs-photo {
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.cs-image-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--color-text-subtle);
+  font-size: 11px;
+}
+
+/* ── Step 3: message ───────────────────────────────────────────────────── */
+.cs-message textarea,
+.cs-message input[type='text'],
+.cs-message select {
+  width: 100%;
+}
+.cs-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cs-chip input {
+  margin: 0;
+}
+.cs-chip.is-checked {
+  border-color: var(--color-neutral-800);
+  font-weight: 600;
+}
+
+/* ── Step 4: AI choices ────────────────────────────────────────────────── */
+.cs-model-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.cs-model {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.cs-model.is-checked {
+  border-color: var(--color-neutral-800);
+  box-shadow: inset 0 0 0 1px var(--color-neutral-800);
+}
+.cs-model.is-disabled {
+  cursor: not-allowed;
+  background: var(--color-surface-subtle);
+}
+.cs-model-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cs-model-reason {
+  margin: 4px 0 0 12px;
+  color: var(--color-text-subtle);
+  font-size: 12.5px;
+}
+.cs-advanced {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.cs-advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.cs-advanced-table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.cs-advanced-table th,
+.cs-advanced-table td {
+  padding: 4px 12px 4px 0;
+  text-align: left;
+  vertical-align: top;
+}
+.cs-advanced-table code {
+  overflow-wrap: anywhere;
+}
+
+/* ── Step 5: summary, progress and results ─────────────────────────────── */
+.cs-summary-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0 0 14px;
+  font-size: 13.5px;
+}
+.cs-summary-list dt {
+  font-weight: 600;
+}
+.cs-summary-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.cs-summary-text {
+  white-space: pre-wrap;
+}
+.cs-progress {
+  padding: 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.cs-progress-now {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+.cs-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border-strong);
+  border-top-color: var(--color-neutral-800);
+  animation: cs-spin 0.9s linear infinite;
+}
+@keyframes cs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-spinner {
+    animation: none;
+  }
+}
+.cs-progress-steps {
+  list-style: none;
+  margin: 10px 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 13px;
+}
+.cs-progress-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-subtle);
+}
+.cs-progress-step.is-now {
+  color: var(--color-text);
+  font-weight: 600;
+}
+.cs-progress-step.is-done {
+  color: var(--color-text);
+}
+.cs-progress-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-strong);
+  font-size: 11px;
+}
+.cs-job + .cs-job {
+  margin-top: 18px;
+}
+.cs-job-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.cs-output-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.cs-output {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+.cs-output.is-replaced,
+.cs-output.is-rejected {
+  opacity: 0.75;
+}
+.cs-output-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  padding: 10px;
+  background: var(--color-surface-subtle);
+  border-bottom: 1px solid var(--color-border);
+}
+.cs-output-image {
+  max-width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+}
+span.cs-output-image {
+  min-height: 160px;
+}
+.cs-output-body {
+  padding: 12px 14px;
+}
+.cs-output-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cs-output-title {
+  margin: 0;
+  font-size: 14px;
+}
+.cs-output-meta {
+  margin-top: 2px;
+  color: var(--color-text-subtle);
+  font-size: 12px;
+}
+.cs-qa {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+.cs-qa.is-ok {
+  color: var(--color-text);
+}
+.cs-qa-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+.cs-qa-kind {
+  font-weight: 600;
+}
+.cs-qa-item.is-error .cs-qa-kind {
+  color: var(--color-danger);
+}
+.cs-output-actions,
+.cs-downloads {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.cs-downloads .cs-note {
+  margin: 0;
+}
+.cs-downloads-label {
+  font-size: 12.5px;
+  font-weight: 600;
+}

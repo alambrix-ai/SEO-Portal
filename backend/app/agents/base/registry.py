@@ -32,6 +32,8 @@ FLEET_ORDER: tuple[str, ...] = (
     "predictive_budget_engine",
     "first_party_audience_modeler",
     "click_fraud_controller",
+    "local_search_tracker",
+    "review_responder",
 )
 
 _registry: dict[str, BaseAgent] = {}
@@ -76,14 +78,28 @@ def _discover() -> None:
 
 
 def all_agents() -> list[BaseAgent]:
-    """Every registered agent, in fleet order (unlisted ones last)."""
+    """Every fleet agent, in fleet order (unlisted ones last).
+
+    On-demand agents (``AgentSpec.on_demand``) are left out: they run only
+    when a job asks for them, so they are never installed in a workspace,
+    scheduled or shown as a card. ``get_agent`` still finds them.
+    """
     _discover()
-    ordered = [_registry[slug] for slug in FLEET_ORDER if slug in _registry]
+    fleet = {slug: a for slug, a in _registry.items() if not a.spec.on_demand}
+    ordered = [fleet[slug] for slug in FLEET_ORDER if slug in fleet]
     extra = sorted(
-        (a for slug, a in _registry.items() if slug not in FLEET_ORDER),
+        (a for slug, a in fleet.items() if slug not in FLEET_ORDER),
         key=lambda a: a.spec.name,
     )
     return ordered + extra
+
+
+def on_demand_agents() -> list[BaseAgent]:
+    """Registered on-demand agents, by name."""
+    _discover()
+    return sorted(
+        (a for a in _registry.values() if a.spec.on_demand), key=lambda a: a.spec.name
+    )
 
 
 def get_agent(slug: str) -> BaseAgent | None:
