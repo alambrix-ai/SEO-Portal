@@ -17,7 +17,9 @@ import { Menu } from '@/components/Menu'
 import { PracticeBadge } from '@/components/SafetyBits'
 import { useToasts } from '@/components/Toasts'
 import { MoreIcon, SearchIcon } from '@/components/icons'
+import { ListPager } from '@/components/ListPager'
 import { EmptyState, ErrorState, Loading, PageHeader, StatusDot } from '@/components/ui'
+import { usePagedList } from '@/hooks/usePagedList'
 import { useResource } from '@/hooks/useResource'
 import { STATE_FILTERS, STATE_ORDER, agentState, filterKey } from '@/lib/agentState'
 import type { AgentStateKey } from '@/lib/agentState'
@@ -106,16 +108,18 @@ export function AgentsPage() {
       .sort((a, b) => STATE_ORDER.indexOf(a.state.key) - STATE_ORDER.indexOf(b.state.key))
   }, [withState, filter, query])
 
+  const pager = usePagedList(visible, { storageKey: 'agents', resetKey: `${filter}|${query}` })
+
   if (loading && !data) return <Loading label="Loading agents…" />
   if (error && !data) return <ErrorState message={error} onRetry={reload} />
   if (!data) return null
 
   const setupAgent = setupSlug ? data.find((a) => a.slug === setupSlug) ?? null : null
-  const known = new Set(AGENT_GROUPS.map((g) => g.category))
+  const known = new Set(AGENT_GROUPS.map((g) => g.category.toLowerCase()))
   const groups = [
     ...AGENT_GROUPS,
     ...[...new Set(data.map((a) => a.category))]
-      .filter((c) => !known.has(c))
+      .filter((c) => !known.has(c.toLowerCase()))
       .map((c) => ({ category: c, title: c, description: '' })),
   ]
 
@@ -160,7 +164,9 @@ export function AgentsPage() {
       </div>
 
       {groups.map((group) => {
-        const rows = visible.filter(({ agent }) => agent.category === group.category)
+        const rows = pager.slice.filter(
+          ({ agent }) => agent.category.toLowerCase() === group.category.toLowerCase(),
+        )
         if (rows.length === 0) return null
         return (
           <section key={group.category} className="agent-group">
@@ -190,6 +196,20 @@ export function AgentsPage() {
           </section>
         )
       })}
+
+      {visible.length > 0 ? (
+        <ListPager
+          total={pager.total}
+          from={pager.from}
+          to={pager.to}
+          page={pager.page}
+          pageCount={pager.pageCount}
+          pageSize={pager.pageSize}
+          onPage={pager.setPage}
+          onPageSize={pager.setPageSize}
+          label="Agent pages"
+        />
+      ) : null}
 
       {data.length === 0 ? (
         <EmptyState

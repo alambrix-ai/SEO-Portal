@@ -1,7 +1,7 @@
 /* Website analysis report (Site analysis page and Portal Admin → Analyses). */
 .fa {
-  min-height: 100vh;
-  background: var(--color-bg);
+  min-height: 0;
+  background: transparent;
   color: var(--color-text);
   font-family: var(--font-body);
 }
@@ -212,9 +212,14 @@
 
 /* ── Report layout ──────────────────────────────────────────────────── */
 .fa-report {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 8px 24px 64px;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.page .fa-top {
+  max-width: none;
+  margin: 0;
+  padding: 0 0 16px;
 }
 .fa-summary {
   display: flex;

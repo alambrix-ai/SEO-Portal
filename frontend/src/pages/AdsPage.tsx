@@ -11,6 +11,7 @@ import { api } from '@/api/client'
 import type { ActionResult } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { useToasts } from '@/components/Toasts'
+import { ListPager } from '@/components/ListPager'
 import {
   Blueprint,
   EmptyState,
@@ -20,6 +21,7 @@ import {
   SectionHeading,
   Tag,
 } from '@/components/ui'
+import { usePagedList } from '@/hooks/usePagedList'
 import { useResource } from '@/hooks/useResource'
 import { money, moneyExact } from '@/lib/money'
 
@@ -44,6 +46,8 @@ export function AdsPage() {
   }, [data])
 
   const writable = canWrite('ads')
+  const creativePager = usePagedList(data?.creatives ?? [], { storageKey: 'ads-creatives' })
+  const fraudPager = usePagedList(data?.fraud_log ?? [], { storageKey: 'ads-fraud' })
 
   const guard = (): boolean => {
     if (!writable) {
@@ -196,7 +200,7 @@ export function AdsPage() {
             />
           ) : (
             <div className="grid-cards-xs">
-              {data.creatives.map((creative) => (
+              {creativePager.slice.map((creative) => (
                 <Blueprint key={creative.id} className="creative-tile">
                   <div className="creative-platform">{creative.platform}</div>
                   <div style={{ marginTop: 6 }}>{creative.dimensions}</div>
@@ -208,6 +212,19 @@ export function AdsPage() {
               ))}
             </div>
           )}
+          {data.creatives.length > 0 ? (
+            <ListPager
+              total={creativePager.total}
+              from={creativePager.from}
+              to={creativePager.to}
+              page={creativePager.page}
+              pageCount={creativePager.pageCount}
+              pageSize={creativePager.pageSize}
+              onPage={creativePager.setPage}
+              onPageSize={creativePager.setPageSize}
+              label="Ad variation pages"
+            />
+          ) : null}
 
           {data.audiences.length > 0 ? (
             <>
@@ -262,7 +279,7 @@ export function AdsPage() {
               </tr>
             </thead>
             <tbody>
-              {data.fraud_log.map((event, index) => (
+              {fraudPager.slice.map((event, index) => (
                 <tr key={`${event.source}-${index}`}>
                   <td>{event.time}</td>
                   <td>{event.source}</td>
@@ -278,6 +295,19 @@ export function AdsPage() {
           </table>
         </div>
       )}
+      {data.fraud_log.length > 0 ? (
+        <ListPager
+          total={fraudPager.total}
+          from={fraudPager.from}
+          to={fraudPager.to}
+          page={fraudPager.page}
+          pageCount={fraudPager.pageCount}
+          pageSize={fraudPager.pageSize}
+          onPage={fraudPager.setPage}
+          onPageSize={fraudPager.setPageSize}
+          label="Blocked placement pages"
+        />
+      ) : null}
     </>
   )
 }

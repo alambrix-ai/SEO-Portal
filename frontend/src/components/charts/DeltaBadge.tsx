@@ -31,9 +31,18 @@ export interface DeltaBadgeProps {
 
 interface Delta {
   arrow: string
+  /** Short lead, e.g. "0.4% up" or "No change". Empty when the whole sentence is `text`. */
+  amount: string
+  /** Trailing comparison, e.g. "vs previous period". Wraps on a second line in a tight tile. */
+  comparison: string
   text: string
   tone: Tone
   spoken: string
+}
+
+function deltaParts(amount: string, comparison: string, extra: Omit<Delta, 'amount' | 'comparison' | 'text'>): Delta {
+  const text = [amount, comparison].filter(Boolean).join(' ')
+  return { ...extra, amount, comparison, text }
 }
 
 export function describeDelta({
@@ -45,27 +54,33 @@ export function describeDelta({
   comparison = 'vs previous period',
 }: DeltaBadgeProps): Delta {
   if (current === null || current === undefined || !Number.isFinite(current)) {
-    return { arrow: '', text: 'No data for this period', tone: 'neutral', spoken: 'No data for this period' }
+    return deltaParts('No data for this period', '', {
+      arrow: '',
+      tone: 'neutral',
+      spoken: 'No data for this period',
+    })
   }
   if (previous === null || previous === undefined || !Number.isFinite(previous)) {
-    return {
+    return deltaParts('No earlier data', '', {
       arrow: '',
-      text: 'No earlier data',
       tone: 'neutral',
       spoken: 'No earlier data to compare with',
-    }
+    })
   }
   const before = formatValue(previous, unit)
   if (previous === 0) {
     if (current === 0) {
-      return { arrow: '–', text: `No change ${comparison}`, tone: 'neutral', spoken: `No change ${comparison}` }
+      return deltaParts('No change', comparison, {
+        arrow: '–',
+        tone: 'neutral',
+        spoken: `No change ${comparison}`,
+      })
     }
-    return {
+    return deltaParts('New', comparison, {
       arrow: current > 0 ? '▲' : '▼',
-      text: `New ${comparison}`,
       tone: toneFor(current > 0 ? 'up' : 'down', better),
-      spoken: `New: there was none in the previous period`,
-    }
+      spoken: 'New: there was none in the previous period',
+    })
   }
 
   const pct =
@@ -73,22 +88,20 @@ export function describeDelta({
       ? changePct
       : ((current - previous) / Math.abs(previous)) * 100
   if (Math.abs(pct) < FLAT_PCT) {
-    return {
+    return deltaParts('No change', comparison, {
       arrow: '–',
-      text: `No change ${comparison}`,
       tone: 'neutral',
       spoken: `No change from ${before} in the previous period`,
-    }
+    })
   }
   const direction = pct > 0 ? 'up' : 'down'
   const size = Math.abs(pct)
   const amount = size > MAX_PCT ? `over ${MAX_PCT}%` : `${size < 10 ? size.toFixed(1) : Math.round(size)}%`
-  return {
+  return deltaParts(`${amount} ${direction}`, comparison, {
     arrow: direction === 'up' ? '▲' : '▼',
-    text: `${amount} ${direction} ${comparison}`,
     tone: toneFor(direction, better),
     spoken: `${direction === 'up' ? 'Up' : 'Down'} ${amount} from ${before} in the previous period`,
-  }
+  })
 }
 
 function toneFor(direction: 'up' | 'down', better: 'up' | 'down'): Tone {
@@ -104,7 +117,11 @@ export function DeltaBadge(props: DeltaBadgeProps) {
           {delta.arrow}
         </span>
       ) : null}
-      <span aria-hidden="true">{delta.text}</span>
+      <span aria-hidden="true" className="ins-delta-copy">
+        {delta.amount ? <span className="ins-delta-amount">{delta.amount}</span> : null}
+        {delta.comparison ? <span className="ins-delta-vs"> {delta.comparison}</span> : null}
+        {!delta.amount && !delta.comparison ? delta.text : null}
+      </span>
       <span className="sr-only">{delta.spoken}</span>
     </span>
   )

@@ -18,9 +18,17 @@ import { ConnectorIcon } from '@/components/ConnectorIcon'
 import { Menu } from '@/components/Menu'
 import { useToasts } from '@/components/Toasts'
 import { MoreIcon, SearchIcon } from '@/components/icons'
+import { ListPager } from '@/components/ListPager'
 import { ErrorState, Loading, PageHeader, StatusDot } from '@/components/ui'
-import { CONNECTOR_CATEGORY, CONNECTOR_CATEGORY_ORDER, categoryTitle } from '@/lib/plain'
+import {
+  CONNECTOR_CATEGORY,
+  categoryMatches,
+  categorySortKey,
+  categoryTitle,
+  uniqueCategoryChips,
+} from '@/lib/plain'
 import { softenErrorMessage } from '@/lib/softenError'
+import { usePagedList } from '@/hooks/usePagedList'
 import { useResource } from '@/hooks/useResource'
 
 type View = 'connected' | 'catalog'
@@ -96,32 +104,61 @@ export function ConnectorsPage() {
   const catalog = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return (data ?? []).filter((connector) => {
-      if (category !== 'All' && connector.category !== category) return false
+      if (!categoryMatches(connector.category, category)) return false
       if (!needle) return true
       return (
         connector.name.toLowerCase().includes(needle) ||
+        categoryTitle(connector.category).toLowerCase().includes(needle) ||
         connector.category.toLowerCase().includes(needle) ||
         connector.description.toLowerCase().includes(needle)
       )
     })
   }, [data, category, query])
 
+  const connectedPager = usePagedList(connected, { storageKey: 'connectors-connected' })
+  const catalogPager = usePagedList(catalog, {
+    storageKey: 'connectors-catalog',
+    resetKey: `${category}|${query}`,
+  })
+
+  const categoryChips = useMemo(
+    () => uniqueCategoryChips(categories.data ?? ['All']),
+    [categories.data],
+  )
+
   // The catalogue as sections, ordered by what most agents need first.
+  // Group by display title so "Analytics" and "Analytics & Search" are one block.
   const sections = useMemo(() => {
-    const order = (category: string) => {
-      const index = CONNECTOR_CATEGORY_ORDER.indexOf(category)
-      return index === -1 ? CONNECTOR_CATEGORY_ORDER.length : index
-    }
-    const byCategory = new Map<string, ConnectorOut[]>()
-    for (const connector of catalog) {
-      const list = byCategory.get(connector.category) ?? []
+    const byTitle = new Map<string, ConnectorOut[]>()
+    for (const connector of catalogPager.slice) {
+      const title = categoryTitle(connector.category)
+      const list = byTitle.get(title) ?? []
       list.push(connector)
-      byCategory.set(connector.category, list)
+      byTitle.set(title, list)
     }
-    return [...byCategory.entries()]
-      .sort(([a], [b]) => order(a) - order(b) || a.localeCompare(b))
-      .map(([category, items]) => ({ category, items }))
-  }, [catalog])
+    return [...byTitle.entries()]
+      .sort(([a], [b]) => categorySortKey(a) - categorySortKey(b) || a.localeCompare(b))
+      .map(([title, items]) => ({
+        title,
+        description:
+          CONNECTOR_CATEGORY[items[0]?.category ?? '']?.description ??
+          Object.values(CONNECTOR_CATEGORY).find((entry) => entry.title === title)?.description,
+        items,
+      }))
+  }, [catalogPager.slice])
+
+  const connectedSections = useMemo(() => {
+    const byTitle = new Map<string, ConnectorOut[]>()
+    for (const connector of connectedPager.slice) {
+      const title = categoryTitle(connector.category)
+      const list = byTitle.get(title) ?? []
+      list.push(connector)
+      byTitle.set(title, list)
+    }
+    return [...byTitle.entries()]
+      .sort(([a], [b]) => categorySortKey(a) - categorySortKey(b) || a.localeCompare(b))
+      .map(([title, items]) => ({ title, items }))
+  }, [connectedPager.slice])
 
   // Land on what matters: the health table once something is connected,
   // the catalogue for a fresh workspace.
@@ -220,93 +257,109 @@ export function ConnectorsPage() {
             </button>
           </div>
         ) : (
-          <div className="panel">
-            <div className="table-wrap">
-              <table className="table data-table">
-                <thead>
-                  <tr>
-                    <th>Integration</th>
-                    <th>Category</th>
-                    <th>Health</th>
-                    <th>Last activity</th>
-                    <th className="col-actions">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {connected.map((connector) => {
-                    const health = healthOf(connector)
-                    return (
-                      <tr key={connector.slug}>
-                        <td data-label="Integration">
-                          <div className="entity-cell">
-                            <ConnectorIcon slug={connector.slug} name={connector.name} size={28} />
-                            <div className="entity-cell-text">
-                              <div className="entity-cell-title">
-                                {connector.name}
-                                <BetaPill verification={connector.verification} />
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td data-label="Category" className="muted">
-                          {categoryTitle(connector.category)}
-                        </td>
-                        <td data-label="Health">
-                          <StatusDot tone={health.tone}>{health.label}</StatusDot>
-                        </td>
-                        <td data-label="Last activity" className="cell-wide">
-                          {connector.last_error ? (
-                            <div className="cell-error" title={softenErrorMessage(connector.last_error, CONNECTION_PROBLEM)}>
-                              {softenErrorMessage(connector.last_error, CONNECTION_PROBLEM)}
-                            </div>
-                          ) : (
-                            <span className="muted">{connector.activity_label || '—'}</span>
-                          )}
-                        </td>
-                        <td className="col-actions">
-                          <div className="row-actions">
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => {
-                                if (!guard()) return
-                                setEditing(connector)
-                              }}
-                            >
-                              Manage
-                            </button>
-                            <Menu
-                              label={`More actions for ${connector.name}`}
-                              trigger={<MoreIcon />}
-                              items={[
-                                ...(connector.docs_url
-                                  ? [
+          <>
+            {connectedSections.map((section) => (
+              <section key={section.title} className="catalog-section">
+                <div className="catalog-section-head">
+                  <h2 className="catalog-section-title">{section.title}</h2>
+                </div>
+                <div className="panel">
+                  <div className="table-wrap">
+                    <table className="table data-table">
+                      <thead>
+                        <tr>
+                          <th>Integration</th>
+                          <th>Health</th>
+                          <th>Last activity</th>
+                          <th className="col-actions">
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {section.items.map((connector) => {
+                          const health = healthOf(connector)
+                          return (
+                            <tr key={connector.slug}>
+                              <td data-label="Integration">
+                                <div className="entity-cell">
+                                  <ConnectorIcon slug={connector.slug} name={connector.name} size={28} />
+                                  <div className="entity-cell-text">
+                                    <div className="entity-cell-title">
+                                      {connector.name}
+                                      <BetaPill verification={connector.verification} />
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td data-label="Health">
+                                <StatusDot tone={health.tone}>{health.label}</StatusDot>
+                              </td>
+                              <td data-label="Last activity" className="cell-wide">
+                                {connector.last_error ? (
+                                  <div className="cell-error" title={softenErrorMessage(connector.last_error, CONNECTION_PROBLEM)}>
+                                    {softenErrorMessage(connector.last_error, CONNECTION_PROBLEM)}
+                                  </div>
+                                ) : (
+                                  <span className="muted">{connector.activity_label || '—'}</span>
+                                )}
+                              </td>
+                              <td className="col-actions">
+                                <div className="row-actions">
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => {
+                                      if (!guard()) return
+                                      setEditing(connector)
+                                    }}
+                                  >
+                                    Manage
+                                  </button>
+                                  <Menu
+                                    label={`More actions for ${connector.name}`}
+                                    trigger={<MoreIcon />}
+                                    items={[
+                                      ...(connector.docs_url
+                                        ? [
+                                            {
+                                              label: 'API documentation',
+                                              onSelect: () =>
+                                                window.open(connector.docs_url, '_blank', 'noopener'),
+                                            },
+                                          ]
+                                        : []),
                                       {
-                                        label: 'API documentation',
-                                        onSelect: () =>
-                                          window.open(connector.docs_url, '_blank', 'noopener'),
+                                        label: 'Disconnect',
+                                        tone: 'danger' as const,
+                                        disabled: busySlug === connector.slug,
+                                        onSelect: () => void disconnect(connector),
                                       },
-                                    ]
-                                  : []),
-                                {
-                                  label: 'Disconnect',
-                                  tone: 'danger' as const,
-                                  disabled: busySlug === connector.slug,
-                                  onSelect: () => void disconnect(connector),
-                                },
-                              ]}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                                    ]}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            ))}
+            <ListPager
+              total={connectedPager.total}
+              from={connectedPager.from}
+              to={connectedPager.to}
+              page={connectedPager.page}
+              pageCount={connectedPager.pageCount}
+              pageSize={connectedPager.pageSize}
+              onPage={connectedPager.setPage}
+              onPageSize={connectedPager.setPageSize}
+              label="Connected integration pages"
+            />
+          </>
         )
       ) : (
         <>
@@ -322,27 +375,27 @@ export function ConnectorsPage() {
               />
             </label>
             <div className="chip-row" role="tablist" aria-label="Categories">
-              {(categories.data ?? ['All']).map((name) => (
+              {categoryChips.map((chip) => (
                 <button
-                  key={name}
+                  key={chip.value}
                   type="button"
                   role="tab"
-                  aria-selected={category === name}
-                  className={`chip${category === name ? ' is-active' : ''}`}
-                  onClick={() => setCategory(name)}
+                  aria-selected={category === chip.value}
+                  className={`chip${category === chip.value ? ' is-active' : ''}`}
+                  onClick={() => setCategory(chip.value)}
                 >
-                  {name === 'All' ? 'All' : categoryTitle(name)}
+                  {chip.label}
                 </button>
               ))}
             </div>
           </div>
 
           {sections.map((section) => (
-          <section key={section.category} className="catalog-section">
+          <section key={section.title} className="catalog-section">
             <div className="catalog-section-head">
-              <h2 className="catalog-section-title">{categoryTitle(section.category)}</h2>
-              {CONNECTOR_CATEGORY[section.category]?.description ? (
-                <p className="catalog-section-desc">{CONNECTOR_CATEGORY[section.category]!.description}</p>
+              <h2 className="catalog-section-title">{section.title}</h2>
+              {section.description ? (
+                <p className="catalog-section-desc">{section.description}</p>
               ) : null}
             </div>
           <div className="catalog-grid">
@@ -355,7 +408,6 @@ export function ConnectorsPage() {
                       {connector.name}
                       <BetaPill verification={connector.verification} />
                     </div>
-                    <div className="catalog-tile-category">{categoryTitle(connector.category)}</div>
                   </div>
                 </div>
                 {connector.description ? (
@@ -408,7 +460,19 @@ export function ConnectorsPage() {
               <div className="empty-panel-title">No integrations match</div>
               <p className="empty-panel-text">Try another search term or category.</p>
             </div>
-          ) : null}
+          ) : (
+            <ListPager
+              total={catalogPager.total}
+              from={catalogPager.from}
+              to={catalogPager.to}
+              page={catalogPager.page}
+              pageCount={catalogPager.pageCount}
+              pageSize={catalogPager.pageSize}
+              onPage={catalogPager.setPage}
+              onPageSize={catalogPager.setPageSize}
+              label="Integration catalog pages"
+            />
+          )}
         </>
       )}
 

@@ -43,8 +43,10 @@ import { BarList } from '@/components/charts/BarList'
 import { MetricDelta } from '@/components/charts/DeltaBadge'
 import { LineChart } from '@/components/charts/LineChart'
 import { DateRangePicker, describeRange, isoDay, rangeForPreset, type DateRange } from '@/components/DateRangePicker'
+import { ListPager } from '@/components/ListPager'
 import { PageTabs } from '@/components/PageTabs'
 import { EmptyState, ErrorState, Loading, SectionHeading, Segmented, StatTile } from '@/components/ui'
+import { usePageSize } from '@/hooks/usePagedList'
 import { useResource } from '@/hooks/useResource'
 import { moneyExact } from '@/lib/money'
 
@@ -531,8 +533,6 @@ const GROUPS: { value: UsageGroup; label: string }[] = [
   { value: 'month', label: 'Month' },
   { value: 'job', label: 'Creative job' },
 ]
-const PAGE_SIZE = Math.min(25, USAGE_MAX_PAGE_SIZE)
-
 function tokens(value: number | null): string {
   return value === null ? 'unknown' : compactNumber(value)
 }
@@ -540,14 +540,15 @@ function tokens(value: number | null): string {
 function AiUsagePanel({ onForbidden }: { onForbidden: () => void }) {
   const [range, setRange] = useState<DateRange>(() => rangeForPreset('30d'))
   const [group, setGroup] = useState<UsageGroup>('agent')
+  const [pageSize, setPageSize] = usePageSize('reports-usage', USAGE_MAX_PAGE_SIZE)
   // Cursors of the pages before this one, for "Previous page".
   const [cursors, setCursors] = useState<(string | null)[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
 
   const usage = useResource(
-    (signal) => insightsApi.llmUsage({ from: range.from, to: range.to, group, cursor, limit: PAGE_SIZE }, signal),
-    [range.from, range.to, group, cursor],
-    `llm-usage:${range.from}:${range.to}:${group}:${cursor ?? ''}`,
+    (signal) => insightsApi.llmUsage({ from: range.from, to: range.to, group, cursor, limit: pageSize }, signal),
+    [range.from, range.to, group, cursor, pageSize],
+    `llm-usage:${range.from}:${range.to}:${group}:${cursor ?? ''}:${pageSize}`,
   )
 
   useEffect(() => {
@@ -605,32 +606,30 @@ function AiUsagePanel({ onForbidden }: { onForbidden: () => void }) {
       {usage.error && !data ? <ErrorState message={usage.error} onRetry={usage.reload} /> : null}
       {data ? <UsageTable summary={data} /> : null}
 
-      {data && (cursors.length > 0 || data.next_cursor) ? (
-        <div className="table-actions">
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            disabled={cursors.length === 0 || usage.loading}
-            onClick={() => {
-              setCursor(cursors[cursors.length - 1] ?? null)
-              setCursors(cursors.slice(0, -1))
-            }}
-          >
-            Previous page
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            disabled={!data.next_cursor || usage.loading}
-            onClick={() => {
-              if (!data.next_cursor) return
-              setCursors([...cursors, cursor])
-              setCursor(data.next_cursor)
-            }}
-          >
-            Next page
-          </button>
-        </div>
+      {data && data.lines.length > 0 ? (
+        <ListPager
+          from={data.lines.length === 0 ? 0 : cursors.length * pageSize + 1}
+          to={cursors.length * pageSize + data.lines.length}
+          pageSize={pageSize}
+          onPageSize={(size) => {
+            setPageSize(size)
+            restart()
+          }}
+          hasPrev={cursors.length > 0}
+          hasNext={Boolean(data.next_cursor)}
+          onPrev={() => {
+            setCursor(cursors[cursors.length - 1] ?? null)
+            setCursors(cursors.slice(0, -1))
+          }}
+          onNext={() => {
+            if (!data.next_cursor) return
+            setCursors([...cursors, cursor])
+            setCursor(data.next_cursor)
+          }}
+          disabled={usage.loading}
+          maxPageSize={USAGE_MAX_PAGE_SIZE}
+          label="AI usage pages"
+        />
       ) : null}
     </>
   )

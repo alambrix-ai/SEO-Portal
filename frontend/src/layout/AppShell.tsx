@@ -198,6 +198,10 @@ export function AppShell() {
     setMobileOpen(false)
   }, [location.pathname])
 
+  useEffect(() => {
+    if (fit.widthBand !== 'narrow') setMobileOpen(false)
+  }, [fit.widthBand])
+
   function toggleRail() {
     setCollapsed((current) => {
       const next = !current
@@ -278,9 +282,9 @@ export function AppShell() {
       data-fit-w={fit.widthBand}
       data-fit-h={fit.heightBand}
       data-rail={railCollapsed ? 'collapsed' : 'open'}
-      data-mobile-nav={narrow && mobileOpen ? 'open' : 'closed'}
+      data-mobile-nav={mobileOpen ? 'open' : 'closed'}
     >
-      {narrow && mobileOpen ? (
+      {mobileOpen ? (
         <div className="sidebar-scrim" onClick={() => setMobileOpen(false)} />
       ) : null}
 
@@ -373,16 +377,15 @@ export function AppShell() {
 
       <div className="app-main">
         <header className="topbar">
-          {narrow ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-icon"
-              aria-label="Open navigation"
-              onClick={() => setMobileOpen(true)}
-            >
-              <MenuIcon />
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="btn btn-ghost btn-icon topbar-nav-toggle"
+            aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={mobileOpen}
+            onClick={() => setMobileOpen((open) => !open)}
+          >
+            <MenuIcon />
+          </button>
 
           <div className="topbar-crumbs" aria-label="Breadcrumb">
             {section ? (

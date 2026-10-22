@@ -20,9 +20,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
 import {
   formatMetric,
-  formatValue,
   insightsApi,
   notReportedBy,
+  type InsightBreakdownItem,
   type InsightMetric,
   type InsightSectionBase,
   type InsightSeries,
@@ -33,10 +33,18 @@ import { AgentIcon } from '@/components/AgentIcon'
 import { ConnectorIcon } from '@/components/ConnectorIcon'
 import { BarList } from '@/components/charts/BarList'
 import { MetricDelta } from '@/components/charts/DeltaBadge'
+import { DonutChart } from '@/components/charts/DonutChart'
 import { LineChart } from '@/components/charts/LineChart'
 import { Sparkline } from '@/components/charts/Sparkline'
 import { DateRangePicker, describeRange, rangeForPreset, type DateRange } from '@/components/DateRangePicker'
-import { CheckIcon, ChevronRightIcon } from '@/components/icons'
+import {
+  AdsIcon,
+  ApprovalsIcon,
+  CheckIcon,
+  ChevronRightIcon,
+  CreativeIcon,
+  SeoIcon,
+} from '@/components/icons'
 import { useResource } from '@/hooks/useResource'
 import { agentState, nextRunText } from '@/lib/agentState'
 import { EmptyState, ErrorState, PageHeader, StatusDot } from '@/components/ui'
@@ -121,17 +129,6 @@ function longDate(value: string): string {
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-/** Only an absolute https link is ever rendered; the server builds it, this re-checks. */
-function safeHttpsUrl(value: string | null): string | null {
-  if (!value) return null
-  try {
-    const url = new URL(value)
-    return url.protocol === 'https:' ? url.toString() : null
-  } catch {
-    return null
-  }
-}
-
 /** Two counts added, but only when both were measured. */
 function addKnown(a: number | null | undefined, b: number | null | undefined): number | null {
   return isKnown(a) && isKnown(b) ? a + b : null
@@ -152,29 +149,51 @@ interface TileProps {
   attention?: boolean
   /** For a live count or a fixed figure, where "vs previous period" means nothing. */
   noDelta?: boolean
+  icon?: ReactNode
+  iconTone?: 'copper' | 'forest' | 'warn' | 'alert'
 }
 
-function Tile({ label, metric, text, meta, series, to, attention = false, noDelta = false }: TileProps) {
+function Tile({
+  label,
+  metric,
+  text,
+  meta,
+  series,
+  to,
+  attention = false,
+  noDelta = false,
+  icon,
+  iconTone = 'copper',
+}: TileProps) {
   const known = !text && metric !== undefined && isKnown(metric.value)
   const shown = text ?? (metric ? formatMetric(metric) : NOT_TRACKED)
   const lowerIsBetter = metric?.better === 'down' && metric.unit === 'position'
+  const iconClass =
+    iconTone === 'forest' ? ' is-forest' : iconTone === 'warn' ? ' is-warn' : iconTone === 'alert' ? ' is-alert' : ''
   const body = (
     <>
-      <div className="kpi-label">
-        {label}
-        {lowerIsBetter ? <span className="kpi-total"> (lower is better)</span> : null}
+      <div className="dash-stat-top">
+        <div className="kpi-label">
+          {label}
+          {lowerIsBetter ? <span className="kpi-total"> (lower is better)</span> : null}
+        </div>
+        {icon ? (
+          <span className={`dash-stat-icon${iconClass}`} aria-hidden="true">
+            {icon}
+          </span>
+        ) : null}
       </div>
       <div className={known ? 'kpi-value' : 'kpi-value ins-missing'} style={known ? undefined : { fontSize: 15 }}>
         {shown}
       </div>
       {known && metric && !noDelta && metric.key !== 'pending_approvals' ? <MetricDelta metric={metric} /> : null}
+      {meta ? <div className="kpi-meta">{meta}</div> : null}
       {known && metric && hasPoints(series) ? (
         <Sparkline label={label} points={series.points} unit={series.unit} invert={metric.better === 'down'} />
       ) : null}
-      {meta ? <div className="kpi-meta">{meta}</div> : null}
     </>
   )
-  const className = `kpi${attention ? ' is-attention' : ''}`
+  const className = `kpi dash-stat${attention ? ' is-attention' : ''}`
   return to ? (
     <Link to={to} className={`${className} kpi-link`}>
       {body}
@@ -236,10 +255,10 @@ function InsightPanel({ title, description, section, sectionKey, action, headLin
           {action}
         </div>
       ) : (
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="insight-body">
           {/* An available section can still carry advice ("Try a longer date range"). */}
           {section.connect_hint?.trim() ? (
-            <p className="kpi-meta" role="note" style={{ margin: 0 }}>
+            <p className="kpi-meta" role="note">
               {section.connect_hint}
             </p>
           ) : null}
@@ -374,7 +393,7 @@ export function DashboardPage() {
   // ── Figures ──
   const overview = insights.data
   const sections = overview?.sections ?? {}
-  const { seo, social, ads, content, agents: activity, llm } = sections
+  const { seo, social, ads, content, llm } = sections
   const integrationsButton = canView('connectors') ? (
     <Link to="/connectors" className="btn btn-secondary btn-sm">
       Go to Integrations
@@ -403,7 +422,6 @@ export function DashboardPage() {
       }
     : undefined
   const visits = findMetric(seo, 'sessions')
-  const siteConversions = findMetric(seo, 'conversions')
 
   const presentSections = (Object.keys(sections) as SectionKey[]).filter((key) => sections[key])
   const brandNew =
@@ -411,15 +429,39 @@ export function DashboardPage() {
     kpis.connectors_connected === 0 &&
     presentSections.every((key) => key === 'agents' || !sections[key]?.available)
 
-  const platformLabel = (platform: string): string =>
-    social?.platforms.find((item) => item.platform === platform)?.label ??
-    platform.charAt(0).toUpperCase() + platform.slice(1)
-
   const reportsLink = canView('reports') ? (
     <Link to="/reports" className="panel-link">
       Full report <ChevronRightIcon size={14} />
     </Link>
   ) : null
+
+  const performanceSeries = [
+    findSeries(seo, 'clicks'),
+    findSeries(seo, 'sessions'),
+    findSeries(social, 'engagement'),
+  ].filter((series): series is InsightSeries => Boolean(series && hasPoints(series)))
+
+  const adsMix: InsightBreakdownItem[] = (ads?.channels ?? []).map((channel) => ({
+    key: channel.channel,
+    label: channel.label,
+    value: channel.spend,
+    unit: 'currency',
+    note: channel.note ?? notReportedBy(channel.label),
+  }))
+  const socialMix: InsightBreakdownItem[] = (social?.platforms ?? []).map((platform) => ({
+    key: platform.platform,
+    label: platform.label,
+    value: platform.engagement,
+    unit: 'count',
+    note: platform.note ?? notReportedBy(platform.label),
+  }))
+  const mix = adsMix.some((item) => isKnown(item.value))
+    ? { title: 'Ad spend by channel', items: adsMix }
+    : content?.by_kind.some((item) => isKnown(item.value))
+      ? { title: 'Content produced by kind', items: content.by_kind }
+      : socialMix.some((item) => isKnown(item.value))
+        ? { title: 'Engagement by platform', items: socialMix }
+        : null
 
   return (
     <>
@@ -465,19 +507,10 @@ export function DashboardPage() {
       ) : null}
 
       {canSeeInsights ? (
-        <section aria-labelledby="dashboard-figures-heading" style={{ marginBottom: 20 }}>
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'flex-end',
-              justifyContent: 'space-between',
-              gap: 12,
-              marginBottom: 12,
-            }}
-          >
+        <section className="dash-figures" aria-labelledby="dashboard-figures-heading">
+          <div className="dash-figures-head">
             <div>
-              <h2 className="panel-title" id="dashboard-figures-heading" style={{ margin: 0 }}>
+              <h2 className="panel-title" id="dashboard-figures-heading">
                 Your figures for {describeRange(range)}
               </h2>
               <div className="panel-subtitle">
@@ -509,37 +542,49 @@ export function DashboardPage() {
                 </div>
               ) : null}
 
-              <div className="kpi-grid">
-                <Tile label="Search clicks" metric={findMetric(seo, 'clicks')} text={tileText('seo', seo)} />
-                {/* Visits come from the analytics source for the chosen dates; with
-                    nothing reported, the metric's own note says how to connect it. */}
+              <div className="dash-stat-grid">
+                <Tile
+                  label="Search clicks"
+                  metric={findMetric(seo, 'clicks')}
+                  text={tileText('seo', seo)}
+                  series={findSeries(seo, 'clicks')}
+                  icon={<SeoIcon size={16} />}
+                />
                 <Tile
                   label="Website visits"
                   metric={visits}
                   text={visits ? undefined : tileText('seo', seo)}
                   series={findSeries(seo, 'sessions')}
+                  icon={<SeoIcon size={16} />}
+                  iconTone="forest"
                 />
-                {siteConversions ? (
-                  <Tile
-                    label="Website conversions"
-                    metric={siteConversions}
-                    series={findSeries(seo, 'conversions')}
-                  />
-                ) : null}
-                <Tile label="Social reach" metric={findMetric(social, 'reach')} text={tileText('social', social)} />
-                <Tile label="Engagement" metric={findMetric(social, 'engagement')} text={tileText('social', social)} />
-                <Tile label="Ad spend" metric={findMetric(ads, 'spend')} text={tileText('ads', ads)} />
-                <Tile label="Conversions" metric={findMetric(ads, 'conversions')} text={tileText('ads', ads)} />
                 <Tile
-                  label="Content and creatives produced"
+                  label="Social reach"
+                  metric={findMetric(social, 'reach')}
+                  text={tileText('social', social)}
+                  series={findSeries(social, 'reach')}
+                  icon={<CreativeIcon size={16} />}
+                />
+                <Tile
+                  label="Ad spend"
+                  metric={findMetric(ads, 'spend')}
+                  text={tileText('ads', ads)}
+                  series={findSeries(ads, 'spend')}
+                  icon={<AdsIcon size={16} />}
+                  iconTone="warn"
+                />
+                <Tile
+                  label="Content produced"
                   metric={produced}
                   text={content ? undefined : tileText('content', content)}
+                  icon={<CreativeIcon size={16} />}
+                  iconTone="forest"
                 />
                 <Tile
-                  label="Waiting for your review"
+                  label="Waiting for review"
                   metric={{
                     key: 'pending_approvals',
-                    label: 'Waiting for your review',
+                    label: 'Waiting for review',
                     value: kpis.pending_approvals,
                     previous: null,
                     change_pct: null,
@@ -548,278 +593,201 @@ export function DashboardPage() {
                   meta={kpis.pending_approvals > 0 ? 'Right now' : 'Nothing is waiting'}
                   to={canView('approvals') ? '/approvals' : undefined}
                   attention={kpis.pending_approvals > 0}
+                  noDelta
+                  icon={<ApprovalsIcon size={16} />}
+                  iconTone={kpis.pending_approvals > 0 ? 'alert' : 'copper'}
                 />
               </div>
 
-              {showSection('seo') ? (
-                <InsightPanel
-                  title="Search (SEO)"
-                  description="How people find you on Google and Bing."
-                  section={seo}
-                  sectionKey="seo"
-                  action={integrationsButton}
-                  headLink={reportsLink}
-                >
-                  {seo ? (
-                    <>
-                      <MetricTiles section={seo} />
-                      {hasPoints(findSeries(seo, 'clicks')) ? (
-                        <div>
-                          <SubHeading>Search clicks each day</SubHeading>
-                          <LineChart title="Search clicks" series={[findSeries(seo, 'clicks') as InsightSeries]} />
-                        </div>
-                      ) : null}
-                      {hasPoints(findSeries(seo, 'position')) ? (
-                        <div>
-                          <SubHeading>Average position each day (lower is better)</SubHeading>
+              <div className="dash-board">
+                <section className="panel" aria-labelledby="dash-trend-heading">
+                  <div className="panel-head">
+                    <div>
+                      <h2 className="panel-title" id="dash-trend-heading" style={{ margin: 0 }}>
+                        Performance this period
+                      </h2>
+                      <div className="panel-subtitle">Daily search, visits and engagement. Gaps are days with no data.</div>
+                    </div>
+                    {reportsLink}
+                  </div>
+                  <div className="insight-body">
+                    {performanceSeries.length > 0 ? (
+                      <LineChart title="Performance this period" series={performanceSeries} height={248} filled />
+                    ) : (
+                      <div className="ins-chart-empty" role="note">
+                        <p>
+                          Connect Search Console, analytics or a social account to see a trend here. Missing days stay
+                          blank rather than showing a zero.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </section>
+                <section className="panel" aria-labelledby="dash-mix-heading">
+                  <div className="panel-head">
+                    <div>
+                      <h2 className="panel-title" id="dash-mix-heading" style={{ margin: 0 }}>
+                        Mix
+                      </h2>
+                      <div className="panel-subtitle">
+                        {mix ? mix.title : 'How the period splits once a source is connected.'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="insight-body">
+                    {mix ? (
+                      <DonutChart title={mix.title} items={mix.items} />
+                    ) : (
+                      <div className="ins-chart-empty" role="note">
+                        <p>{FALLBACK_HINTS.ads}</p>
+                        {integrationsButton}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+
+              <div className="dash-split">
+                {showSection('seo') ? (
+                  <InsightPanel
+                    title="Search"
+                    description="How people find you on Google and Bing."
+                    section={seo}
+                    sectionKey="seo"
+                    action={integrationsButton}
+                    headLink={reportsLink}
+                  >
+                    {seo ? (
+                      <>
+                        {hasPoints(findSeries(seo, 'clicks')) ? (
                           <LineChart
-                            title="Average search position"
-                            series={[findSeries(seo, 'position') as InsightSeries]}
-                            invert
+                            title="Search clicks"
+                            series={[findSeries(seo, 'clicks') as InsightSeries]}
+                            height={180}
+                            filled
                           />
-                        </div>
-                      ) : null}
-                      {seo.top_queries.length > 0 ? (
-                        <div>
-                          <SubHeading>Top searches</SubHeading>
-                          <div className="table-scroll">
-                            <table className="table">
-                              <thead>
-                                <tr>
-                                  <th scope="col">Search</th>
-                                  <th scope="col">Clicks</th>
-                                  <th scope="col">Impressions</th>
-                                  <th scope="col">Position</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {seo.top_queries.map((query) => (
-                                  <tr key={query.query}>
-                                    <th scope="row">{query.query}</th>
-                                    <td>{formatValue(query.clicks, 'count')}</td>
-                                    <td>{formatValue(query.impressions, 'count')}</td>
-                                    <td>{formatValue(query.position, 'position')}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                        ) : null}
+                        {hasPoints(findSeries(seo, 'position')) ? (
+                          <div>
+                            <SubHeading>Average position (lower is better)</SubHeading>
+                            <LineChart
+                              title="Average search position"
+                              series={[findSeries(seo, 'position') as InsightSeries]}
+                              invert
+                              height={140}
+                            />
                           </div>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : null}
-                </InsightPanel>
-              ) : null}
-
-              {showSection('social') ? (
-                <InsightPanel
-                  title="Social"
-                  description="Reach and engagement of the posts published in this period."
-                  section={social}
-                  sectionKey="social"
-                  action={integrationsButton}
-                  headLink={reportsLink}
-                >
-                  {social ? (
-                    <>
-                      <MetricTiles section={social} />
-                      {social.series.some(hasPoints) ? (
-                        <div>
-                          <SubHeading>Reach and engagement each day</SubHeading>
-                          <LineChart title="Reach and engagement" series={social.series.filter(hasPoints)} />
-                        </div>
-                      ) : null}
-                      {social.platforms.length > 0 ? (
-                        <div>
-                          <SubHeading>By platform</SubHeading>
-                          <div className="table-scroll">
-                            <table className="table">
-                              <thead>
-                                <tr>
-                                  <th scope="col">Platform</th>
-                                  <th scope="col">Reach</th>
-                                  <th scope="col">Engagement</th>
-                                  <th scope="col">Impressions</th>
-                                  <th scope="col">Clicks</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {social.platforms.map((platform) => {
-                                  const missing = notReportedBy(platform.label)
-                                  return (
-                                    <tr key={platform.platform}>
-                                      <th scope="row">{platform.label}</th>
-                                      <td>{formatValue(platform.reach, 'count', { note: missing })}</td>
-                                      <td>{formatValue(platform.engagement, 'count', { note: missing })}</td>
-                                      <td>{formatValue(platform.impressions, 'count', { note: missing })}</td>
-                                      <td>{formatValue(platform.clicks, 'count', { note: missing })}</td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
+                        ) : null}
+                        {seo.top_queries.length > 0 ? (
+                          <div>
+                            <SubHeading>Top searches</SubHeading>
+                            <BarList
+                              label="Top searches by clicks"
+                              items={seo.top_queries.map((query) => ({
+                                key: query.query,
+                                label: query.query,
+                                value: query.clicks,
+                                unit: 'count',
+                              }))}
+                            />
                           </div>
-                        </div>
-                      ) : null}
-                      {social.top_posts.length > 0 ? (
-                        <div>
-                          <SubHeading>Top posts</SubHeading>
-                          <ul className="list">
-                            {social.top_posts.map((post) => {
-                              const url = safeHttpsUrl(post.url)
-                              const label = platformLabel(post.platform)
-                              const missing = notReportedBy(label)
-                              const title = post.title.trim() || 'Untitled post'
-                              return (
-                                <li key={post.id} className="list-row is-compact">
-                                  <div className="list-row-main">
-                                    <div className="list-row-title">
-                                      {url ? (
-                                        <a href={url} target="_blank" rel="noreferrer noopener">
-                                          {title}
-                                          <span className="sr-only"> (opens on {label})</span>
-                                        </a>
-                                      ) : (
-                                        title
-                                      )}
-                                    </div>
-                                    <div className="list-row-meta">
-                                      {label}
-                                      {post.posted_at ? ` · ${new Date(post.posted_at).toLocaleDateString()}` : ''}
-                                    </div>
-                                  </div>
-                                  <div className="list-row-side">
-                                    <span className="list-row-sub">
-                                      Impressions: {formatValue(post.impressions, 'count', { note: missing })}
-                                    </span>
-                                    <span className="list-row-sub">
-                                      Engagement: {formatValue(post.engagement, 'count', { note: missing })}
-                                    </span>
-                                  </div>
-                                </li>
-                              )
-                            })}
-                          </ul>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : null}
-                </InsightPanel>
-              ) : null}
+                        ) : null}
+                      </>
+                    ) : null}
+                  </InsightPanel>
+                ) : null}
 
-              {showSection('ads') ? (
-                <InsightPanel
-                  title="Ads"
-                  description="Spend, clicks and conversions across your ad accounts."
-                  section={ads}
-                  sectionKey="ads"
-                  action={integrationsButton}
-                  headLink={reportsLink}
-                >
-                  {ads ? (
-                    <>
-                      <MetricTiles section={ads} />
-                      {hasPoints(findSeries(ads, 'spend')) ? (
-                        <div>
-                          <SubHeading>Ad spend each day</SubHeading>
-                          <LineChart title="Ad spend" series={[findSeries(ads, 'spend') as InsightSeries]} />
-                        </div>
-                      ) : null}
-                      {ads.channels.length > 0 ? (
-                        <div>
-                          <SubHeading>By channel</SubHeading>
-                          <div className="table-scroll">
-                            <table className="table">
-                              <thead>
-                                <tr>
-                                  <th scope="col">Channel</th>
-                                  <th scope="col">Spend</th>
-                                  <th scope="col">Clicks</th>
-                                  <th scope="col">Conversions</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {ads.channels.map((channel) => {
-                                  const missing = notReportedBy(channel.label)
-                                  return (
-                                    <tr key={channel.channel}>
-                                      <th scope="row">{channel.label}</th>
-                                      <td>{formatValue(channel.spend, 'currency', { note: missing })}</td>
-                                      <td>{formatValue(channel.clicks, 'count', { note: missing })}</td>
-                                      <td>{formatValue(channel.conversions, 'count', { note: missing })}</td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
+                {showSection('social') ? (
+                  <InsightPanel
+                    title="Social"
+                    description="Reach and engagement of published posts."
+                    section={social}
+                    sectionKey="social"
+                    action={integrationsButton}
+                    headLink={reportsLink}
+                  >
+                    {social ? (
+                      <>
+                        {social.series.some(hasPoints) ? (
+                          <LineChart
+                            title="Reach and engagement"
+                            series={social.series.filter(hasPoints)}
+                            height={180}
+                            filled
+                          />
+                        ) : null}
+                        {socialMix.length > 0 ? (
+                          <div>
+                            <SubHeading>By platform</SubHeading>
+                            <BarList label="Engagement by platform" items={socialMix} />
                           </div>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : null}
-                </InsightPanel>
-              ) : null}
+                        ) : null}
+                      </>
+                    ) : null}
+                  </InsightPanel>
+                ) : null}
+              </div>
 
-              {showSection('content') ? (
-                <InsightPanel
-                  title="Content and creatives produced"
-                  description="What your agents and Creative Studio made in this period."
-                  section={content}
-                  sectionKey="content"
-                  action={
-                    canView('content') ? (
-                      <Link to="/creative" className="btn btn-secondary btn-sm">
-                        Open Creative Studio
-                      </Link>
-                    ) : undefined
-                  }
-                >
-                  {content ? (
-                    <>
-                      <MetricTiles section={content} />
-                      {content.by_kind.length > 0 ? (
-                        <div>
-                          <SubHeading>By kind</SubHeading>
-                          <BarList label="Items made by kind" items={content.by_kind} />
-                        </div>
-                      ) : null}
-                    </>
-                  ) : null}
-                </InsightPanel>
-              ) : null}
+              <div className="dash-split">
+                {showSection('ads') ? (
+                  <InsightPanel
+                    title="Ads"
+                    description="Spend, clicks and conversions across ad accounts."
+                    section={ads}
+                    sectionKey="ads"
+                    action={integrationsButton}
+                    headLink={reportsLink}
+                  >
+                    {ads ? (
+                      <>
+                        {hasPoints(findSeries(ads, 'spend')) ? (
+                          <LineChart
+                            title="Ad spend"
+                            series={[findSeries(ads, 'spend') as InsightSeries]}
+                            height={180}
+                            filled
+                          />
+                        ) : null}
+                        {adsMix.length > 0 ? (
+                          <div>
+                            <SubHeading>By channel</SubHeading>
+                            <BarList label="Spend by channel" items={adsMix} />
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </InsightPanel>
+                ) : null}
 
-              {activity ? (
-                <InsightPanel
-                  title="Agents and approvals"
-                  description="Work your agents did, and what is waiting for a person."
-                  section={activity}
-                  sectionKey="agents"
-                  action={
-                    canView('agents') ? (
-                      <Link to="/agents" className="btn btn-secondary btn-sm">
-                        Open agents
-                      </Link>
-                    ) : undefined
-                  }
-                >
-                  <MetricTiles section={activity} />
-                </InsightPanel>
-              ) : null}
+                {showSection('content') ? (
+                  <InsightPanel
+                    title="Content"
+                    description="What agents and Creative Studio made this period."
+                    section={content}
+                    sectionKey="content"
+                    action={
+                      canView('content') ? (
+                        <Link to="/creative" className="btn btn-secondary btn-sm">
+                          Open Creative Studio
+                        </Link>
+                      ) : undefined
+                    }
+                  >
+                    {content ? (
+                      content.by_kind.length > 0 ? (
+                        <DonutChart title="Items made by kind" items={content.by_kind} />
+                      ) : (
+                        <BarList label="Items made by kind" items={content.by_kind} />
+                      )
+                    ) : null}
+                  </InsightPanel>
+                ) : null}
+              </div>
 
               {llm ? (
-                <InsightPanel
-                  title="AI usage"
-                  description="Tokens used and the estimated cost of the AI models."
-                  section={llm}
-                  sectionKey="llm"
-                  headLink={reportsLink}
-                >
+                <InsightPanel title="AI usage" description="Tokens and estimated model cost." section={llm} sectionKey="llm" headLink={reportsLink}>
                   <MetricTiles section={llm} />
-                  {llm.note?.trim() ? (
-                    <p className="kpi-meta" style={{ margin: 0 }}>
-                      {llm.note}
-                    </p>
-                  ) : null}
+                  {llm.note?.trim() ? <p className="kpi-meta">{llm.note}</p> : null}
                 </InsightPanel>
               ) : null}
             </>
@@ -827,7 +795,7 @@ export function DashboardPage() {
         </section>
       ) : null}
 
-      <div className="overview-grid">
+      <div className="dash-ops">
         <section className="panel" aria-labelledby="dashboard-activity-heading">
           <div className="panel-head">
             <h2 className="panel-title" id="dashboard-activity-heading" style={{ margin: 0 }}>
@@ -887,7 +855,6 @@ export function DashboardPage() {
           )}
         </section>
 
-        <div className="overview-side">
           <section className="panel" aria-labelledby="dashboard-approvals-heading">
             <div className="panel-head">
               <h2 className="panel-title" id="dashboard-approvals-heading" style={{ margin: 0 }}>
@@ -961,7 +928,6 @@ export function DashboardPage() {
               )}
             </section>
           ) : null}
-        </div>
       </div>
     </>
   )

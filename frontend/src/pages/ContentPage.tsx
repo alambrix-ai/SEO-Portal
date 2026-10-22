@@ -17,7 +17,9 @@ import { Menu } from '@/components/Menu'
 import { ShareDialog, SocialStatusChips } from '@/components/social/ShareDialog'
 import { useToasts } from '@/components/Toasts'
 import { MoreIcon } from '@/components/icons'
+import { ListPager } from '@/components/ListPager'
 import { Drawer, EmptyState, ErrorState, Field, Loading, PageHeader, StatusDot } from '@/components/ui'
+import { usePagedList } from '@/hooks/usePagedList'
 import { invalidateResourceCache, useResource } from '@/hooks/useResource'
 import { when } from '@/lib/time'
 
@@ -180,6 +182,7 @@ export function ContentPage() {
     for (const asset of data ?? []) out[asset.status] = (out[asset.status] ?? 0) + 1
     return out
   }, [data])
+  const pager = usePagedList(data ?? [], { storageKey: 'content', resetKey: `${kind}|${status}` })
 
   return (
     <>
@@ -236,7 +239,7 @@ export function ContentPage() {
       ) : (
         <div className="panel">
           <ul className="content-list">
-            {data.map((asset) => (
+            {pager.slice.map((asset) => (
               <li key={asset.id} className="content-row">
                 <button type="button" className="content-row-main" onClick={() => setOpenId(asset.id)}>
                   <Thumb asset={asset} />
@@ -314,6 +317,17 @@ export function ContentPage() {
               </li>
             ))}
           </ul>
+          <ListPager
+            total={pager.total}
+            from={pager.from}
+            to={pager.to}
+            page={pager.page}
+            pageCount={pager.pageCount}
+            pageSize={pager.pageSize}
+            onPage={pager.setPage}
+            onPageSize={pager.setPageSize}
+            label="Content pages"
+          />
         </div>
       )}
 

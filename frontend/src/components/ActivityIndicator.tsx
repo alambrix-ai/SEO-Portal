@@ -81,6 +81,8 @@ export function ActivityIndicator() {
       </button>
 
       {open ? (
+        <>
+        <div className="popover-scrim" onClick={() => setOpen(false)} />
         <div className="activity-panel" role="dialog" aria-label="Agent activity">
           <div className="activity-section-title">Running now</div>
           {running.length === 0 ? (
@@ -139,6 +141,7 @@ export function ActivityIndicator() {
             All agents →
           </Link>
         </div>
+        </>
       ) : null}
     </div>
   )

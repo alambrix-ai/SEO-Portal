@@ -2,6 +2,7 @@
 
     python manage.py init-db          # create schema + row-level security
     python manage.py sync-catalog     # back-fill new agents/connectors
+    python manage.py seed-demo        # sample data for the test workspace
     python manage.py run-agent <org-slug> <agent-slug>
     python manage.py tick            # run every due agent once
     python manage.py rollup          # daily metric rollup
@@ -44,6 +45,12 @@ def cmd_init_db(args: argparse.Namespace) -> int:
             apply_policies(conn)
     print(f"Schema ready on {_safe_dsn()}")
     return 0
+
+
+def _cmd_seed_demo(args: argparse.Namespace) -> int:
+    from scripts.seed_demo_workspace import cmd_seed_demo
+
+    return cmd_seed_demo(args)
 
 
 def cmd_sync_catalog(args: argparse.Namespace) -> int:
@@ -387,6 +394,18 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("sync-catalog", help="back-fill new agents and connectors").set_defaults(
         func=cmd_sync_catalog
     )
+    demo = sub.add_parser(
+        "seed-demo",
+        help="load sample data into the test workspace (thakurdishant02@gmail.com)",
+    )
+    demo.add_argument("--email", default="thakurdishant02@gmail.com")
+    demo.add_argument("--workspace", default="test-workspace-2", help="organisation slug")
+    demo.add_argument(
+        "--force",
+        action="store_true",
+        help="write again if sample data is already there",
+    )
+    demo.set_defaults(func=_cmd_seed_demo)
 
 
     run = sub.add_parser("run-agent", help="run one agent for one workspace")

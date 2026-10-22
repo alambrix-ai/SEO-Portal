@@ -16,6 +16,7 @@ import { PortalSignInProviders } from '@/components/PortalSignInProviders'
 import { PortalVerification } from '@/components/PortalVerification'
 import { PortalSafetyPanel } from '@/components/SafetyBits'
 import { CardSection } from '@/components/CardSection'
+import { ListPager } from '@/components/ListPager'
 import { useConfirm } from '@/components/Confirm'
 import { ConnectorIcon } from '@/components/ConnectorIcon'
 import {
@@ -42,6 +43,7 @@ import {
   StatTile,
   Tag,
 } from '@/components/ui'
+import { usePagedList } from '@/hooks/usePagedList'
 import { useResource } from '@/hooks/useResource'
 
 type Tab = 'workspaces' | 'features' | 'analyses' | 'signin' | 'verification'
@@ -168,18 +170,28 @@ export function PortalAdminPage() {
     [features.data],
   )
 
+  const orgPager = usePagedList(filteredOrgs, { storageKey: 'portal-orgs', resetKey: workspaceQuery })
+  const featurePager = usePagedList(filteredFeatures, {
+    storageKey: 'portal-features',
+    resetKey: `${featureFilter}|${featureQuery}|${String(showDisabled)}`,
+  })
+  const userPager = usePagedList(users.data ?? [], {
+    storageKey: 'portal-users',
+    resetKey: selectedOrg?.id ?? '',
+  })
+
   const featuresByKind = useMemo(() => {
     const groups: { kind: string; rows: PortalFeature[] }[] = []
     const order = ['module', 'connector', 'agent'] as const
     for (const kind of order) {
-      const rows = filteredFeatures.filter((row) => row.kind === kind)
+      const rows = featurePager.slice.filter((row) => row.kind === kind)
       if (rows.length) groups.push({ kind, rows })
     }
     const known = new Set<string>(order)
-    const other = filteredFeatures.filter((row) => !known.has(row.kind))
+    const other = featurePager.slice.filter((row) => !known.has(row.kind))
     if (other.length) groups.push({ kind: 'other', rows: other })
     return groups
-  }, [filteredFeatures])
+  }, [featurePager.slice])
 
   const disabledCount = useMemo(
     () => (features.data ?? []).filter((row) => !row.enabled).length,
@@ -338,7 +350,7 @@ export function PortalAdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredOrgs.map((org) => {
+                    {orgPager.slice.map((org) => {
                       const seatPct =
                         org.seats_total > 0
                           ? Math.round((org.member_count / org.seats_total) * 100)
@@ -393,6 +405,17 @@ export function PortalAdminPage() {
                   </tbody>
                 </table>
               </div>
+              <ListPager
+                total={orgPager.total}
+                from={orgPager.from}
+                to={orgPager.to}
+                page={orgPager.page}
+                pageCount={orgPager.pageCount}
+                pageSize={orgPager.pageSize}
+                onPage={orgPager.setPage}
+                onPageSize={orgPager.setPageSize}
+                label="Workspace pages"
+              />
             </Blueprint>
           )}
         </section>
@@ -575,6 +598,19 @@ export function PortalAdminPage() {
               </Blueprint>
             </CardSection>
           ))}
+          {filteredFeatures.length > 0 ? (
+            <ListPager
+              total={featurePager.total}
+              from={featurePager.from}
+              to={featurePager.to}
+              page={featurePager.page}
+              pageCount={featurePager.pageCount}
+              pageSize={featurePager.pageSize}
+              onPage={featurePager.setPage}
+              onPageSize={featurePager.setPageSize}
+              label="Catalogue pages"
+            />
+          ) : null}
         </section>
       )}
 
@@ -631,7 +667,7 @@ export function PortalAdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.data.map((member) => (
+                  {userPager.slice.map((member) => (
                     <tr key={member.id}>
                       <td>
                         <span className="cell-title">{member.name}</span>
@@ -658,6 +694,19 @@ export function PortalAdminPage() {
                 </tbody>
               </table>
             </div>
+          ) : null}
+          {users.data?.length ? (
+            <ListPager
+              total={userPager.total}
+              from={userPager.from}
+              to={userPager.to}
+              page={userPager.page}
+              pageCount={userPager.pageCount}
+              pageSize={userPager.pageSize}
+              onPage={userPager.setPage}
+              onPageSize={userPager.setPageSize}
+              label="Workspace member pages"
+            />
           ) : null}
 
           {!users.loading && users.data && users.data.length === 0 ? (

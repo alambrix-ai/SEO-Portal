@@ -314,20 +314,29 @@
 }
 
 /* ── Agents, grouped by goal ───────────────────────────────────────────── */
+.agent-group {
+  margin-bottom: 28px;
+}
 .agent-group + .agent-group {
-  margin-top: 28px;
+  margin-top: 8px;
 }
 .agent-group-head {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--color-accent);
 }
 .agent-group-title {
   margin: 0;
-  font-size: 15px;
+  font-family: var(--font-heading);
+  font-size: 20px;
   font-weight: 600;
+  letter-spacing: -0.02em;
 }
 .agent-group-desc {
-  margin: 2px 0 0;
-  font-size: 13px;
+  margin: 4px 0 0;
+  max-width: 52ch;
+  font-size: 13.5px;
+  line-height: 1.5;
   color: var(--color-text-muted);
 }
 .agent-list {
@@ -485,16 +494,22 @@
   margin-top: 28px;
 }
 .catalog-section-head {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--color-accent);
 }
 .catalog-section-title {
   margin: 0;
-  font-size: 15px;
+  font-family: var(--font-heading);
+  font-size: 20px;
   font-weight: 600;
+  letter-spacing: -0.02em;
 }
 .catalog-section-desc {
-  margin: 2px 0 0;
-  font-size: 13px;
+  margin: 4px 0 0;
+  max-width: 52ch;
+  font-size: 13.5px;
+  line-height: 1.5;
   color: var(--color-text-muted);
 }
 .catalog-tile-used {

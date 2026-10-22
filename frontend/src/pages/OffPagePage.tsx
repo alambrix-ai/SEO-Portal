@@ -9,6 +9,7 @@ import { useAuth } from '@/auth/AuthContext'
 import { VersionHistory } from '@/components/AuditHistory'
 import { PageTabs } from '@/components/PageTabs'
 import { useToasts } from '@/components/Toasts'
+import { ListPager } from '@/components/ListPager'
 import {
   Dialog,
   EmptyState,
@@ -20,6 +21,7 @@ import {
   statusTone,
   Tag,
 } from '@/components/ui'
+import { usePagedList } from '@/hooks/usePagedList'
 import { useResource } from '@/hooks/useResource'
 
 /** One line each on what the comparison words mean, for a non-technical reader. */
@@ -41,6 +43,8 @@ export function OffPagePage() {
   const [editingContact, setEditingContact] = useState<BacklinkOut | null>(null)
 
   const writable = canWrite('offpage')
+  const backlinkPager = usePagedList(data?.backlinks ?? [], { storageKey: 'offpage-backlinks' })
+  const alertPager = usePagedList(data?.alerts ?? [], { storageKey: 'offpage-alerts' })
 
   const act = async (id: string, action: () => Promise<ActionResult>) => {
     if (!writable) {
@@ -120,7 +124,7 @@ export function OffPagePage() {
               </tr>
             </thead>
             <tbody>
-              {data.backlinks.map((target) => (
+              {backlinkPager.slice.map((target) => (
                 <tr key={target.id}>
                   <td>{target.domain}</td>
                   <td>{target.authority_measured === false ? <span className="muted">Not measured</span> : target.authority}</td>
@@ -165,6 +169,19 @@ export function OffPagePage() {
           </table>
         </div>
       )}
+      {data.backlinks.length > 0 ? (
+        <ListPager
+          total={backlinkPager.total}
+          from={backlinkPager.from}
+          to={backlinkPager.to}
+          page={backlinkPager.page}
+          pageCount={backlinkPager.pageCount}
+          pageSize={backlinkPager.pageSize}
+          onPage={backlinkPager.setPage}
+          onPageSize={backlinkPager.setPageSize}
+          label="Backlink pages"
+        />
+      ) : null}
 
       <SectionHeading
         title="Sites linking to your competitors"
@@ -179,7 +196,7 @@ export function OffPagePage() {
         />
       ) : (
         <div className="stack">
-          {data.alerts.map((alert) => (
+          {alertPager.slice.map((alert) => (
             <div
               key={alert.id}
               className="card"
@@ -205,6 +222,19 @@ export function OffPagePage() {
           ))}
         </div>
       )}
+      {data.alerts.length > 0 ? (
+        <ListPager
+          total={alertPager.total}
+          from={alertPager.from}
+          to={alertPager.to}
+          page={alertPager.page}
+          pageCount={alertPager.pageCount}
+          pageSize={alertPager.pageSize}
+          onPage={alertPager.setPage}
+          onPageSize={alertPager.setPageSize}
+          label="Competitor alert pages"
+        />
+      ) : null}
       </>
       )}
 

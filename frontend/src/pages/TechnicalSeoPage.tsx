@@ -25,6 +25,7 @@ import { useAuth } from '@/auth/AuthContext'
 import { TechnicalHistory, VersionHistory } from '@/components/AuditHistory'
 import { PageTabs } from '@/components/PageTabs'
 import { useToasts } from '@/components/Toasts'
+import { ListPager } from '@/components/ListPager'
 import {
   Blueprint,
   Dialog,
@@ -38,6 +39,7 @@ import {
   StatTile,
   Tag,
 } from '@/components/ui'
+import { usePagedList } from '@/hooks/usePagedList'
 import { useResource } from '@/hooks/useResource'
 
 type StatusFilter = 'open' | 'fixed' | 'ignored'
@@ -69,6 +71,10 @@ export function TechnicalSeoPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const writable = canWrite('seo')
+  const pager = usePagedList(data?.issues ?? [], {
+    storageKey: 'seo-issues',
+    resetKey: `${status}|${kind}`,
+  })
 
   const reopen = async (issue: SeoIssueOut) => {
     if (!writable) {
@@ -207,7 +213,7 @@ export function TechnicalSeoPage() {
         />
       ) : (
         <div className="stack-sm">
-          {data.issues.map((issue) => (
+          {pager.slice.map((issue) => (
             <Blueprint key={issue.id} className="card elev-sm issue-card">
               <div className="row-between">
                 <div className="row">
@@ -255,6 +261,19 @@ export function TechnicalSeoPage() {
           ))}
         </div>
       )}
+      {data.issues.length > 0 ? (
+        <ListPager
+          total={pager.total}
+          from={pager.from}
+          to={pager.to}
+          page={pager.page}
+          pageCount={pager.pageCount}
+          pageSize={pager.pageSize}
+          onPage={pager.setPage}
+          onPageSize={pager.setPageSize}
+          label="Technical SEO finding pages"
+        />
+      ) : null}
       </>
       )}
 

@@ -11,22 +11,20 @@
    read as a different meaning. */
 :root {
   --color-danger: #dc2626;
-  --color-success: #059669;
+  --color-success: #3f7a5a;
 }
 
 /* ── Shell ────────────────────────────────────────────────────────────────── */
 .app-shell {
   --fit-scale: 1;
   display: flex;
-  height: 100vh;
-  height: 100dvh;
-  max-height: 100dvh;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
   max-width: 100%;
   overflow: hidden;
-  background:
-    radial-gradient(ellipse 70% 45% at 100% -10%, transparent, transparent 55%),
-    radial-gradient(ellipse 50% 40% at -5% 80%, transparent, transparent 50%),
-    var(--color-bg);
+  background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-body);
 }
@@ -75,17 +73,13 @@
   padding: 9px 14px 9px 11px;
 }
 .app-shell[data-fit-w='narrow'] .page {
-  padding: calc(12px + 6px * var(--fit-scale)) calc(10px + 6px * var(--fit-scale)) 32px;
-  max-width: 100%;
+  padding: 16px 14px 28px;
 }
 .app-shell[data-fit-w='medium'] .page {
-  padding: 22px 18px 40px;
+  padding: 20px 20px 28px;
 }
 .app-shell[data-fit-w='wide'] .page {
-  padding: calc(20px + 10px * var(--fit-scale)) calc(20px + 14px * var(--fit-scale)) 48px;
-  max-width: calc(1280px + 200px * var(--fit-scale));
-  margin-inline: auto;
-  width: 100%;
+  padding: 24px 32px 32px;
 }
 .app-shell[data-fit-h='short'] .topbar {
   padding-block: 10px;
@@ -223,15 +217,15 @@
   flex: none;
   margin-top: 0;
   padding: 14px 12px 4px;
-  border-top: 2px solid color-mix(in srgb, var(--color-text) 12%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--color-sidebar-text) 12%, transparent);
   font-size: 12px;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  color: var(--color-sidebar-muted);
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 .sidebar-footer strong {
-  color: var(--color-text);
+  color: var(--color-sidebar-text);
   display: block;
   font-family: var(--font-heading);
   font-weight: 700;
@@ -250,20 +244,20 @@
   width: 100%;
   margin-top: 10px;
   padding: 10px 12px;
-  border: var(--border-ink);
+  border: 1px solid color-mix(in srgb, var(--color-sidebar-text) 14%, transparent);
   border-radius: var(--radius-md);
-  background: #fff;
-  color: var(--color-text);
-  box-shadow: var(--shadow-hard-sm);
+  background: color-mix(in srgb, var(--color-sidebar-text) 8%, transparent);
+  color: var(--color-sidebar-text);
+  box-shadow: none;
   cursor: pointer;
-  font-family: var(--font-heading);
+  font-family: var(--font-body);
   text-align: left;
   transition: background 120ms ease, transform 120ms ease, box-shadow 120ms ease, color 120ms ease;
 }
 .sidebar-rail-toggle:hover {
-  background: color-mix(in srgb, var(--color-accent) 12%, #fff);
+  background: color-mix(in srgb, var(--color-sidebar-text) 14%, transparent);
   transform: none;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  box-shadow: none;
 }
 .sidebar-rail-toggle:active {
   transform: none;
@@ -289,16 +283,16 @@
 .sidebar-rail-toggle-kicker {
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-text) 48%, transparent);
+  color: var(--color-sidebar-muted);
 }
 .sidebar-rail-toggle-label {
   font-weight: 600;
   font-size: 13px;
   letter-spacing: -0.02em;
   white-space: nowrap;
-  color: var(--color-accent-900);
+  color: var(--color-sidebar-text);
 }
 
 /* Stowed: hide the rail; float a summon capsule on the left edge */
@@ -468,26 +462,23 @@
 }
 
 .page {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
-  padding: 28px 32px 48px;
-  max-width: 1400px;
+  min-width: 0;
   width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 24px 28px 32px;
   overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   -webkit-overflow-scrolling: touch;
-}
-
-@media (min-width: 1600px) {
-  .page {
-    max-width: 1520px;
-    margin-inline: auto;
-  }
 }
 
 @media (max-width: 1100px) {
   .page {
-    padding: 24px 20px 40px;
+    padding: 20px 16px 28px;
   }
   .topbar {
     padding: 12px 16px;
@@ -692,8 +683,7 @@
     max-width: 100%;
   }
   .page {
-    padding: 16px 14px 32px;
-    max-width: 100%;
+    padding: 16px 14px 28px;
   }
   .table-scroll {
     overflow-x: auto;
@@ -958,13 +948,16 @@ input[type='range']:disabled::-webkit-slider-thumb {
 
 /* ── Auth screens ────────────────────────────────────────────────────────── */
 .auth-screen {
-  min-height: 100vh;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 28px 20px;
+  -webkit-overflow-scrolling: touch;
   position: relative;
-  overflow: hidden;
+  overflow: auto;
   color: var(--color-text);
   font-family: var(--font-body);
   background:
@@ -990,15 +983,16 @@ input[type='range']:disabled::-webkit-slider-thumb {
 .auth-screen-login {
   display: flex;
   align-items: stretch;
-  justify-content: center;
+  justify-content: stretch;
   padding: 0;
   width: 100%;
   max-width: 100%;
-  height: 100dvh;
-  max-height: 100dvh;
+  flex: 1 1 auto;
+  height: 100%;
+  max-height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--color-bg);
+  background: var(--color-surface);
 }
 .auth-screen-login::before { display: none; }
 
@@ -1010,12 +1004,13 @@ input[type='range']:disabled::-webkit-slider-thumb {
   --login-lead: calc(12.5px + 2.5px * var(--fit-scale));
   --login-panel-pad: calc(18px + 14px * var(--fit-scale));
   --willy-size: calc(280px + 180px * var(--fit-scale));
-  --login-col: clamp(300px, 28vw + 40px * var(--fit-scale), 480px);
+  --login-col: clamp(260px, 36vw, 680px);
   container-type: size;
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--login-col);
-  width: min(100%, calc(1100px + 340px * var(--fit-scale)));
-  max-width: 100%;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -1350,20 +1345,19 @@ input[type='range']:disabled::-webkit-slider-thumb {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: var(--login-pad);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 8%, #fff) 0%, #ffffff 24%, #fff 100%);
+  padding: clamp(32px, 6vh, 88px) clamp(36px, 4.5vw, 96px);
+  background: var(--color-surface);
   overflow: auto;
 }
 .auth-login-panel {
   width: 100%;
-  max-width: calc(300px + 120px * var(--fit-scale));
+  max-width: min(28rem, 100%);
   margin: 0 auto;
-  padding: var(--login-panel-pad);
-  border: var(--border-ink);
-  border-radius: var(--radius-lg);
-  background: #fff;
-  box-shadow: var(--shadow-hard);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .auth-login-brand { display: none; margin-bottom: 16px; }
 .auth-panel-kicker {
@@ -1416,7 +1410,7 @@ input[type='range']:disabled::-webkit-slider-thumb {
 
 /* Density: medium width - collapse Willy into a corner overlay */
 .auth-login-shell[data-fit-w='medium'] {
-  --login-col: clamp(320px, 34vw, 400px);
+  --login-col: clamp(340px, 42vw, 480px);
   grid-template-columns: minmax(0, 1fr) var(--login-col);
 }
 .auth-login-shell[data-fit-w='medium'] .auth-stage-content {
@@ -1457,9 +1451,9 @@ input[type='range']:disabled::-webkit-slider-thumb {
   overflow: visible;
 }
 .auth-screen-login:has(.auth-login-shell[data-fit-w='narrow']) {
-  height: auto;
-  max-height: none;
-  min-height: 100dvh;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   display: block;
@@ -2862,7 +2856,7 @@ body.modal-open .sidebar-rail-toggle {
 }
 .empty-state {
   align-items: flex-start;
-  padding: 24px;
+  padding: 32px;
 }
 
 /* ── Toasts ──────────────────────────────────────────────────────────────── */
@@ -2950,10 +2944,11 @@ body.modal-open .sidebar-rail-toggle {
   max-height: 60vh;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg);
-  border: 1px solid color-mix(in srgb, var(--color-text) 30%, transparent);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  z-index: 1000;
+  z-index: 360;
 }
 .bell-panel-head {
   display: flex;

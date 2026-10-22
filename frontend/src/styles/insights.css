@@ -29,6 +29,11 @@
   stroke-linejoin: round;
   stroke-linecap: round;
 }
+.ins-area {
+  fill: currentColor;
+  stroke: none;
+  opacity: 0.16;
+}
 .ins-dot {
   fill: currentColor;
 }
@@ -43,6 +48,12 @@
 }
 .ins-series-3 {
   color: var(--color-neutral-600);
+}
+.ins-series-4 {
+  color: var(--color-accent-400);
+}
+.ins-series-5 {
+  color: var(--color-accent-2-400);
 }
 .ins-legend {
   display: flex;
@@ -74,7 +85,7 @@
 /* ── Sparkline ──────────────────────────────────────────────────────────── */
 .ins-spark {
   display: inline-block;
-  width: 100px;
+  width: min(100px, 100%);
   height: 28px;
   color: var(--color-accent);
   vertical-align: middle;
@@ -129,17 +140,31 @@
 /* ── Delta badge ────────────────────────────────────────────────────────── */
 .ins-delta {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
-  padding: 1px 8px;
+  max-width: 100%;
+  padding: 2px 8px;
   border-radius: var(--radius-pill);
   border: 1px solid transparent;
   font-size: 12px;
-  line-height: 1.6;
-  white-space: nowrap;
+  line-height: 1.35;
+  white-space: normal;
+  box-sizing: border-box;
 }
 .ins-delta-arrow {
+  flex: none;
   font-size: 10px;
+  line-height: 1.45;
+  margin-top: 1px;
+}
+.ins-delta-copy {
+  min-width: 0;
+}
+.ins-delta-amount {
+  white-space: nowrap;
+}
+.ins-delta-vs {
+  font-weight: 400;
 }
 .ins-delta-good {
   color: var(--color-accent-2-800);
@@ -162,6 +187,16 @@
   display: grid;
   gap: var(--space-2);
   justify-items: start;
+  width: 100%;
+  min-width: 0;
+}
+.ins-range .seg {
+  flex-wrap: wrap;
+  max-width: 100%;
+  overflow: visible;
+}
+.ins-range .seg-opt {
+  white-space: nowrap;
 }
 .ins-range-custom {
   display: flex;
@@ -177,6 +212,100 @@
 .ins-range-note {
   flex-basis: 100%;
   margin: 0;
+}
+
+/* ── Donut ──────────────────────────────────────────────────────────────── */
+.ins-donut {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(200px, 1.1fr);
+  gap: var(--space-6) var(--space-8);
+  align-items: center;
+  justify-items: center;
+  width: 100%;
+  min-height: 280px;
+  margin: 0;
+}
+.ins-donut-svg {
+  display: block;
+  width: min(100%, 300px);
+  height: auto;
+}
+.ins-donut-slice {
+  fill: currentColor;
+}
+.ins-donut-hole {
+  fill: var(--color-surface);
+}
+.ins-donut-total {
+  fill: var(--color-text);
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--font-body);
+}
+.ins-donut-total-label {
+  fill: var(--color-text-muted);
+  font-size: 10px;
+  font-family: var(--font-body);
+}
+.ins-donut-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 28rem;
+  min-width: 0;
+  justify-self: stretch;
+}
+.ins-donut-legend-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+  font-size: 13.5px;
+}
+.ins-donut-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ins-donut-legend-item.is-missing {
+  color: var(--color-text-subtle);
+}
+.ins-donut-legend-item.is-missing .ins-donut-swatch {
+  background: var(--color-neutral-300);
+}
+.ins-donut-legend-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ins-donut-legend-name {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.ins-donut-legend-value {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 700px) {
+  .ins-donut {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    min-height: 0;
+    gap: var(--space-4);
+  }
+  .ins-donut-svg {
+    width: min(100%, 240px);
+  }
+  .ins-donut-legend {
+    max-width: none;
+  }
 }
 
 /* Windows high contrast: let the system colours through. */

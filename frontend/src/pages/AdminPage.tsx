@@ -17,6 +17,7 @@ import { RetentionSettings, VersionHistory } from '@/components/AuditHistory'
 import { useConfirm } from '@/components/Confirm'
 import { SpendingSafetySettings } from '@/components/SafetyBits'
 import { useToasts } from '@/components/Toasts'
+import { ListPager } from '@/components/ListPager'
 import {
   Blueprint,
   Dialog,
@@ -29,6 +30,7 @@ import {
   Segmented,
   Tag,
 } from '@/components/ui'
+import { usePagedList } from '@/hooks/usePagedList'
 import { invalidateResourceCache, useDebounced, useResource } from '@/hooks/useResource'
 import {
   GUARDRAIL_DETAIL,
@@ -133,6 +135,8 @@ export function AdminPage() {
 
   const [inviting, setInviting] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const teamPager = usePagedList(data?.team ?? [], { storageKey: 'admin-team' })
+  const auditPager = usePagedList(data?.audit ?? [], { storageKey: 'admin-audit', resetKey: debounced })
 
   const guard = (): boolean => {
     if (!writable) {
@@ -270,7 +274,7 @@ export function AdminPage() {
             </tr>
           </thead>
           <tbody>
-            {data.team.map((member) => (
+            {teamPager.slice.map((member) => (
               <tr key={member.id}>
                 <td>
                   <span className="cell-title">{member.name}</span>
@@ -317,6 +321,19 @@ export function AdminPage() {
           </tbody>
         </table>
       </div>
+      {data.team.length > 0 ? (
+        <ListPager
+          total={teamPager.total}
+          from={teamPager.from}
+          to={teamPager.to}
+          page={teamPager.page}
+          pageCount={teamPager.pageCount}
+          pageSize={teamPager.pageSize}
+          onPage={teamPager.setPage}
+          onPageSize={teamPager.setPageSize}
+          label="Team member pages"
+        />
+      ) : null}
 
       {data.invitations.length > 0 ? (
         <>
@@ -388,7 +405,7 @@ export function AdminPage() {
             aria-label="Filter audit log"
           />
           <div className="audit-list">
-            {data.audit.map((entry, index) => (
+            {auditPager.slice.map((entry, index) => (
               <div className="audit-entry" key={`${entry.time}-${index}`}>
                 <span className="audit-time">{entry.time}</span>
                 {' - '}
@@ -404,6 +421,19 @@ export function AdminPage() {
               <div className="audit-entry muted">Nothing matches that filter.</div>
             ) : null}
           </div>
+          {data.audit.length > 0 ? (
+            <ListPager
+              total={auditPager.total}
+              from={auditPager.from}
+              to={auditPager.to}
+              page={auditPager.page}
+              pageCount={auditPager.pageCount}
+              pageSize={auditPager.pageSize}
+              onPage={auditPager.setPage}
+              onPageSize={auditPager.setPageSize}
+              label="Audit log pages"
+            />
+          ) : null}
         </div>
       </div>
 

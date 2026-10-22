@@ -134,6 +134,8 @@ export function NotificationBell({ pendingApprovals }: { pendingApprovals: numbe
       </button>
 
       {open ? (
+        <>
+        <div className="popover-scrim" onClick={() => setOpen(false)} />
         <div className="bell-panel" role="dialog" aria-label="Notifications">
           <div className="bell-panel-head">
             <span>Recent activity</span>
@@ -168,6 +170,7 @@ export function NotificationBell({ pendingApprovals }: { pendingApprovals: numbe
             </ul>
           )}
         </div>
+        </>
       ) : null}
     </div>
   )

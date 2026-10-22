@@ -12,6 +12,7 @@ import { useAuth } from '@/auth/AuthContext'
 import { ScoreHistory, VersionHistory } from '@/components/AuditHistory'
 import { PageTabs } from '@/components/PageTabs'
 import { useToasts } from '@/components/Toasts'
+import { ListPager } from '@/components/ListPager'
 import {
   Dialog,
   EmptyState,
@@ -22,6 +23,7 @@ import {
   statusTone,
   Tag,
 } from '@/components/ui'
+import { usePagedList } from '@/hooks/usePagedList'
 import { useDebounced, useResource } from '@/hooks/useResource'
 
 /** One line on what the comparison words mean, for a non-technical reader. */
@@ -45,6 +47,8 @@ export function SeoPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const writable = canWrite('seo')
+  const pagesPager = usePagedList(data?.pages ?? [], { storageKey: 'seo-pages', resetKey: debounced })
+  const spamPager = usePagedList(data?.referral_spam ?? [], { storageKey: 'seo-spam' })
 
   const requestApproval = async (page: SeoPageOut) => {
     if (!writable) {
@@ -141,7 +145,7 @@ export function SeoPage() {
               </tr>
             </thead>
             <tbody>
-              {data.pages.map((page) => (
+              {pagesPager.slice.map((page) => (
                 <tr key={page.id}>
                   <td>
                     <button
@@ -178,6 +182,19 @@ export function SeoPage() {
           </table>
         </div>
       )}
+      {data.pages.length > 0 ? (
+        <ListPager
+          total={pagesPager.total}
+          from={pagesPager.from}
+          to={pagesPager.to}
+          page={pagesPager.page}
+          pageCount={pagesPager.pageCount}
+          pageSize={pagesPager.pageSize}
+          onPage={pagesPager.setPage}
+          onPageSize={pagesPager.setPageSize}
+          label="SEO page list"
+        />
+      ) : null}
 
       <SectionHeading
         title="Referral spam & traffic quality guard"
@@ -203,7 +220,7 @@ export function SeoPage() {
               </tr>
             </thead>
             <tbody>
-              {data.referral_spam.map((event, index) => (
+              {spamPager.slice.map((event, index) => (
                 <tr key={`${event.referrer}-${index}`}>
                   <td>{event.time}</td>
                   <td>{event.referrer}</td>
@@ -218,6 +235,19 @@ export function SeoPage() {
           </table>
         </div>
       )}
+      {data.referral_spam.length > 0 ? (
+        <ListPager
+          total={spamPager.total}
+          from={spamPager.from}
+          to={spamPager.to}
+          page={spamPager.page}
+          pageCount={spamPager.pageCount}
+          pageSize={spamPager.pageSize}
+          onPage={spamPager.setPage}
+          onPageSize={spamPager.setPageSize}
+          label="Referral spam pages"
+        />
+      ) : null}
 
       </>
       )}

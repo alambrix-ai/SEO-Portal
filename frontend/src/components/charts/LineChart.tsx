@@ -74,8 +74,18 @@ export interface LineChartProps {
   /** Lower is better (search position): the axis is flipped so up is good. */
   invert?: boolean
   height?: number
+  /** Fill under the first series so the chart reads as a volume, not a thread. */
+  filled?: boolean
   /** Shown when there is nothing to draw. */
   emptyText?: string
+}
+
+export function areaAttr(run: readonly ChartPoint[], baselineY: number): string {
+  if (run.length < 2) return ''
+  const last = run[run.length - 1]
+  const first = run[0]
+  if (!last || !first) return ''
+  return `${pointsAttr(run)} ${last.x.toFixed(1)},${baselineY.toFixed(1)} ${first.x.toFixed(1)},${baselineY.toFixed(1)}`
 }
 
 export function LineChart({
@@ -84,6 +94,7 @@ export function LineChart({
   unit,
   invert = false,
   height = 200,
+  filled = false,
   emptyText = 'Nothing was recorded in this period. That is missing data, not a zero.',
 }: LineChartProps) {
   const shown = series.slice(0, MAX_SERIES)
@@ -126,6 +137,7 @@ export function LineChart({
       rows,
       ticks,
       lines: rows.map((values) => segments(values, x, y)),
+      baseline: y(invert ? high : low < 0 ? 0 : low),
       min: Math.min(...known),
       max: Math.max(...known),
       gaps: rows.reduce((count, values) => count + values.filter((v) => v === null).length, 0),
@@ -174,6 +186,13 @@ export function LineChart({
         ) : null}
         {chart.lines.map((runs, seriesIndex) => (
           <g key={shown[seriesIndex]?.key ?? seriesIndex} className={`ins-series ins-series-${seriesIndex}`}>
+            {filled && seriesIndex === 0
+              ? runs.map((run, runIndex) =>
+                  run.length > 1 ? (
+                    <polygon key={`fill-${runIndex}`} points={areaAttr(run, chart.baseline)} className="ins-area" />
+                  ) : null,
+                )
+              : null}
             {runs.map((run, runIndex) =>
               run.length === 1 ? (
                 <circle key={runIndex} cx={run[0]?.x} cy={run[0]?.y} r={3.5} className="ins-dot" />

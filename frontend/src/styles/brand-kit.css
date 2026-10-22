@@ -121,7 +121,7 @@
   background: #ffffff;
 }
 .bk-logo-preview.is-dark {
-  background: #111827;
+  background: var(--color-sidebar);
 }
 .bk-logo-preview.is-dark .bk-image-empty {
   color: #d1d5db;

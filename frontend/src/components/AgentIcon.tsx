@@ -335,11 +335,11 @@ const AGENT_ICONS: Record<string, (props: GlyphProps) => ReactNode> = {
 
 /** Product-area tint for each agent: one restrained hue per area. */
 const AREA_TINT: Record<string, { bg: string; fg: string; border: string }> = {
-  seo: { bg: '#eff6ff', fg: '#1d4ed8', border: '#dbeafe' },
-  offpage: { bg: '#f5f3ff', fg: '#6d28d9', border: '#ede9fe' },
-  ads: { bg: '#f0fdfa', fg: '#0f766e', border: '#ccfbf1' },
-  guard: { bg: '#f8fafc', fg: '#334155', border: '#e2e8f0' },
-  local: { bg: '#fff7ed', fg: '#c2410c', border: '#ffedd5' },
+  seo: { bg: '#fbefe6', fg: '#7a3114', border: '#f6d9c4' },
+  offpage: { bg: '#f3eee6', fg: '#5c2410', border: '#e6ddd2' },
+  ads: { bg: '#e8f0ea', fg: '#244836', border: '#cfe0d4' },
+  guard: { bg: '#f7f1e8', fg: '#3f3833', border: '#ebe3d6' },
+  local: { bg: '#fbf4ea', fg: '#b45309', border: '#f6d9c4' },
 }
 
 const AGENT_AREA: Record<string, keyof typeof AREA_TINT> = {

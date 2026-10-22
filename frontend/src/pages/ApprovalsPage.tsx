@@ -17,7 +17,9 @@ import { CardSection } from '@/components/CardSection'
 import { PayloadView } from '@/components/PayloadView'
 import { PracticeBadge } from '@/components/SafetyBits'
 import { useToasts } from '@/components/Toasts'
+import { ListPager } from '@/components/ListPager'
 import { Dialog, EmptyState, ErrorState, Field, Loading, PageHeader, Segmented, Tag } from '@/components/ui'
+import { usePagedList, usePageSize } from '@/hooks/usePagedList'
 import { useResource } from '@/hooks/useResource'
 import { APPROVAL_TYPE_LABEL, approvalTypeLabel } from '@/lib/plain'
 import { when } from '@/lib/time'
@@ -84,6 +86,7 @@ function PracticeView({ agent, onView }: { agent: string; onView: (view: View) =
     [agent],
     `approvals:practice:${agent}`,
   )
+  const pager = usePagedList(data ?? [], { storageKey: 'approvals-practice' })
   const [detail, setDetail] = useState<ApprovalDetail | null>(null)
   const open = async (item: ApprovalOut) => {
     try {
@@ -116,7 +119,7 @@ function PracticeView({ agent, onView }: { agent: string; onView: (view: View) =
           description="Each change an agent worked out in the last 30 days, and what would have happened to it. The same change planned again within a day is listed once."
         >
           <div className="stack">
-            {data.map((item) => (
+            {pager.slice.map((item) => (
               <div key={item.id} className="card approval-row">
                 <div className="approval-body">
                   <div className="row" style={{ gap: 6 }}>
@@ -137,6 +140,17 @@ function PracticeView({ agent, onView }: { agent: string; onView: (view: View) =
               </div>
             ))}
           </div>
+          <ListPager
+            total={pager.total}
+            from={pager.from}
+            to={pager.to}
+            page={pager.page}
+            pageCount={pager.pageCount}
+            pageSize={pager.pageSize}
+            onPage={pager.setPage}
+            onPageSize={pager.setPageSize}
+            label="Practice pages"
+          />
         </CardSection>
       )}
 
@@ -179,9 +193,6 @@ const STATUS_LABEL: Record<string, string> = {
   expired: 'Expired',
 }
 
-/** History page size; the server allows at most 100. */
-const HISTORY_PAGE = 50
-
 const HISTORY_FILTERS: { value: '' | ApprovalHistoryStatus; label: string }[] = [
   { value: '', label: 'Everything' },
   { value: 'approved', label: 'Approved' },
@@ -221,40 +232,35 @@ function historyTone(status: string): 'danger' | 'accent-2' | 'neutral' {
 
 /** Everything that has left the queue: who decided, when, and why. */
 function HistoryView({ onView }: { onView: (view: View) => void }) {
-  const { fromError } = useToasts()
   const [status, setStatus] = useState<'' | ApprovalHistoryStatus>('')
   const [type, setType] = useState('')
+  const [pageSize, setPageSize] = usePageSize('approvals-history', 100)
+  const [cursors, setCursors] = useState<(string | null)[]>([])
+  const [cursor, setCursor] = useState<string | null>(null)
   const first = useResource(
     (signal) =>
-      api.listApprovalHistory({ status: status || undefined, type: type || undefined, limit: HISTORY_PAGE }, signal),
-    [status, type],
+      api.listApprovalHistory(
+        {
+          status: status || undefined,
+          type: type || undefined,
+          cursor: cursor || undefined,
+          limit: pageSize,
+        },
+        signal,
+      ),
+    [status, type, cursor, pageSize],
   )
-  /** Pages fetched with "Show more", for the current filters. */
-  const [more, setMore] = useState<{ items: ApprovalHistoryItem[]; cursor: string | null } | null>(null)
-  const [loadingMore, setLoadingMore] = useState(false)
 
-  useEffect(() => setMore(null), [status, type])
-
-  const items = [...(first.data?.items ?? []), ...(more?.items ?? [])]
-  const cursor = more ? more.cursor : (first.data?.next_cursor ?? null)
-
-  const loadMore = async () => {
-    if (!cursor || loadingMore) return
-    setLoadingMore(true)
-    try {
-      const page = await api.listApprovalHistory({
-        status: status || undefined,
-        type: type || undefined,
-        cursor,
-        limit: HISTORY_PAGE,
-      })
-      setMore((current) => ({ items: [...(current?.items ?? []), ...page.items], cursor: page.next_cursor }))
-    } catch (caught) {
-      fromError(caught)
-    } finally {
-      setLoadingMore(false)
-    }
+  const restart = () => {
+    setCursors([])
+    setCursor(null)
   }
+
+  const items = first.data?.items ?? []
+  const nextCursor = first.data?.next_cursor ?? null
+  const pageIndex = cursors.length
+  const from = items.length === 0 ? 0 : pageIndex * pageSize + 1
+  const to = pageIndex * pageSize + items.length
 
   return (
     <>
@@ -264,14 +270,25 @@ function HistoryView({ onView }: { onView: (view: View) => void }) {
       />
       <ViewSwitch value="history" onView={onView} />
       <div className="row" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
-        <Segmented name="approvals-history-status" value={status} options={HISTORY_FILTERS} onChange={setStatus} />
+        <Segmented
+          name="approvals-history-status"
+          value={status}
+          options={HISTORY_FILTERS}
+          onChange={(next) => {
+            setStatus(next)
+            restart()
+          }}
+        />
         <label className="row" style={{ gap: 6 }}>
           <span className="card-meta">Kind</span>
           <select
             className="input"
             aria-label="Kind of change"
             value={type}
-            onChange={(event) => setType(event.target.value)}
+            onChange={(event) => {
+              setType(event.target.value)
+              restart()
+            }}
           >
             <option value="">All kinds</option>
             {HISTORY_TYPES.map((value) => (
@@ -335,18 +352,29 @@ function HistoryView({ onView }: { onView: (view: View) => void }) {
               </div>
             ))}
           </div>
-          {cursor ? (
-            <div style={{ marginTop: 'var(--space-4)' }}>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={loadingMore}
-                onClick={() => void loadMore()}
-              >
-                {loadingMore ? 'Loading…' : 'Show more'}
-              </button>
-            </div>
-          ) : null}
+          <ListPager
+            from={from}
+            to={to}
+            pageSize={pageSize}
+            onPageSize={(size) => {
+              setPageSize(size)
+              restart()
+            }}
+            hasPrev={cursors.length > 0}
+            hasNext={Boolean(nextCursor)}
+            onPrev={() => {
+              setCursor(cursors[cursors.length - 1] ?? null)
+              setCursors(cursors.slice(0, -1))
+            }}
+            onNext={() => {
+              if (!nextCursor) return
+              setCursors([...cursors, cursor])
+              setCursor(nextCursor)
+            }}
+            disabled={first.loading}
+            maxPageSize={100}
+            label="Approval history pages"
+          />
         </CardSection>
       )}
     </>
@@ -445,6 +473,7 @@ function QueueView({ onView }: { onView: (view: View) => void }) {
     [],
     'approvals',
   )
+  const pager = usePagedList(data ?? [], { storageKey: 'approvals-queue' })
 
   const [detail, setDetail] = useState<ApprovalDetail | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -615,7 +644,7 @@ function QueueView({ onView }: { onView: (view: View) => void }) {
           description="Open a change to see it in full before you decide. Approving publishes it exactly as shown."
         >
         <div className="stack">
-          {data.map((item) => (
+          {pager.slice.map((item) => (
             <div key={item.id} className="card approval-row">
               {item.preview_file_id ? (
                 <CreativePreview id={item.preview_file_id} title={item.title} compact />
@@ -677,6 +706,17 @@ function QueueView({ onView }: { onView: (view: View) => void }) {
             </div>
           ))}
         </div>
+          <ListPager
+            total={pager.total}
+            from={pager.from}
+            to={pager.to}
+            page={pager.page}
+            pageCount={pager.pageCount}
+            pageSize={pager.pageSize}
+            onPage={pager.setPage}
+            onPageSize={pager.setPageSize}
+            label="Approval queue pages"
+          />
         </CardSection>
       )}
 

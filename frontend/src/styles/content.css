@@ -116,7 +116,7 @@
   align-items: center;
   gap: 4px;
 }
-@media (max-width: 760px) {
+@media (max-width: 899px) {
   .content-row {
     grid-template-columns: 1fr;
   }

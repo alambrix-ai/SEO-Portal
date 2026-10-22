@@ -96,7 +96,6 @@ export const CONNECTOR_CATEGORY_ORDER = [
   'Local business',
   'AI models',
   'Analytics & Search',
-  'Analytics',
   'Collaboration',
   'Ad Platforms',
   'Social media',
@@ -106,6 +105,39 @@ export const CONNECTOR_CATEGORY_ORDER = [
 
 export function categoryTitle(category: string): string {
   return CONNECTOR_CATEGORY[category]?.title ?? category
+}
+
+/** One chip / section per display title, so "Analytics" and "Analytics & Search" do not both appear. */
+export function uniqueCategoryChips(names: readonly string[]): { value: string; label: string }[] {
+  const seen = new Set<string>()
+  const chips: { value: string; label: string }[] = []
+  for (const name of names) {
+    if (name === 'All') {
+      if (!seen.has('All')) {
+        seen.add('All')
+        chips.push({ value: 'All', label: 'All' })
+      }
+      continue
+    }
+    const label = categoryTitle(name)
+    if (seen.has(label)) continue
+    seen.add(label)
+    chips.push({ value: label, label })
+  }
+  return chips
+}
+
+export function categoryMatches(connectorCategory: string, selected: string): boolean {
+  if (selected === 'All') return true
+  return categoryTitle(connectorCategory) === selected || connectorCategory === selected
+}
+
+export function categorySortKey(category: string): number {
+  const index = CONNECTOR_CATEGORY_ORDER.indexOf(category)
+  if (index !== -1) return index
+  const title = categoryTitle(category)
+  const byTitle = CONNECTOR_CATEGORY_ORDER.findIndex((key) => CONNECTOR_CATEGORY[key]?.title === title)
+  return byTitle === -1 ? CONNECTOR_CATEGORY_ORDER.length : byTitle
 }
 
 export const NOTIFY_LABEL: Record<string, string> = {
