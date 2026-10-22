@@ -6,9 +6,30 @@
   margin-bottom: 12px;
 }
 .cs-quota {
+  list-style: none;
   margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   color: var(--color-text-subtle);
   font-size: 13px;
+}
+.cs-quota-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+}
+.cs-quota-label {
+  color: var(--color-text-muted);
+}
+.cs-quota-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
 }
 .cs-note {
   margin: 0 0 12px;
@@ -79,9 +100,16 @@
   color: var(--color-text-subtle);
 }
 .cs-stepper-item.is-current .cs-stepper-button {
-  border-color: var(--color-neutral-800);
+  border-color: var(--color-accent);
+  background: var(--color-accent-100);
+  color: var(--color-accent-800);
   font-weight: 600;
-  box-shadow: inset 0 -2px 0 var(--color-neutral-800);
+  box-shadow: none;
+}
+.cs-stepper-item.is-current .cs-stepper-mark {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
 }
 .cs-stepper-mark {
   display: inline-flex;
@@ -100,7 +128,7 @@
 
 /* ── Panel and navigation ──────────────────────────────────────────────── */
 .cs-panel {
-  padding: 20px;
+  padding: 22px 24px 20px;
 }
 .cs-step-heading {
   margin: 0 0 14px;
@@ -306,35 +334,84 @@
 }
 
 /* ── Step 3: message ───────────────────────────────────────────────────── */
+.cs-message {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 48rem;
+}
+.cs-message .field + .field,
+.cs-message .cs-fieldset {
+  margin: 0;
+}
+.cs-message-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: var(--space-4);
+}
 .cs-message textarea,
 .cs-message input[type='text'],
 .cs-message select {
   width: 100%;
 }
+.cs-counted {
+  position: relative;
+}
+.cs-counted .input {
+  padding-bottom: 28px;
+}
+.cs-counted:has(input[type='text']) .input {
+  padding-bottom: 8px;
+  padding-right: 4.5rem;
+}
+.cs-char-count {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.cs-counted:has(input[type='text']) .cs-char-count {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+}
 .cs-chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 .cs-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
-  border: 1px solid var(--color-border);
+  padding: 8px 14px;
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-pill);
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   cursor: pointer;
 }
 .cs-chip input {
-  margin: 0;
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
 }
 .cs-chip.is-checked {
-  border-color: var(--color-neutral-800);
+  border-color: var(--color-accent);
+  background: var(--color-accent-100);
+  color: var(--color-accent-800);
   font-weight: 600;
+}
+.cs-chip:hover {
+  border-color: var(--color-accent-400);
 }
 
 /* ── Step 4: AI choices ────────────────────────────────────────────────── */
@@ -568,4 +645,14 @@ span.cs-output-image {
 .cs-downloads-label {
   font-size: 12.5px;
   font-weight: 600;
+}
+
+@media (max-width: 700px) {
+  .cs-message-split {
+    grid-template-columns: 1fr;
+  }
+  .cs-quota {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

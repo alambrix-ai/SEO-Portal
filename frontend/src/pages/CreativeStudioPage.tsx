@@ -144,13 +144,27 @@ function remaining(limit: number, used: number): number | null {
 
 function quotaLine(quota: CreativeQuota | null): string {
   if (!quota) return ''
+  return quotaItems(quota)
+    .map((item) => `${item.label}: ${item.value}`)
+    .join(' · ')
+}
+
+function quotaItems(quota: CreativeQuota): { label: string; value: string }[] {
   const jobs = remaining(quota.limits.jobs_per_month, quota.used.jobs)
   const images = remaining(quota.limits.images_per_month, quota.used.images)
-  const parts = [
-    jobs === null ? 'No monthly limit on designs' : `Designs left this month: ${jobs} of ${quota.limits.jobs_per_month}`,
+  const items = [
+    {
+      label: 'Designs left this month',
+      value: jobs === null ? 'No limit' : `${jobs} of ${quota.limits.jobs_per_month}`,
+    },
   ]
-  if (images !== null) parts.push(`AI images left: ${images} of ${quota.limits.images_per_month}`)
-  return parts.join(' · ')
+  if (images !== null) {
+    items.push({
+      label: 'AI images left',
+      value: `${images} of ${quota.limits.images_per_month}`,
+    })
+  }
+  return items
 }
 
 function recommendedKey(options: ModelOption[], preferred: string, avoid?: (o: ModelOption) => boolean): string {
@@ -489,6 +503,14 @@ interface MessageState {
   extra: string
 }
 
+function CharCount({ id, current, max }: { id: string; current: number; max: number }) {
+  return (
+    <span id={id} className="cs-char-count">
+      {current} / {max}
+    </span>
+  )
+}
+
 function MessageStep({
   value,
   limits,
@@ -505,7 +527,8 @@ function MessageStep({
     <div className="cs-message">
       <fieldset className="cs-fieldset">
         <legend className="cs-legend">Goal (optional)</legend>
-        <div className="cs-chip-row">
+        <p className="field-description">What this design should do. Pick one, or leave it as Not sure.</p>
+        <div className="cs-chip-row" role="radiogroup" aria-label="Goal">
           {GOALS.map((goal) => (
             <label key={goal} className={`cs-chip${value.goal === goal ? ' is-checked' : ''}`}>
               <input
@@ -529,64 +552,90 @@ function MessageStep({
         label="Key message"
         htmlFor="cs-message"
         required
+        description="The one thing people should take away."
         error={errors.message}
-        hint={`The one thing people should take away. ${value.message.length} / ${limits.message_chars}`}
       >
-        <textarea
-          id="cs-message"
-          rows={3}
-          required
-          maxLength={limits.message_chars}
-          value={value.message}
-          placeholder="e.g. Our new summer menu is here, with 20% off lunch for members this week."
-          aria-invalid={errors.message ? true : undefined}
-          onChange={(event) => onChange({ ...value, message: event.target.value })}
-        />
+        <div className="cs-counted">
+          <textarea
+            id="cs-message"
+            className="input"
+            rows={5}
+            required
+            maxLength={limits.message_chars}
+            value={value.message}
+            placeholder="e.g. Our new summer menu is here, with 20% off lunch for members this week."
+            aria-invalid={errors.message ? true : undefined}
+            aria-describedby="cs-message-desc cs-message-count"
+            onChange={(event) => onChange({ ...value, message: event.target.value })}
+          />
+          <CharCount id="cs-message-count" current={value.message.length} max={limits.message_chars} />
+        </div>
       </Field>
 
-      <Field
-        label="Who is it for? (optional)"
-        htmlFor="cs-audience"
-        error={errors.audience}
-        hint={`${value.audience.length} / ${limits.audience_chars}`}
-      >
-        <input
-          id="cs-audience"
-          type="text"
-          maxLength={limits.audience_chars}
-          value={value.audience}
-          placeholder="e.g. Office workers near our city-centre shop"
-          aria-invalid={errors.audience ? true : undefined}
-          onChange={(event) => onChange({ ...value, audience: event.target.value })}
-        />
-      </Field>
+      <div className="cs-message-split">
+        <Field
+          label="Who is it for? (optional)"
+          htmlFor="cs-audience"
+          description="The people you want this to speak to."
+          error={errors.audience}
+        >
+          <div className="cs-counted">
+            <input
+              id="cs-audience"
+              className="input"
+              type="text"
+              maxLength={limits.audience_chars}
+              value={value.audience}
+              placeholder="e.g. Office workers near our city-centre shop"
+              aria-invalid={errors.audience ? true : undefined}
+              aria-describedby="cs-audience-desc cs-audience-count"
+              onChange={(event) => onChange({ ...value, audience: event.target.value })}
+            />
+            <CharCount id="cs-audience-count" current={value.audience.length} max={limits.audience_chars} />
+          </div>
+        </Field>
 
-      <Field label="Tone (optional)" htmlFor="cs-tone" hint="Leave it on your brand voice unless this design needs a different feel.">
-        <select id="cs-tone" value={value.tone} onChange={(event) => onChange({ ...value, tone: event.target.value })}>
-          <option value="">Use my brand voice</option>
-          {TONES.map((tone) => (
-            <option key={tone} value={tone}>
-              {tone}
-            </option>
-          ))}
-        </select>
-      </Field>
+        <Field
+          label="Tone (optional)"
+          htmlFor="cs-tone"
+          description="Leave it on your brand voice unless this design needs a different feel."
+        >
+          <select
+            id="cs-tone"
+            className="input"
+            value={value.tone}
+            onChange={(event) => onChange({ ...value, tone: event.target.value })}
+          >
+            <option value="">Use my brand voice</option>
+            {TONES.map((tone) => (
+              <option key={tone} value={tone}>
+                {tone}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
 
       <Field
         label="Anything else? (optional)"
         htmlFor="cs-extra"
+        description="Extra details the design should include."
         error={errors.notes}
-        hint={`${value.extra.length} / ${extraLimit}`}
       >
-        <textarea
-          id="cs-extra"
-          rows={2}
-          maxLength={extraLimit}
-          value={value.extra}
-          placeholder="e.g. Mention that we are open late on Fridays."
-          aria-invalid={errors.notes ? true : undefined}
-          onChange={(event) => onChange({ ...value, extra: event.target.value.slice(0, extraLimit) })}
-        />
+        <div className="cs-counted">
+          <textarea
+            id="cs-extra"
+            className="input"
+            rows={3}
+            maxLength={extraLimit}
+            value={value.extra}
+            placeholder="e.g. Mention that we are open late on Fridays."
+            aria-invalid={errors.notes ? true : undefined}
+            aria-describedby="cs-extra-desc cs-extra-count"
+            onChange={(event) => onChange({ ...value, extra: event.target.value.slice(0, extraLimit) })}
+          />
+          <CharCount id="cs-extra-count" current={value.extra.length} max={extraLimit} />
+        </div>
       </Field>
     </div>
   )
@@ -1011,6 +1060,7 @@ function FeedbackDialog({
       >
         <textarea
           id="cs-feedback"
+          className="input"
           rows={4}
           required
           maxLength={FEEDBACK_MAX_CHARS}
@@ -1116,9 +1166,19 @@ function EditTextDialog({
             hint={`${field.hint} ${value.length} / ${caps[field.key]}`}
           >
             {field.multiline ? (
-              <textarea {...props} rows={3} onChange={(event) => setValues({ ...values, [field.key]: event.target.value })} />
+              <textarea
+                {...props}
+                className="input"
+                rows={3}
+                onChange={(event) => setValues({ ...values, [field.key]: event.target.value })}
+              />
             ) : (
-              <input {...props} type="text" onChange={(event) => setValues({ ...values, [field.key]: event.target.value })} />
+              <input
+                {...props}
+                className="input"
+                type="text"
+                onChange={(event) => setValues({ ...values, [field.key]: event.target.value })}
+              />
             )}
           </Field>
         )
@@ -1670,7 +1730,16 @@ export function CreativeStudioPage() {
     <>
       {header}
       <div className="cs-topline">
-        {quotaText ? (
+        {quota ? (
+          <ul className="cs-quota" aria-label="Monthly allowance">
+            {quotaItems(quota).map((item) => (
+              <li key={item.label} className="cs-quota-pill">
+                <span className="cs-quota-label">{item.label}</span>
+                <strong className="cs-quota-value">{item.value}</strong>
+              </li>
+            ))}
+          </ul>
+        ) : quotaText ? (
           <p className="cs-quota" aria-label="Monthly allowance">
             {quotaText}
           </p>

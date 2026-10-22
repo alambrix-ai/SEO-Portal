@@ -206,6 +206,12 @@ figcaption { font-size: 11px; margin-top: var(--space-1); color: var(--color-tex
   display: block; font-size: 13px; margin-bottom: 6px;
   font-weight: 500; color: var(--color-neutral-700);
 }
+.field-description {
+  margin: -2px 0 8px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
 .input {
   width: 100%; min-height: 40px; padding: 8px 12px; font: inherit;
   font-size: 14px; color: var(--color-text); caret-color: var(--color-accent);

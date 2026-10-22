@@ -180,6 +180,7 @@ export function ErrorState({
 export function Field({
   label,
   children,
+  description,
   hint,
   error,
   htmlFor,
@@ -187,12 +188,15 @@ export function Field({
 }: {
   label: string
   children: ReactNode
+  /** Sits under the label, before the control, so it is not read as the next field. */
+  description?: string
   hint?: string
   error?: string
   htmlFor?: string
   /** Marks the label, for the fields the form will not submit without. */
   required?: boolean
 }) {
+  const descriptionId = htmlFor ? `${htmlFor}-desc` : undefined
   return (
     <div className="field">
       <label htmlFor={htmlFor}>
@@ -206,6 +210,11 @@ export function Field({
           </span>
         ) : null}
       </label>
+      {description ? (
+        <p className="field-description" id={descriptionId}>
+          {description}
+        </p>
+      ) : null}
       {children}
       {error ? (
         <div className="field-error">{error}</div>
