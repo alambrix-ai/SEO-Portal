@@ -1,16 +1,18 @@
 /**
- * Platform Portal Admin - workspaces across the product, and catalogue toggles.
+ * Synaprank operator console — people, workspaces, and catalogue toggles.
  *
- * Only emails listed in PORTAL_ADMIN_EMAILS see this screen. Disabling a
- * connector, agent, or module hides it from every customer workspace.
+ * Only emails listed in PORTAL_ADMIN_EMAILS see this screen. Customers never
+ * get the nav link. Disabling a connector, agent, or module hides it from
+ * every customer workspace.
  */
 import { useMemo, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 
 import { api } from '@/api/client'
-import type { PortalFeature, PortalOrganization } from '@/api/types'
+import type { PortalFeature } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { AgentIcon } from '@/components/AgentIcon'
+import { PortalAccounts } from '@/components/PortalAccounts'
 import { PortalAnalyses } from '@/components/PortalAnalyses'
 import { PortalSignInProviders } from '@/components/PortalSignInProviders'
 import { PortalVerification } from '@/components/PortalVerification'
@@ -34,7 +36,6 @@ import {
 import { useToasts } from '@/components/Toasts'
 import {
   Blueprint,
-  Dialog,
   EmptyState,
   ErrorState,
   Loading,
@@ -46,7 +47,9 @@ import {
 import { usePagedList } from '@/hooks/usePagedList'
 import { useResource } from '@/hooks/useResource'
 
-type Tab = 'workspaces' | 'features' | 'analyses' | 'signin' | 'verification'
+type Tab = 'accounts' | 'features' | 'analyses' | 'signin' | 'verification'
+
+const TABS: Tab[] = ['accounts', 'features', 'analyses', 'signin', 'verification']
 type FeatureKindFilter = 'all' | 'connector' | 'agent' | 'module'
 
 const KIND_LABEL: Record<string, string> = {
@@ -97,13 +100,13 @@ export function PortalAdminPage() {
   const confirm = useConfirm()
   // Deep link from the connect screen: /portal?tab=signin&provider=google
   const [params] = useSearchParams()
-  const [tab, setTab] = useState<Tab>(() =>
-    (['workspaces', 'features', 'analyses', 'signin', 'verification'] as const).find((t) => t === params.get('tab')) ?? 'workspaces',
-  )
+  const tabParam = params.get('tab')
+  const [tab, setTab] = useState<Tab>(() => {
+    if (tabParam === 'workspaces') return 'accounts'
+    return TABS.find((item) => item === tabParam) ?? 'accounts'
+  })
   const focusProvider = params.get('provider') ?? undefined
-  const [selectedOrg, setSelectedOrg] = useState<PortalOrganization | null>(null)
   const [featureFilter, setFeatureFilter] = useState<FeatureKindFilter>('all')
-  const [workspaceQuery, setWorkspaceQuery] = useState('')
   const [featureQuery, setFeatureQuery] = useState('')
   /** Off items leave the catalogue; turn this on only to restore them. */
   const [showDisabled, setShowDisabled] = useState(false)
@@ -129,27 +132,6 @@ export function PortalAdminPage() {
     [isPortalAdmin, tab],
     tab === 'features' ? 'portal:features' : undefined,
   )
-  const users = useResource(
-    (signal) =>
-      isPortalAdmin && selectedOrg
-        ? api.portalOrganizationUsers(selectedOrg.id, signal)
-        : Promise.resolve([]),
-    [isPortalAdmin, selectedOrg?.id],
-    selectedOrg ? `portal:users:${selectedOrg.id}` : undefined,
-  )
-
-  const filteredOrgs = useMemo(() => {
-    const rows = orgs.data ?? []
-    const q = workspaceQuery.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter(
-      (org) =>
-        org.name.toLowerCase().includes(q) ||
-        org.slug.toLowerCase().includes(q) ||
-        org.plan_name.toLowerCase().includes(q),
-    )
-  }, [orgs.data, workspaceQuery])
-
   const filteredFeatures = useMemo(() => {
     const rows = features.data ?? []
     const q = featureQuery.trim().toLowerCase()
@@ -170,14 +152,9 @@ export function PortalAdminPage() {
     [features.data],
   )
 
-  const orgPager = usePagedList(filteredOrgs, { storageKey: 'portal-orgs', resetKey: workspaceQuery })
   const featurePager = usePagedList(filteredFeatures, {
     storageKey: 'portal-features',
     resetKey: `${featureFilter}|${featureQuery}|${String(showDisabled)}`,
-  })
-  const userPager = usePagedList(users.data ?? [], {
-    storageKey: 'portal-users',
-    resetKey: selectedOrg?.id ?? '',
   })
 
   const featuresByKind = useMemo(() => {
@@ -231,19 +208,16 @@ export function PortalAdminPage() {
     <div className="portal-page">
       <Blueprint className="portal-masthead elev-sm">
         <div className="portal-masthead-copy">
-          <div className="portal-eyebrow">Platform control</div>
-          <h2 className="portal-masthead-title">Portal Admin</h2>
+          <div className="portal-eyebrow">Synaprank operators only</div>
+          <h2 className="portal-masthead-title">Operator console</h2>
           <p className="portal-masthead-lede">
-            Govern every workspace from one console. Disable a connector, agent, or
-            module here and it disappears from the customer product until you
-            restore it.
-          </p>
-          <p className="portal-masthead-lede">
-            Set up each sign-in once. After that, every customer connects with one click.
+            This screen is not part of a customer workspace. Browse every person
+            on the platform, the workspaces they belong to, and the catalogue you
+            can switch off for everyone.
           </p>
         </div>
         <div className="portal-masthead-aside">
-          <Tag tone="accent">Operator access</Tag>
+          <Tag tone="accent">Staff access</Tag>
           <div className="portal-masthead-meta">
             Signed in as
             <strong> {session?.user.email}</strong>
@@ -253,14 +227,14 @@ export function PortalAdminPage() {
 
       <div className="grid-tiles portal-kpis">
         <StatTile
+          kicker="People"
+          value={overview.data?.accounts ?? '-'}
+          meta={`${overview.data?.users ?? 0} seats across workspaces`}
+        />
+        <StatTile
           kicker="Workspaces"
           value={overview.data?.organizations ?? '-'}
           meta="Customer organizations"
-        />
-        <StatTile
-          kicker="Users"
-          value={overview.data?.users ?? '-'}
-          meta="Across all workspaces"
         />
         <StatTile
           kicker="Catalogue live"
@@ -277,14 +251,14 @@ export function PortalAdminPage() {
       <PortalSafetyPanel />
 
       <div className="portal-toolbar">
-        <div className="portal-tabs" role="tablist" aria-label="Portal sections">
+        <div className="portal-tabs" role="tablist" aria-label="Operator sections">
           {(
             [
-              { value: 'workspaces' as const, label: 'Workspaces', hint: 'Tenants & members' },
-              { value: 'features' as const, label: 'Catalogue', hint: 'Connectors · agents · modules' },
-              { value: 'analyses' as const, label: 'Analyses', hint: 'Website & workspace reports' },
-              { value: 'signin' as const, label: 'Sign-in providers', hint: 'Google · Meta · LinkedIn · more' },
+              { value: 'accounts' as const, label: 'Accounts', hint: 'People · workspaces · logins' },
+              { value: 'features' as const, label: 'Catalogue', hint: 'Switch connectors, agents, modules off' },
+              { value: 'signin' as const, label: 'Sign-in', hint: 'Google · Meta · LinkedIn · more' },
               { value: 'verification' as const, label: 'Verification', hint: 'Live checks · Beta labels' },
+              { value: 'analyses' as const, label: 'Analyses', hint: 'Website & workspace reports' },
             ] as const
           ).map((item) => (
             <button
@@ -293,10 +267,7 @@ export function PortalAdminPage() {
               role="tab"
               aria-selected={tab === item.value}
               className={`portal-tab${tab === item.value ? ' is-active' : ''}`}
-              onClick={() => {
-                setTab(item.value)
-                setSelectedOrg(null)
-              }}
+              onClick={() => setTab(item.value)}
             >
               <span className="portal-tab-label">{item.label}</span>
               <span className="portal-tab-hint">{item.hint}</span>
@@ -305,120 +276,14 @@ export function PortalAdminPage() {
         </div>
       </div>
 
-      {tab === 'workspaces' ? (
-        <section className="portal-panel" aria-label="Workspaces">
-          <SectionHeading
-            title="Customer workspaces"
-            description="Open any tenant to review members, plan, and seat usage."
-            action={
-              <div className="portal-search">
-                <input
-                  className="input"
-                  type="search"
-                  placeholder="Search name, slug, or plan…"
-                  value={workspaceQuery}
-                  onChange={(event) => setWorkspaceQuery(event.target.value)}
-                  aria-label="Search workspaces"
-                />
-              </div>
-            }
-          />
-
-          {orgs.loading && !orgs.data ? <Loading label="Loading workspaces…" /> : null}
-          {orgs.error ? <ErrorState message={orgs.error} onRetry={orgs.reload} /> : null}
-
-          {!orgs.loading && filteredOrgs.length === 0 ? (
-            <EmptyState
-              title={workspaceQuery ? 'No matching workspaces' : 'No workspaces yet'}
-              description={
-                workspaceQuery
-                  ? 'Try a different name, slug, or plan.'
-                  : 'Organizations will appear here as customers sign up.'
-              }
-            />
-          ) : (
-            <Blueprint className="card elev-sm portal-surface">
-              <div className="table-scroll">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Workspace</th>
-                      <th>Plan</th>
-                      <th>Seats</th>
-                      <th>Status</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orgPager.slice.map((org) => {
-                      const seatPct =
-                        org.seats_total > 0
-                          ? Math.round((org.member_count / org.seats_total) * 100)
-                          : 0
-                      return (
-                        <tr key={org.id}>
-                          <td>
-                            <div className="cell-title">{org.name}</div>
-                            <div className="small muted">{org.slug}</div>
-                          </td>
-                          <td>
-                            <div className="cell-title" style={{ fontSize: 13 }}>
-                              {org.plan_name}
-                            </div>
-                            <div className="small muted">{org.plan_tier}</div>
-                          </td>
-                          <td>
-                            <div className="portal-seat">
-                              <span>
-                                {org.member_count}
-                                <span className="muted"> / {org.seats_total}</span>
-                              </span>
-                              <div
-                                className="portal-seat-meter"
-                                role="meter"
-                                aria-valuenow={seatPct}
-                                aria-valuemin={0}
-                                aria-valuemax={100}
-                                aria-label={`${seatPct}% of seats used`}
-                              >
-                                <span style={{ width: `${Math.min(100, seatPct)}%` }} />
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <Tag tone={org.is_active ? 'accent-2' : 'outline'}>
-                              {org.is_active ? 'Active' : 'Inactive'}
-                            </Tag>
-                          </td>
-                          <td className="table-actions">
-                            <button
-                              type="button"
-                              className="btn btn-secondary"
-                              onClick={() => setSelectedOrg(org)}
-                            >
-                              View members
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <ListPager
-                total={orgPager.total}
-                from={orgPager.from}
-                to={orgPager.to}
-                page={orgPager.page}
-                pageCount={orgPager.pageCount}
-                pageSize={orgPager.pageSize}
-                onPage={orgPager.setPage}
-                onPageSize={orgPager.setPageSize}
-                label="Workspace pages"
-              />
-            </Blueprint>
-          )}
-        </section>
+      {tab === 'accounts' ? (
+        <PortalAccounts
+          orgs={orgs.data}
+          orgsLoading={orgs.loading}
+          orgsError={orgs.error}
+          onRetryOrgs={orgs.reload}
+          initialDirectory={tabParam === 'workspaces' ? 'workspaces' : 'people'}
+        />
       ) : tab === 'analyses' ? (
         <PortalAnalyses />
       ) : tab === 'signin' ? (
@@ -613,107 +478,6 @@ export function PortalAdminPage() {
           ) : null}
         </section>
       )}
-
-      {selectedOrg ? (
-        <Dialog
-          title={`Members - ${selectedOrg.name}`}
-          width={720}
-          onClose={() => setSelectedOrg(null)}
-          actions={
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => setSelectedOrg(null)}
-            >
-              Close
-            </button>
-          }
-        >
-          <div className="portal-dialog-summary">
-            <div>
-              <div className="card-kicker">Plan</div>
-              <div className="cell-title">
-                {selectedOrg.plan_name}
-                <span className="muted"> · {selectedOrg.plan_tier}</span>
-              </div>
-            </div>
-            <div>
-              <div className="card-kicker">Seats</div>
-              <div className="cell-title">
-                {selectedOrg.member_count} / {selectedOrg.seats_total}
-              </div>
-            </div>
-            <div>
-              <div className="card-kicker">Status</div>
-              <Tag tone={selectedOrg.is_active ? 'accent-2' : 'outline'}>
-                {selectedOrg.is_active ? 'Active' : 'Inactive'}
-              </Tag>
-            </div>
-          </div>
-
-          {users.loading && !users.data ? <Loading label="Loading members…" /> : null}
-          {users.error ? <ErrorState message={users.error} onRetry={users.reload} /> : null}
-
-          {users.data?.length ? (
-            <div className="table-scroll">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Last sign-in</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {userPager.slice.map((member) => (
-                    <tr key={member.id}>
-                      <td>
-                        <span className="cell-title">{member.name}</span>
-                        {member.is_owner ? (
-                          <div className="row" style={{ marginTop: 4 }}>
-                            <Tag tone="outline">Owner</Tag>
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="small muted">{member.email}</td>
-                      <td>{member.role_label}</td>
-                      <td className="small muted">
-                        {member.last_login_at
-                          ? new Date(member.last_login_at).toLocaleString()
-                          : 'Never'}
-                      </td>
-                      <td>
-                        <Tag tone={member.is_active ? 'accent-2' : 'outline'}>
-                          {member.is_active ? 'Active' : 'Inactive'}
-                        </Tag>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-          {users.data?.length ? (
-            <ListPager
-              total={userPager.total}
-              from={userPager.from}
-              to={userPager.to}
-              page={userPager.page}
-              pageCount={userPager.pageCount}
-              pageSize={userPager.pageSize}
-              onPage={userPager.setPage}
-              onPageSize={userPager.setPageSize}
-              label="Workspace member pages"
-            />
-          ) : null}
-
-          {!users.loading && users.data && users.data.length === 0 ? (
-            <p className="muted">No members in this workspace.</p>
-          ) : null}
-        </Dialog>
-      ) : null}
     </div>
   )
 }

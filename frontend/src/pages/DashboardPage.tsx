@@ -170,6 +170,7 @@ function Tile({
   const lowerIsBetter = metric?.better === 'down' && metric.unit === 'position'
   const iconClass =
     iconTone === 'forest' ? ' is-forest' : iconTone === 'warn' ? ' is-warn' : iconTone === 'alert' ? ' is-alert' : ''
+  const trend = known && metric && hasPoints(series)
   const body = (
     <>
       <div className="dash-stat-top">
@@ -188,8 +189,10 @@ function Tile({
       </div>
       {known && metric && !noDelta && metric.key !== 'pending_approvals' ? <MetricDelta metric={metric} /> : null}
       {meta ? <div className="kpi-meta">{meta}</div> : null}
-      {known && metric && hasPoints(series) ? (
-        <Sparkline label={label} points={series.points} unit={series.unit} invert={metric.better === 'down'} />
+      {trend && metric && series ? (
+        <div className="dash-stat-chart">
+          <Sparkline label={label} points={series.points} unit={series.unit} invert={metric.better === 'down'} />
+        </div>
       ) : null}
     </>
   )
@@ -435,11 +438,9 @@ export function DashboardPage() {
     </Link>
   ) : null
 
-  const performanceSeries = [
-    findSeries(seo, 'clicks'),
-    findSeries(seo, 'sessions'),
-    findSeries(social, 'engagement'),
-  ].filter((series): series is InsightSeries => Boolean(series && hasPoints(series)))
+  const heroSeries = [findSeries(seo, 'sessions'), findSeries(seo, 'clicks'), findSeries(ads, 'spend')].find(
+    (series): series is InsightSeries => Boolean(series && hasPoints(series)),
+  )
 
   const adsMix: InsightBreakdownItem[] = (ads?.channels ?? []).map((channel) => ({
     key: channel.channel,
@@ -604,19 +605,21 @@ export function DashboardPage() {
                   <div className="panel-head">
                     <div>
                       <h2 className="panel-title" id="dash-trend-heading" style={{ margin: 0 }}>
-                        Performance this period
+                        {heroSeries ? heroSeries.label : 'Performance this period'}
                       </h2>
-                      <div className="panel-subtitle">Daily search, visits and engagement. Gaps are days with no data.</div>
+                      <div className="panel-subtitle">
+                        Daily totals for this period. Days with no data are gaps, not zeros.
+                      </div>
                     </div>
                     {reportsLink}
                   </div>
                   <div className="insight-body">
-                    {performanceSeries.length > 0 ? (
-                      <LineChart title="Performance this period" series={performanceSeries} height={248} filled />
+                    {heroSeries ? (
+                      <LineChart title={heroSeries.label} series={[heroSeries]} height={248} filled />
                     ) : (
                       <div className="ins-chart-empty" role="note">
                         <p>
-                          Connect Search Console, analytics or a social account to see a trend here. Missing days stay
+                          Connect Search Console, analytics or an ad account to see a trend here. Missing days stay
                           blank rather than showing a zero.
                         </p>
                       </div>

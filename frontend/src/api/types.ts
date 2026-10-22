@@ -1124,6 +1124,7 @@ export interface AdminOut {
 export interface PortalOverview {
   organizations: number
   users: number
+  accounts: number
   features_total: number
   features_disabled: number
 }
@@ -1149,6 +1150,33 @@ export interface PortalUser {
   is_owner: boolean
   is_active: boolean
   last_login_at: string | null
+}
+
+export interface PortalAccountSeat {
+  organization_id: string
+  organization_name: string
+  organization_slug: string
+  plan_name: string
+  plan_tier: string
+  organization_active: boolean
+  user_id: string
+  role: string
+  role_label: string
+  is_owner: boolean
+  is_active: boolean
+  last_login_at: string | null
+  sso_provider: string
+  locked: boolean
+}
+
+export interface PortalAccount {
+  email: string
+  name: string
+  workspace_count: number
+  last_login_at: string | null
+  sso_provider: string
+  is_locked: boolean
+  seats: PortalAccountSeat[]
 }
 
 export interface PortalFeature {

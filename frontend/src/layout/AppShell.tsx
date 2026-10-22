@@ -104,11 +104,14 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Administration',
+    items: [{ to: '/admin', label: 'Team & Access', module: 'admin', icon: AdminIcon }],
+  },
+  {
+    label: 'Synaprank',
     items: [
-      { to: '/admin', label: 'Team & Access', module: 'admin', icon: AdminIcon },
       {
         to: '/portal',
-        label: 'Platform',
+        label: 'Operator console',
         module: null,
         icon: PortalIcon,
         portalAdminOnly: true,
@@ -131,7 +134,7 @@ const TITLES: Record<string, [string | null, string]> = {
   '/approvals': [null, 'Approvals'],
   '/reports': ['Insights', 'Reports'],
   '/admin': ['Administration', 'Team & Access'],
-  '/portal': ['Administration', 'Platform'],
+  '/portal': ['Synaprank', 'Operator console'],
   '/account': ['Settings', 'Account'],
   '/content': ['Content', 'Content library'],
   '/brand': ['Content', 'Brand profile'],

@@ -125,6 +125,7 @@ def test_old_product_name_is_gone_from_the_console():
 #: for a catalogue entry. Customers never see these pages.
 OPERATOR_SCREENS = {
     "frontend/src/pages/PortalAdminPage.tsx",
+    "frontend/src/components/PortalAccounts.tsx",
     "frontend/src/components/PortalVerification.tsx",
     "frontend/src/components/PortalSignInProviders.tsx",
 }

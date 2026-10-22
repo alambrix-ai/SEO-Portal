@@ -721,6 +721,8 @@ export const api = {
   // Portal Admin (platform operators)
   portalOverview: (signal?: AbortSignal) =>
     request<import('./types').PortalOverview>('/portal/overview', { signal }),
+  portalAccounts: (signal?: AbortSignal) =>
+    request<import('./types').PortalAccount[]>('/portal/accounts', { signal }),
   portalOrganizations: (signal?: AbortSignal) =>
     request<import('./types').PortalOrganization[]>('/portal/organizations', {
       signal,

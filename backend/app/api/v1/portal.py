@@ -5,7 +5,7 @@ surface and cannot reach these routes.
 """
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter
 from fastapi import Path as PathParam
@@ -17,6 +17,7 @@ from app.api.deps import ClientIp, DbSession, PortalAdminDep
 from app.core.exceptions import InvalidInputError, NotFoundError
 from app.core.logging import get_logger
 from app.core.rbac import ROLE_LABELS, Role
+from app.db.base import utcnow
 from app.models.portal import FeatureKind
 from app.models.workspace import Organization, User
 from app.schemas.common import ActionResult, ApiModel, Toast
@@ -30,7 +31,10 @@ router = APIRouter(prefix="/portal", tags=["portal"])
 
 class PortalOverviewOut(ApiModel):
     organizations: int
+    #: Seats: one row per person per workspace.
     users: int
+    #: Unique people (same email across workspaces counts once).
+    accounts: int
     features_total: int
     features_disabled: int
 
@@ -58,6 +62,41 @@ class PortalUserOut(ApiModel):
     last_login_at: str | None = None
 
 
+class PortalAccountSeatOut(ApiModel):
+    """One person's membership in one customer workspace."""
+
+    organization_id: str
+    organization_name: str
+    organization_slug: str
+    plan_name: str
+    plan_tier: str
+    organization_active: bool
+    user_id: str
+    role: str
+    role_label: str
+    is_owner: bool
+    is_active: bool
+    last_login_at: str | None = None
+    sso_provider: str = ""
+    locked: bool = False
+
+
+class PortalAccountOut(ApiModel):
+    """One person on the platform, with every workspace they belong to.
+
+    Grouped by the email blind index so the same address is one tree node.
+    The index itself is never sent to the browser.
+    """
+
+    email: str
+    name: str
+    workspace_count: int
+    last_login_at: str | None = None
+    sso_provider: str = ""
+    is_locked: bool = False
+    seats: list[PortalAccountSeatOut] = Field(default_factory=list)
+
+
 class PortalFeatureOut(ApiModel):
     kind: str
     slug: str
@@ -69,32 +108,130 @@ class PortalFeatureUpdate(ApiModel):
     enabled: bool = Field(...)
 
 
+def _role_label(role: str) -> str:
+    try:
+        return ROLE_LABELS.get(Role(role), role)
+    except ValueError:
+        return role
+
+
+def _seat_locked(member: User) -> bool:
+    until = member.locked_until
+    return bool(until and until > utcnow())
+
+
+def collect_accounts(db, restore_tenant_id: str) -> list[PortalAccountOut]:  # noqa: ANN001
+    """Walk every workspace and group members by email.
+
+    Users are tenant-scoped, so each organisation is pinned in turn. Fields
+    that decrypt under the org key are copied into plain models before the
+    identity map is cleared. The email blind index is the grouping key and
+    never leaves this function.
+    """
+    from app.db.session import bind_tenant
+
+    org_rows = [
+        {
+            "id": org.id,
+            "name": org.name,
+            "slug": org.slug,
+            "plan_name": org.plan_name,
+            "plan_tier": org.plan_tier,
+            "is_active": org.is_active,
+        }
+        for org in db.execute(select(Organization).order_by(Organization.name)).scalars()
+    ]
+
+    grouped: dict[str, dict[str, Any]] = {}
+    for org in org_rows:
+        bind_tenant(db, org["id"])
+        members = list(
+            db.execute(select(User).where(User.tenant_id == org["id"])).scalars()
+        )
+        for member in members:
+            seat = PortalAccountSeatOut(
+                organization_id=org["id"],
+                organization_name=org["name"],
+                organization_slug=org["slug"],
+                plan_name=org["plan_name"],
+                plan_tier=org["plan_tier"],
+                organization_active=org["is_active"],
+                user_id=member.id,
+                role=member.role,
+                role_label=_role_label(member.role),
+                is_owner=member.is_owner,
+                is_active=member.is_active,
+                last_login_at=member.last_login_at.isoformat() if member.last_login_at else None,
+                sso_provider=member.sso_provider or "",
+                locked=_seat_locked(member),
+            )
+            bucket = grouped.setdefault(
+                member.email_index,
+                {"email": member.email, "name": member.name, "seats": []},
+            )
+            bucket["email"] = member.email
+            if member.name:
+                bucket["name"] = member.name
+            bucket["seats"].append(seat)
+        db.expunge_all()
+
+    bind_tenant(db, restore_tenant_id)
+
+    accounts: list[PortalAccountOut] = []
+    for bucket in grouped.values():
+        seats = sorted(
+            bucket["seats"],
+            key=lambda seat: seat.organization_name.lower(),
+        )
+        logins = [seat.last_login_at for seat in seats if seat.last_login_at]
+        sso = next((seat.sso_provider for seat in seats if seat.sso_provider), "")
+        accounts.append(
+            PortalAccountOut(
+                email=bucket["email"],
+                name=bucket["name"] or bucket["email"],
+                workspace_count=len(seats),
+                last_login_at=max(logins) if logins else None,
+                sso_provider=sso,
+                is_locked=any(seat.locked for seat in seats),
+                seats=seats,
+            )
+        )
+    accounts.sort(key=lambda account: (account.name.lower(), account.email.lower()))
+    return accounts
+
+
 @router.get("/overview", response_model=PortalOverviewOut)
 def overview(current: PortalAdminDep, db: DbSession) -> PortalOverviewOut:
     org_count = db.execute(select(func.count()).select_from(Organization)).scalar_one()
-    # Users are RLS-scoped; count via per-org walk.
-    from app.db.session import run_per_organization
+    from app.db.session import bind_tenant
 
-    totals = {"users": 0}
-
-    def count_users(session, tenant_id: str) -> int:  # noqa: ANN001
-        return session.execute(
-            select(func.count())
-            .select_from(User)
-            .where(User.tenant_id == tenant_id)
-        ).scalar_one()
-
-    for n in run_per_organization(db, count_users, label="Portal user count"):
-        totals["users"] += n
+    indexes: set[str] = set()
+    seats = 0
+    org_ids = list(db.execute(select(Organization.id)).scalars())
+    for org_id in org_ids:
+        bind_tenant(db, org_id)
+        rows = list(
+            db.execute(select(User.email_index).where(User.tenant_id == org_id)).scalars()
+        )
+        seats += len(rows)
+        indexes.update(rows)
+        db.expunge_all()
+    bind_tenant(db, current.tenant_id)
 
     flags = portal_features.list_flags(db)
     disabled = sum(1 for f in flags if not f["enabled"])
     return PortalOverviewOut(
         organizations=int(org_count),
-        users=totals["users"],
+        users=seats,
+        accounts=len(indexes),
         features_total=len(flags),
         features_disabled=disabled,
     )
+
+
+@router.get("/accounts", response_model=list[PortalAccountOut])
+def list_accounts(current: PortalAdminDep, db: DbSession) -> list[PortalAccountOut]:
+    return collect_accounts(db, current.tenant_id)
 
 
 @router.get("/organizations", response_model=list[PortalOrganizationOut])
