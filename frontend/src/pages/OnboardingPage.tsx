@@ -21,7 +21,7 @@ import { invalidateResourceCache, useResource } from '@/hooks/useResource'
 import { PUBLISH_AUTOMATICALLY_CONFIRM, REVIEW_SETTING_NAME, isReviewSetting, reviewSettingName } from '@/lib/plain'
 
 const STEPS = [
-  { label: 'Your site', purpose: 'Domain and CMS' },
+  { label: 'Your site', purpose: 'Optional — add later' },
   { label: 'Ad platforms', purpose: 'Optional' },
   { label: REVIEW_SETTING_NAME, purpose: 'When agents ask you' },
   { label: 'Launch', purpose: 'Review and go live' },
@@ -352,14 +352,8 @@ export function OnboardingPage() {
   const next = async () => {
     if (!state || busy) return
     if (step === 0) {
-      if (!state.domain.trim()) {
-        push('Enter your website domain - everything else is scoped to it', 'warning')
-        return
-      }
-      if (!state.cms.trim()) {
-        push('Pick a content system, or choose Other', 'warning')
-        return
-      }
+      // Domain and CMS are optional (Skip exists for a reason). Continue only
+      // insists on connecting a CMS the person actually picked.
       const cmsOption = state.cms_options.find((option) => option.name === state.cms)
       if (cmsOption?.slug) {
         const match = connectors.data?.find((connector) => connector.slug === cmsOption.slug)
@@ -640,17 +634,12 @@ export function OnboardingPage() {
                   <>
                     <h2 className="onboard-h">Where does your content live?</h2>
                     <p className="onboard-lede">
-                      Everything in this workspace is scoped to this domain. Select your
-                      content system to connect it.
+                      Optional. Skip if you do not have a site yet. When you add a
+                      domain later, this workspace is scoped to it.
                     </p>
 
                     <div className="field">
-                      <label htmlFor="ob-domain">
-                        Primary domain
-                        <span className="field-required" aria-hidden="true">
-                          *
-                        </span>
-                      </label>
+                      <label htmlFor="ob-domain">Primary domain</label>
                       <input
                         id="ob-domain"
                         className="input onboard-domain"
@@ -663,7 +652,7 @@ export function OnboardingPage() {
                         onBlur={(event) => void save({ domain: event.target.value })}
                       />
                       <div className="field-hint">
-                        Just the domain - no https:// and no trailing path.
+                        Just the domain — no https:// and no trailing path.
                       </div>
                     </div>
 
@@ -786,7 +775,8 @@ export function OnboardingPage() {
                     <h2 className="onboard-h">Ready to launch</h2>
                     <p className="onboard-lede">
                       Launching applies your review setting and schedules configured agents.
-                      Agents you have not set up stay paused.
+                      Agents you have not set up stay paused. You can add a domain and
+                      integrations later.
                     </p>
 
                     <dl className="onboard-review">

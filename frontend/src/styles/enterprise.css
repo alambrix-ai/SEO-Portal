@@ -439,17 +439,20 @@
   padding: clamp(28px, 2.6vw, 64px) clamp(36px, 4.2vw, 112px) clamp(36px, 3.4vw, 88px);
 }
 
-/* ── Menu (dropdown) ───────────────────────────────────────────────────── */
+/* ── Menu (popup) ──────────────────────────────────────────────────────── */
 .menu {
   position: relative;
   display: inline-flex;
 }
 .menu-panel {
-  position: absolute;
-  z-index: 200;
-  top: calc(100% + 6px);
+  /* Portaled to body so table/panel overflow cannot clip it into a sliver. */
+  position: fixed;
+  z-index: 380;
   min-width: 220px;
-  max-width: 300px;
+  max-width: min(300px, calc(100vw - 16px));
+  max-height: min(360px, calc(100dvh - 16px));
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 4px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -458,16 +461,8 @@
   display: flex;
   flex-direction: column;
 }
-.menu-panel.is-end {
-  right: 0;
-}
 .menu-panel.is-start {
-  left: 0;
-  width: 100%;
-}
-.menu-panel.is-above {
-  top: auto;
-  bottom: calc(100% + 6px);
+  max-width: min(360px, calc(100vw - 16px));
 }
 .menu-header {
   padding: 8px 10px 8px;
@@ -2145,7 +2140,7 @@
     z-index: 360;
   }
   .menu-panel {
-    max-width: min(280px, calc(100vw - 24px));
+    max-width: min(300px, calc(100vw - 24px));
   }
   .chip-row {
     overflow-x: auto;

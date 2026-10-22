@@ -1,8 +1,9 @@
 """Onboarding wizard — the site, the ad platforms, and the guardrail.
 
-Every step maps onto real state. The domain and the content system are
-written to the organisation; the guardrail is what the agent runner reads on
-every single action.
+Every step maps onto real state. Domain and content system are optional:
+Skip leaves them empty so the workspace can still launch, and they can be
+filled in later. When a domain is set, it is written to the organisation.
+The guardrail is what the agent runner reads on every single action.
 
 Step two used to be three checkboxes writing to ``ad_accounts``, which the
 docstring above this one claimed "pre-select connectors". They did not: no
@@ -291,12 +292,13 @@ def restore_policy(
 def complete(
     current: CurrentUserDep, db: DbSession, ip: ClientIp
 ) -> ActionResult:
-    """Finish the wizard and start the fleet — the "Launch workspace" button."""
+    """Finish the wizard and start the fleet — the "Launch workspace" button.
+
+    Domain and CMS are optional. The wizard offers Skip for them; launching
+    must not refuse a workspace that skipped.
+    """
     current.require_write(Module.ONBOARDING)
     state = _state(db, current.tenant_id)
-
-    if not state.domain:
-        raise InvalidInputError("Enter your website domain")
 
     guardrail = resolve_guardrail(state.guardrail)
     state.completed = True
@@ -347,8 +349,8 @@ def complete(
         db,
         user=current.user,
         action=(
-            f"launched the workspace for {state.domain} with the "
-            f"{guardrail.value} guardrail"
+            f"launched the workspace{f' for {state.domain}' if state.domain else ''} "
+            f"with the {guardrail.value} guardrail"
         ),
         module="onboarding",
         ip_address=ip,

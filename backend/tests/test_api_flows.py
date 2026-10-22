@@ -597,8 +597,8 @@ def test_onboarding_sets_the_guardrail_and_starts_the_fleet(client, clean_db):  
     assert session["onboarding_complete"] is True
 
 
-def test_onboarding_requires_a_domain(client, clean_db):  # noqa: ANN001
-    """Signing up without a domain means onboarding must ask for one."""
+def test_onboarding_launch_does_not_require_a_domain(client, clean_db):  # noqa: ANN001
+    """Skip is offered for the site step; launch must still open the workspace."""
     from tests.support.mailbox import current
 
     client.post("/api/v1/auth/request-signup-code", json={"email": "nodomain@example.com"})
@@ -615,8 +615,10 @@ def test_onboarding_requires_a_domain(client, clean_db):  # noqa: ANN001
     token = response.json()["tokens"]["access_token"]
 
     completed = client.post("/api/v1/onboarding/complete", headers=auth(token))
-    assert completed.status_code == 422
-    assert "domain" in completed.json()["detail"].lower()
+    assert completed.status_code == 200, completed.text
+    assert "Workspace ready" in completed.json()["toast"]["message"]
+    session = client.get("/api/v1/auth/me", headers=auth(token)).json()
+    assert session["onboarding_complete"] is True
 
 
 # ── Connectors ─────────────────────────────────────────────────────────────
