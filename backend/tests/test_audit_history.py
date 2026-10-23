@@ -316,8 +316,9 @@ def test_brand_restore_writes_the_version_and_records_a_new_one(monkeypatch: pyt
 # ── API: routes, guards, plan ───────────────────────────────────────────────
 def test_routes_are_registered() -> None:
     from app.api.v1.router import api_router
+    from tests.support.routes import route_path_methods
 
-    paths = {(r.path, tuple(sorted(r.methods))) for r in api_router.routes}
+    paths = route_path_methods(api_router)
     assert ("/history/{kind}", ("GET",)) in paths
     assert ("/history/{kind}/{entry_id}", ("GET",)) in paths
     assert ("/history/brand_profile/{entry_id}/restore", ("POST",)) in paths

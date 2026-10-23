@@ -248,8 +248,9 @@ def _warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
 
 def test_csp_report_endpoint_is_registered_without_auth() -> None:
     from app.api.v1.router import api_router
+    from tests.support.routes import routes_by_path
 
-    route = next(r for r in api_router.routes if getattr(r, "path", "") == "/csp-report")
+    route = routes_by_path(api_router)["/csp-report"]
     assert getattr(route, "methods", set()) == {"POST"}
     assert not getattr(route, "dependencies", [])
 

@@ -147,8 +147,9 @@ def test_hashes_are_keyed_and_stable() -> None:
 
 def test_routes_are_public() -> None:
     from app.api.v1.router import api_router
+    from tests.support.routes import routes_by_path
 
-    paths: dict[str, Any] = {r.path: r for r in api_router.routes}
+    paths = routes_by_path(api_router)
     for path in ("/public/analysis", "/public/analysis/mine", "/public/analysis/{analysis_id}"):
         assert path in paths
         names = {d.call.__name__ for d in paths[path].dependant.dependencies}

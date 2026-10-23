@@ -559,8 +559,9 @@ def test_an_approved_render_id_from_another_workspace_serves_nothing() -> None:
 # ── Wiring and rate limits ─────────────────────────────────────────────────
 def test_the_creative_and_social_routers_are_mounted() -> None:
     from app.api.v1.router import api_router
+    from tests.support.routes import route_paths
 
-    paths = {getattr(r, "path", "") for r in api_router.routes}
+    paths = route_paths(api_router)
     assert {"/creative/options", "/creative/jobs", "/creative/jobs/{job_id}", "/creative/jobs/{job_id}/download",
             "/creative/assets/{asset_id}/download", "/social/schedule", "/social/posts",
             "/social/posts/{post_id}/cancel"} <= paths
