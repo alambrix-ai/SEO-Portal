@@ -46,6 +46,7 @@ from app.models.seo import (
 )
 from app.models.seo_fix import SeoIssueFixProposal
 from app.models.topic_cluster import ContentBrief, TopicCluster, TopicClusterPage
+from app.models.reports import ReportArtifact, ScheduledReport
 from app.models.visibility import (
     VisibilityObservation,
     VisibilityQuery,
@@ -122,6 +123,8 @@ __all__ = [
     "FeatureKind",
     "RefreshToken",
     "ReferralSpamEvent",
+    "ReportArtifact",
+    "ScheduledReport",
     "RunStatus",
     "SchemaPatch",
     "SeoIssue",

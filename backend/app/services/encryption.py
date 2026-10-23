@@ -133,3 +133,4 @@ class Ctx:
 VISIBILITY_QUESTION = "visibility_query.question"
     VISIBILITY_ANSWER = "visibility_observation.answer_excerpt"
     CONTENT_BRIEF = "content_brief.body"
+    REPORT_BODY = "report_artifact.body"

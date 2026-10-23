@@ -241,6 +241,30 @@ def rollup_task() -> dict:
     return {"status": "ok"}
 
 
+@_task(name="reports.weekly_autopilot")
+def weekly_autopilot_report_task() -> dict:
+    """Build and store the weekly digest for every organisation."""
+    from sqlalchemy.orm import Session
+
+    from app.db.session import SessionLocal, run_per_organization
+    from app.models.workspace import Organization
+    from app.services import weekly_report
+
+    def build(db: Session, tenant_id: str) -> int:
+        org = db.get(Organization, tenant_id)
+        if org is None:
+            return 0
+        weekly_report.run_for_org(db, org=org, connectors=None)
+        return 1
+
+    db = SessionLocal()
+    try:
+        counts = run_per_organization(db, build, label="Weekly autopilot report")
+    finally:
+        db.close()
+    return {"reports": sum(counts)}
+
+
 @_task(name="approvals.expire")
 def expire_approvals_task(older_than_days: int = 30) -> dict:
     """Close out approval items nobody has decided."""
@@ -365,6 +389,11 @@ if CELERY_AVAILABLE:
             "task": "metrics.rollup",
             # 00:20 UTC, after the previous day has closed everywhere useful.
             "schedule": crontab(minute=20, hour=0),
+        },
+        "weekly-autopilot-report": {
+            "task": "reports.weekly_autopilot",
+            # Monday 08:00 UTC.
+            "schedule": crontab(minute=0, hour=8, day_of_week=1),
         },
         "expire-approvals": {
             "task": "approvals.expire",
