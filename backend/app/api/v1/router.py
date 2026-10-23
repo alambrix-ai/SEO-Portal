@@ -33,9 +33,11 @@ from app.api.v1 import (
     seo,
     site_analysis,
     social,
+    status_page,
     topics,
     verification,
     visibility,
+    warehouse,
     workflow,
     workspaces,
 )
@@ -47,6 +49,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(mfa.router)
 api_router.include_router(public_demo.router)
+api_router.include_router(status_page.router)
 # Public: the redirect URI sign-in providers call back.
 api_router.include_router(oauth.router)
 # Public: browsers post CSP violation reports here without credentials.
@@ -78,6 +81,7 @@ api_router.include_router(enterprise.router)
 api_router.include_router(agency.router)
 api_router.include_router(workflow.router)
 api_router.include_router(billing.router)
+api_router.include_router(warehouse.router)
 api_router.include_router(portal.router)
 api_router.include_router(verification.router)
 
