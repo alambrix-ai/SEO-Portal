@@ -241,6 +241,25 @@ def rollup_task() -> dict:
     return {"status": "ok"}
 
 
+@_task(name="alerts.evaluate")
+def evaluate_alerts_task() -> dict:
+    """Fire threshold anomaly rules for every organisation (deduped)."""
+    from sqlalchemy.orm import Session
+
+    from app.db.session import SessionLocal, run_per_organization
+    from app.services import anomaly_alerts
+
+    def evaluate(db: Session, tenant_id: str) -> int:
+        return len(anomaly_alerts.fire_rules(db, tenant_id=tenant_id))
+
+    db = SessionLocal()
+    try:
+        counts = run_per_organization(db, evaluate, label="Anomaly alerts")
+    finally:
+        db.close()
+    return {"fired": sum(counts)}
+
+
 @_task(name="reports.weekly_autopilot")
 def weekly_autopilot_report_task() -> dict:
     """Build and store the weekly digest for every organisation."""
@@ -394,6 +413,11 @@ if CELERY_AVAILABLE:
             "task": "reports.weekly_autopilot",
             # Monday 08:00 UTC.
             "schedule": crontab(minute=0, hour=8, day_of_week=1),
+        },
+        "anomaly-alerts": {
+            "task": "alerts.evaluate",
+            # Daily 07:00 UTC, before the weekly digest.
+            "schedule": crontab(minute=0, hour=7),
         },
         "expire-approvals": {
             "task": "approvals.expire",

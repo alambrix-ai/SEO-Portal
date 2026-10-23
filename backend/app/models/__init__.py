@@ -43,6 +43,7 @@ from app.models.seo import (
     SeoPage,
 )
 from app.models.topic_cluster import ContentBrief, TopicCluster, TopicClusterPage
+from app.models.alerts import AlertEvent, AlertRule
 from app.models.reports import ReportArtifact, ScheduledReport
 from app.models.willy import WillyGroundingTrace
 from app.models.workspace import (
@@ -75,6 +76,8 @@ __all__ = [
     "ReviewReply",
     "AdChannel",
     "AdCreative",
+    "AlertEvent",
+    "AlertRule",
     "AeoQaPair",
     "AgentRecord",
     "AgentRun",

@@ -32,7 +32,13 @@ only for a predictable review sequence — Alembic does not care about
 Git order as long as all four `0024_*` revisions exist before the merge
 revision runs.
 
-## Later phases
+## Later phases (linear chain off the merge)
 
-Topic clusters, Willy grounding, scheduled reports, and alert rules chain
-off `0025_merge_phase1_to_3b` (see their feature branches).
+| Order | Feature branch | Migration revision |
+|------:|----------------|--------------------|
+| 6 | `feature/topic-cluster-planner` | `0026_topic_clusters` |
+| 7 | `feature/ask-willy-grounding` | `0027_willy_grounding` |
+| 8 | `feature/weekly-autopilot-report` | `0028_scheduled_reports` |
+| 9 | `feature/anomaly-alerts` | `0029_alert_rules` |
+
+Each revises the previous head. Do not create another sibling of `0024_*`.
