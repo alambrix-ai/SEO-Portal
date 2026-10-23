@@ -127,19 +127,32 @@ def upgrade() -> None:
         op.create_index("ix_ip_allowlist_entries_tenant_id", "ip_allowlist_entries", ["tenant_id"])
         created.append("ip_allowlist_entries")
 
-    # Scoped approvals + custom role on users
-    user_cols = {c["name"] for c in sa.inspect(op.get_bind()).get_columns("users")}
+    # Scoped approvals + custom role on users.
+    # Note: 0001_initial_schema uses Base.metadata.create_all, so on a fresh
+    # upgrade the column (and even custom_roles) may already exist without the
+    # FK. Always ensure the FK/index once the column and referent table are present.
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    user_cols = {c["name"] for c in insp.get_columns("users")}
     if "custom_role_id" not in user_cols:
         op.add_column("users", sa.Column("custom_role_id", UUID, nullable=True))
-        op.create_foreign_key(
-            "fk_users_custom_role",
-            "users",
-            "custom_roles",
-            ["custom_role_id"],
-            ["id"],
-            ondelete="SET NULL",
-        )
-        op.create_index("ix_users_custom_role_id", "users", ["custom_role_id"])
+        insp = sa.inspect(bind)
+        user_cols = {c["name"] for c in insp.get_columns("users")}
+    existing_tables = set(insp.get_table_names())
+    if "custom_role_id" in user_cols and "custom_roles" in existing_tables:
+        fk_names = {fk.get("name") for fk in insp.get_foreign_keys("users")}
+        if "fk_users_custom_role" not in fk_names:
+            op.create_foreign_key(
+                "fk_users_custom_role",
+                "users",
+                "custom_roles",
+                ["custom_role_id"],
+                ["id"],
+                ondelete="SET NULL",
+            )
+        idx_names = {ix.get("name") for ix in insp.get_indexes("users")}
+        if "ix_users_custom_role_id" not in idx_names:
+            op.create_index("ix_users_custom_role_id", "users", ["custom_role_id"])
 
     approval_cols = {c["name"] for c in sa.inspect(op.get_bind()).get_columns("approval_items")}
     for col, length in (("scope_brand", 80), ("scope_region", 80), ("scope_channel", 80)):
@@ -194,8 +207,10 @@ def downgrade() -> None:
         {c["name"] for c in sa.inspect(bind).get_columns("users")} if "users" in existing else set()
     )
     if "custom_role_id" in user_cols:
-        op.drop_index("ix_users_custom_role_id", table_name="users")
-        op.drop_constraint("fk_users_custom_role", "users", type_="foreignkey")
+        op.execute("DROP INDEX IF EXISTS ix_users_custom_role_id")
+        op.execute(
+            "ALTER TABLE users DROP CONSTRAINT IF EXISTS fk_users_custom_role"
+        )
         op.drop_column("users", "custom_role_id")
 
     for table in reversed(TABLES):
