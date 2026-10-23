@@ -42,6 +42,11 @@ from app.models.seo import (
     SeoIssue,
     SeoPage,
 )
+from app.models.visibility import (
+    VisibilityObservation,
+    VisibilityQuery,
+    VisibilitySettings,
+)
 from app.models.workspace import (
     AuditLogEntry,
     Invitation,
@@ -115,4 +120,7 @@ __all__ = [
     "SeoPage",
     "SocialPostMetric",
     "User",
+    "VisibilityObservation",
+    "VisibilityQuery",
+    "VisibilitySettings",
 ]

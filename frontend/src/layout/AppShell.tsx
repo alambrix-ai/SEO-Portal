@@ -86,6 +86,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/analysis', label: 'Site analysis', module: 'seo', icon: TechnicalIcon },
       { to: '/seo', label: 'SEO & AEO', module: 'seo', icon: SeoIcon },
+      { to: '/visibility', label: 'AI Visibility', module: 'seo', icon: SeoIcon },
       { to: '/technical', label: 'Technical SEO', module: 'seo', icon: TechnicalIcon },
       { to: '/offpage', label: 'Off-Page & PR', module: 'offpage', icon: OffPageIcon },
       { to: '/ads', label: 'Paid Media', module: 'ads', icon: AdsIcon },

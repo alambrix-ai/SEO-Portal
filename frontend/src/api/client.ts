@@ -48,6 +48,7 @@ import type {
   SeoPageDetail,
   SeoWorkspace,
   SessionOut,
+  VisibilityWorkspace,
   Tokens,
   WorkspacePolicyOut,
   WorkspacePolicyRequest,
@@ -566,6 +567,22 @@ export const api = {
     request<ActionResult>(`/seo/audit/${seg(id)}/reopen`, { method: 'POST' }),
   requestPageApproval: (id: string) =>
     request<ActionResult>(`/seo/pages/${seg(id)}/request-approval`, { method: 'POST' }),
+
+  // AI visibility
+  visibility: (signal?: AbortSignal) =>
+    request<VisibilityWorkspace>('/visibility', { signal }),
+  addVisibilityQuery: (body: { question: string; label?: string; tags?: string[] }) =>
+    request<VisibilityWorkspace['queries'][number]>('/visibility/queries', {
+      method: 'POST',
+      body,
+    }),
+  deleteVisibilityQuery: (id: string) =>
+    request<ActionResult>(`/visibility/queries/${seg(id)}`, { method: 'DELETE' }),
+  setVisibilityCompetitors: (competitor_domains: string[]) =>
+    request<{ competitor_domains: string[] }>('/visibility/competitors', {
+      method: 'PUT',
+      body: { competitor_domains },
+    }),
 
   // Off-page
   offpage: (signal?: AbortSignal) =>

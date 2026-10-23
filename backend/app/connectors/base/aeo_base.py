@@ -16,7 +16,7 @@ import re
 from urllib.parse import urlsplit
 
 from app.connectors.base.connector import Capability, HealthReport
-from app.connectors.base.interfaces import AeoMonitorConnector, CitationHit
+from app.connectors.base.interfaces import AeoMonitorConnector, CitationHit, VisibilityProbe
 from app.core.exceptions import ConnectorConfigError, ConnectorError
 from app.core.logging import get_logger
 from app.db.base import utcnow
@@ -30,6 +30,8 @@ AEO_CAPABILITIES = frozenset({Capability.CHECK_CITATIONS, Capability.COMPLETE})
 # Queries per run. Each is a paid model call against a live search tool, so
 # the cap is deliberate: citation tracking should cost cents, not dollars.
 MAX_QUERIES_PER_CHECK = 6
+#: Visibility probes also burn a live search call each; keep the same ceiling.
+MAX_VISIBILITY_PROBES = MAX_QUERIES_PER_CHECK
 
 
 def normalise_host(url: str) -> str:
@@ -95,6 +97,22 @@ class BaseAeoConnector(AeoMonitorConnector):
                     # beyond the first citation is not meaningful here.
                     break
         return hits
+
+    def probe_visibility(self, *, query: str) -> VisibilityProbe:
+        """Ask one question and return every source URL the engine exposed.
+
+        Does not filter to the customer domain — the visibility tracker
+        attributes brand vs competitors from the full list. Answer excerpts
+        stay empty unless a connector overrides this method; callers must
+        treat any excerpt as untrusted.
+        """
+        sources = self._ask_with_search(query)
+        return VisibilityProbe(
+            engine=self.engine,
+            query=query,
+            sources=list(sources),
+            answer_excerpt="",
+        )
 
     def _ask_with_search(self, query: str) -> list[str]:
         """Put ``query`` to the engine and return the URLs it cited, in order."""

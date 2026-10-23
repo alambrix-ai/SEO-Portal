@@ -130,3 +130,5 @@ class Ctx:
     CREATIVE_BRIEF = "creative_job.brief"
     CREATIVE_FEEDBACK = "creative_job.feedback"
     HISTORY_PAYLOAD = "audit_snapshot.payload"
+    VISIBILITY_QUESTION = "visibility_query.question"
+    VISIBILITY_ANSWER = "visibility_observation.answer_excerpt"
