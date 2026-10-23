@@ -20,7 +20,7 @@ class ApprovalType(StrEnum):
     CONTENT_REWRITE = "Content Rewrite"
     AEO_INJECTION = "AEO Injection"
     SCHEMA_PATCH = "Schema Patch"
-TECHNICAL_FIX = "Technical Fix"
+    TECHNICAL_FIX = "Technical Fix"
     INTERNAL_LINK = "Internal Link"
     CONTENT_BRIEF = "Content Brief"
     PSEO_PAGE = "Programmatic Page"
