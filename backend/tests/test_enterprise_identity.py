@@ -98,6 +98,51 @@ def test_custom_role_merge_widens_only() -> None:
     assert merged[Module.ADMIN] is Access.VIEW
 
 
+def test_custom_role_no_privilege_escalation() -> None:
+    actor = merge_access("seo", None)
+    with pytest.raises(ValueError, match="cannot grant"):
+        custom_roles.assert_no_privilege_escalation(
+            actor, {"admin": "full", "seo": "full"}
+        )
+    # SEO may grant SEO full (they hold it) but not admin.
+    custom_roles.assert_no_privilege_escalation(actor, {"seo": "full", "reports": "view"})
+
+
+def test_current_user_uses_custom_role_overlay(ent_db):  # noqa: ANN001
+    from app.api.deps import CurrentUser
+
+    db, org = ent_db
+    user = User(
+        tenant_id=org.id,
+        name="Specialist",
+        email="spec@example.com",
+        email_index="idx-spec",
+        role="client",
+        is_active=True,
+        is_owner=False,
+        email_verified=True,
+    )
+    db.add(user)
+    db.flush()
+    role = custom_roles.create_role(
+        db,
+        org,
+        slug="seo-lite",
+        name="SEO Lite",
+        permissions={"seo": "full", "reports": "view"},
+        actor_email="a@example.com",
+        actor_access=merge_access("admin", None),
+    )
+    custom_roles.assign_custom_role(
+        db, org, user, role.id, actor_email="a@example.com"
+    )
+    access = custom_roles.resolve_user_access(user, db)
+    current = CurrentUser(user=user, organization=org, claims={}, access=access)
+    assert current.can_write(Module.SEO) is True
+    assert current.can_view(Module.REPORTS) is True
+    assert current.can_write(Module.ADMIN) is False
+
+
 def test_metadata_url_rejects_private() -> None:
     with pytest.raises(Exception):
         enterprise_sso.validate_connection_input(

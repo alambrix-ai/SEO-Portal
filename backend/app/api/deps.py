@@ -52,7 +52,14 @@ ClientIp = Annotated[str, Depends(client_ip)]
 class CurrentUser:
     """The authenticated caller, their organisation, and its cipher."""
 
-    __slots__ = ("user", "organization", "_cipher", "claims", "_enabled_modules")
+    __slots__ = (
+        "user",
+        "organization",
+        "_cipher",
+        "claims",
+        "_enabled_modules",
+        "_access",
+    )
 
     def __init__(
         self,
@@ -61,6 +68,7 @@ class CurrentUser:
         claims: dict,
         *,
         enabled_modules: frozenset[str] | None = None,
+        access: dict[Module, Access] | None = None,
     ) -> None:
         self.user = user
         self.organization = organization
@@ -68,6 +76,8 @@ class CurrentUser:
         self._cipher: OrgCipher | None = None
         # Portal feature flags for modules; None means "not loaded, allow RBAC only".
         self._enabled_modules = enabled_modules
+        # Built-in role merged with an optional custom-role overlay.
+        self._access = access
 
     @property
     def tenant_id(self) -> str:
@@ -88,11 +98,27 @@ class CurrentUser:
             self._cipher = OrgCipher.for_org(self.organization)
         return self._cipher
 
+    @property
+    def effective_access(self) -> dict[Module, Access]:
+        """Built-in role merged with any custom-role overlay."""
+        if self._access is not None:
+            return self._access
+        from app.core.rbac import ROLE_ACCESS
+
+        return dict(ROLE_ACCESS[self.role])
+
+    def access_map(self) -> dict[str, str]:
+        """Serialisable module→level map (includes custom-role overlay)."""
+        return {m.value: a.value for m, a in self.effective_access.items()}
+
     # ── Access helpers ─────────────────────────────────────────────────────
     def access(self, module: Module | str) -> Access:
         key = module.value if isinstance(module, Module) else str(module)
         if self._enabled_modules is not None and key not in self._enabled_modules:
             return Access.NONE
+        if self._access is not None:
+            mod = module if isinstance(module, Module) else Module(module)
+            return self._access[mod]
         return access_for(self.role, module)
 
     def can_view(self, module: Module | str) -> bool:
@@ -207,13 +233,14 @@ def get_current_user(
     if organization is None or not organization.is_active:
         raise AuthError("This workspace is no longer active")
 
-    from app.services import portal_features
+    from app.services import custom_roles, portal_features
 
     return CurrentUser(
         user=user,
         organization=organization,
         claims=claims,
         enabled_modules=portal_features.enabled_modules(db),
+        access=custom_roles.resolve_user_access(user, db),
     )
 
 

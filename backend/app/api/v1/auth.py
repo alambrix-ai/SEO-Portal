@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 
 from app.api.deps import ClientIp, CurrentUserDep, DbSession
 from app.core.config import settings
-from app.core.rbac import ROLE_LABELS, Role, access_map
+from app.core.rbac import ROLE_LABELS, Role
 from app.models.workspace import OnboardingState, Organization, User
 from app.schemas.auth import (
     AcceptInviteRequest,
@@ -107,8 +107,16 @@ def build_session(db: DbSession, user: User, org: Organization) -> SessionOut:
     running = sum(1 for a in agents if a.status == AgentStatus.RUNNING.value)
     total_agents = len(agents)
     connected, total_connectors = connector_service.counts(db, tenant_id=org.id)
-    counts = views.nav_counts(db, tenant_id=org.id, role=user.role)
-    access = access_map(user.role)
+    from app.services import custom_roles
+
+    merged = custom_roles.resolve_user_access(user, db)
+    counts = views.nav_counts(
+        db,
+        tenant_id=org.id,
+        role=user.role,
+        access={m.value: a.value for m, a in merged.items()},
+    )
+    access = {m.value: a.value for m, a in merged.items()}
     enabled = portal_features.enabled_modules(db)
     # Hide modules the portal has turned off (access stays for audit/API checks).
     gated_access = {

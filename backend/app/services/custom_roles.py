@@ -4,10 +4,34 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.rbac import Access, Module, Role, merge_access, validate_permission_map
+from app.core.rbac import (
+    Access,
+    Module,
+    Role,
+    merge_access,
+    validate_permission_map,
+)
 from app.models.enterprise_identity import CustomRole
 from app.models.workspace import Organization, User
 from app.services import audit
+
+_ACCESS_RANK = {Access.NONE: 0, Access.VIEW: 1, Access.FULL: 2}
+
+
+def assert_no_privilege_escalation(
+    actor_access: dict[Module, Access],
+    permissions: dict[str, str],
+) -> None:
+    """Refuse grants that exceed what the actor themselves holds."""
+    for key, value in permissions.items():
+        module = Module(str(key))
+        wanted = Access(str(value).lower())
+        held = actor_access.get(module, Access.NONE)
+        if _ACCESS_RANK[wanted] > _ACCESS_RANK[held]:
+            raise ValueError(
+                f"cannot grant {module.value}={wanted.value}; "
+                f"actor only holds {held.value}"
+            )
 
 
 def create_role(
@@ -19,6 +43,7 @@ def create_role(
     permissions: dict,
     description: str = "",
     actor_email: str,
+    actor_access: dict[Module, Access] | None = None,
 ) -> CustomRole:
     slug = (slug or "").strip().lower().replace(" ", "-")[:64]
     if not slug:
@@ -27,6 +52,8 @@ def create_role(
     if len(name) < 2:
         raise ValueError("name required")
     perms = validate_permission_map(permissions)
+    if actor_access is not None:
+        assert_no_privilege_escalation(actor_access, perms)
     existing = db.execute(
         select(CustomRole).where(
             CustomRole.tenant_id == org.id, CustomRole.slug == slug
