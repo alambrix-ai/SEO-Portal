@@ -30,6 +30,7 @@ class ApprovalType(StrEnum):
     LANDING_PAGE = "Landing Page"
     AB_EXPERIMENT = "A/B Experiment"
     COMPETITOR_AD = "Competitor Ad"
+    SOCIAL_REPLY = "Social Reply"
     PR_PITCH = "PR Pitch"
     AD_CREATIVE = "Ad Creative"
     BUDGET_SHIFT = "Budget Shift"
