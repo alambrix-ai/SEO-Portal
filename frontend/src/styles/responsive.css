@@ -1,0 +1,355 @@
+/**
+ * Cross-cutting responsive overrides (loaded last).
+ *
+ * Fixes the production iPhone Overview bug (content clipped to ~left 55% with
+ * empty right gutter): desktop grid track mins and conflicting shell rules
+ * must not widen `.page` past the viewport while `overflow-x: hidden` clips.
+ */
+
+/* ── Global: never let the document grow wider than the viewport ───────── */
+html {
+  overflow-x: clip;
+}
+body,
+#root {
+  max-width: 100%;
+}
+
+/* ── Shell: drawer must not reserve desktop rail width ─────────────────── */
+.app-shell {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  /* Prefer dynamic viewport on mobile browsers (URL bar show/hide). */
+  height: 100%;
+  height: 100dvh;
+  max-height: 100%;
+  max-height: 100dvh;
+}
+
+.app-shell .app-main {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.app-shell .page {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ultrawide: cap readable measure without inseting the scrollbar. */
+.app-shell[data-fit-w='wide'] .page-inner,
+.app-shell[data-fit-w='wide'] .page > .page-header,
+.app-shell[data-fit-w='wide'] .page > .dash-figures,
+.app-shell[data-fit-w='wide'] .page > .grid-tiles,
+.app-shell[data-fit-w='wide'] .page > .grid-cards,
+.app-shell[data-fit-w='wide'] .page > .split-1-1,
+.app-shell[data-fit-w='wide'] .page > .split-2-1,
+.app-shell[data-fit-w='wide'] .page > .split-11-10,
+.app-shell[data-fit-w='wide'] .page > .blueprint,
+.app-shell[data-fit-w='wide'] .page > .card,
+.app-shell[data-fit-w='wide'] .page > .panel,
+.app-shell[data-fit-w='wide'] .page > .stack,
+.app-shell[data-fit-w='wide'] .page > .table-scroll,
+.app-shell[data-fit-w='wide'] .page > .table-wrap,
+.app-shell[data-fit-w='wide'] .page > section,
+.app-shell[data-fit-w='wide'] .page > form {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+}
+
+/* ── Dashboard: mobile-first — never paint a 340px second track on phones ─ */
+.dash-board {
+  grid-template-columns: minmax(0, 1fr);
+}
+.dash-split,
+.dash-ops {
+  grid-template-columns: minmax(0, 1fr);
+}
+.dash-stat-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+.dash-stat {
+  min-height: 0;
+  overflow: visible;
+}
+.dash-stat-chart,
+.dash-board .insight-body,
+.dash-board .panel,
+.chart-block {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (min-width: 701px) {
+  .dash-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1101px) {
+  .dash-stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .dash-board {
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  }
+  .dash-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .dash-ops {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* ── Shared layout helpers ─────────────────────────────────────────────── */
+.row-between,
+.row-baseline,
+.section-heading,
+.page-header,
+.dash-figures-head {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.grid-tiles,
+.grid-tiles-sm,
+.grid-cards,
+.grid-cards-sm {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 640px) {
+  .grid-tiles-sm,
+  .grid-cards-sm {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  }
+  .grid-tiles,
+  .grid-cards {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  }
+}
+
+.split-1-1,
+.split-2-1,
+.split-11-10,
+.campaign-cols {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 1081px) {
+  .split-1-1 {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .split-2-1 {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+  .split-11-10 {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  }
+  .campaign-cols {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* Tables: always scroll inside the container, never the page. */
+.table-scroll,
+.table-wrap {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.table-scroll > .table,
+.table-wrap > .table {
+  margin: 0;
+}
+
+/* ── Phone + tablet (drawer shell) ─────────────────────────────────────── */
+@media (max-width: 1023px), (max-height: 539px) and (max-width: 1199px) {
+  /* Kill the legacy horizontal-nav strip from app.css. */
+  .app-shell,
+  .app-shell[data-fit-w='narrow'] {
+    flex-direction: row !important;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .app-shell > .sidebar,
+  .app-shell[data-fit-w='narrow'] > .sidebar,
+  .app-shell[data-rail='collapsed'] > .sidebar,
+  .app-shell[data-rail='stowed'] > .sidebar {
+    position: fixed !important;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 300;
+    /* Visual drawer width — must not consume flex space (fixed + zero flex basis). */
+    flex: 0 0 0 !important;
+    width: min(272px, 86vw) !important;
+    max-width: min(272px, 86vw) !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border-right: 1px solid color-mix(in srgb, var(--color-sidebar-text) 10%, transparent) !important;
+    border-bottom: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    transform: translateX(-100%);
+    transition: transform 180ms ease;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .app-shell[data-mobile-nav='open'] > .sidebar,
+  .app-shell[data-fit-w='narrow'][data-mobile-nav='open'] > .sidebar {
+    transform: none;
+  }
+
+  .app-shell > .sidebar .sidebar-nav,
+  .app-shell[data-fit-w='narrow'] > .sidebar .sidebar-nav {
+    flex-direction: column !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  .app-shell > .app-main {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+  }
+
+  .topbar-nav-toggle {
+    display: inline-flex !important;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .app-shell .topbar {
+    height: auto;
+    min-height: 56px;
+    padding: 8px max(12px, env(safe-area-inset-right, 0px)) 8px
+      max(12px, env(safe-area-inset-left, 0px));
+    padding-top: max(8px, env(safe-area-inset-top, 0px));
+  }
+
+  .app-shell .topbar .topbar-bell,
+  .app-shell .topbar .btn-icon,
+  .app-shell .user-trigger {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .app-shell .page {
+    padding: 16px max(14px, env(safe-area-inset-right, 0px))
+      calc(120px + env(safe-area-inset-bottom, 0px))
+      max(14px, env(safe-area-inset-left, 0px)) !important;
+  }
+
+  .kpi-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .approval-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .approval-row .row,
+  .approval-row .row-between {
+    flex-wrap: wrap;
+  }
+
+  /* Dialogs / confirms: full-bleed on small phones. */
+  .dialog-backdrop,
+  .confirm-backdrop {
+    padding: 0;
+    align-items: stretch;
+    place-items: stretch;
+  }
+
+  .dialog,
+  .confirm-dialog {
+    width: 100%;
+    max-width: 100%;
+    min-height: 100%;
+    max-height: 100dvh;
+    border-radius: 0;
+    margin: 0;
+  }
+
+  .drawer {
+    width: min(100%, 100vw) !important;
+    max-width: 100vw;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .drawer-actions .btn,
+  .dialog-actions .btn,
+  .confirm-actions .btn {
+    min-height: 44px;
+  }
+
+  .btn:not(.btn-sm):not(.btn-icon) {
+    min-height: 44px;
+  }
+
+  .input,
+  textarea.input,
+  select.input {
+    min-height: 44px;
+    font-size: 16px; /* iOS: avoid focus zoom */
+  }
+
+  .assistant-dock {
+    right: max(10px, env(safe-area-inset-right, 0px));
+    bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .assistant-dock-panel {
+    width: min(100vw - 20px, 420px);
+    max-height: calc(100dvh - 120px - env(safe-area-inset-bottom, 0px));
+  }
+
+  .toast-viewport {
+    top: calc(64px + env(safe-area-inset-top, 0px));
+    right: max(12px, env(safe-area-inset-right, 0px));
+    left: max(12px, env(safe-area-inset-left, 0px));
+    width: auto;
+    max-width: none;
+  }
+}
+
+@media (min-width: 480px) and (max-width: 1023px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ── Prefer reduced motion ─────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .app-shell > .sidebar,
+  .sidebar-scrim,
+  .drawer,
+  .drawer-backdrop,
+  .dialog-backdrop,
+  .assistant-dock-panel {
+    transition: none !important;
+    animation: none !important;
+  }
+}

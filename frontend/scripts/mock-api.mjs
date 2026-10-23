@@ -310,10 +310,93 @@ const server = http.createServer(async (req, res) => {
       read_only: false,
     })
   }
-  if (path === '/dashboard' || path === '/insights/dashboard') {
-    return json(res, 200, { cards: [], setup: [] })
+  if (path === '/dashboard') {
+    return json(res, 200, {
+      kpis: {
+        organic_sessions: '12.4k',
+        organic_sessions_raw: 12400,
+        agents_running: 2,
+        agents_total: 20,
+        connectors_connected: 4,
+        connectors_total: 12,
+        pending_approvals: 1,
+      },
+      agents: [],
+      active_agents: 2,
+      ready: [],
+      ready_agents: 0,
+      connectors: [],
+      approvals: [],
+      global_autonomy: false,
+    })
   }
-  if (path === '/agents') return json(res, 200, { agents: [], read_only: false })
+  if (path === '/insights/overview') {
+    const points = Array.from({ length: 14 }, (_, i) => ({
+      date: `2026-10-${String(i + 1).padStart(2, '0')}`,
+      value: 800 + i * 40,
+    }))
+    return json(res, 200, {
+      from: '2026-09-23',
+      to: '2026-10-23',
+      previous_from: '2026-08-24',
+      previous_to: '2026-09-22',
+      days: 30,
+      sections: {
+        seo: {
+          available: true,
+          connect_hint: '',
+          metrics: [
+            { key: 'clicks', label: 'Search clicks', value: 4200, previous: 3800, change_pct: 10.5, unit: 'count' },
+            { key: 'sessions', label: 'Website visits', value: 12400, previous: 11000, change_pct: 12.7, unit: 'count' },
+          ],
+          series: [
+            { key: 'clicks', label: 'Search clicks', unit: 'count', points },
+            { key: 'sessions', label: 'Website visits', unit: 'count', points },
+          ],
+          top_queries: [],
+        },
+        ads: {
+          available: true,
+          connect_hint: '',
+          metrics: [
+            { key: 'spend', label: 'Ad spend', value: 2400, previous: 2100, change_pct: 14.3, unit: 'currency' },
+          ],
+          series: [{ key: 'spend', label: 'Ad spend', unit: 'currency', points }],
+          channels: [
+            { channel: 'google', label: 'Google Ads', spend: 1400, clicks: 900, conversions: 40, cac: 35 },
+            { channel: 'meta', label: 'Meta', spend: 1000, clicks: 700, conversions: 28, cac: 36 },
+          ],
+        },
+        social: {
+          available: true,
+          connect_hint: '',
+          metrics: [
+            { key: 'reach', label: 'Social reach', value: 88000, previous: 72000, change_pct: 22.2, unit: 'count' },
+          ],
+          series: [{ key: 'reach', label: 'Social reach', unit: 'count', points }],
+          platforms: [],
+        },
+        content: {
+          available: true,
+          connect_hint: '',
+          metrics: [
+            { key: 'created', label: 'Content produced', value: 12, previous: 8, change_pct: 50, unit: 'count' },
+            { key: 'creatives', label: 'Creatives', value: 6, previous: 4, change_pct: 50, unit: 'count' },
+          ],
+          series: [],
+          by_kind: [
+            { key: 'blog', label: 'Blog', value: 8, unit: 'count' },
+            { key: 'social', label: 'Social', value: 10, unit: 'count' },
+          ],
+        },
+      },
+    })
+  }
+  if (path === '/brand-profile') {
+    return json(res, 200, { profile: null, status: 'empty' })
+  }
+  if (path === '/agents') return json(res, 200, [])
+  if (path === '/agents/options' || path === '/agent-options') return json(res, 200, { connectors: [], models: [] })
   if (path === '/approvals') return json(res, 200, [])
   if (path === '/seo') return json(res, 200, { pages: [], total: 0, referral_spam: [], read_only: false })
   if (path === '/reports') return json(res, 200, {})

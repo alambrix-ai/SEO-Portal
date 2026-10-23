@@ -20,6 +20,8 @@ venv/
 node_modules/
 dist/
 .vite/
+frontend/test-results/
+frontend/playwright-report/
 
 # ── Local artefacts ───────────────────────────────────────────────────────
 *.log

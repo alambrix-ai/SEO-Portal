@@ -26,10 +26,10 @@ function measure(width: number, height: number): FitDensity {
   const h = Math.max(1, height)
   // Blend width and height so both skinny and short viewports compress.
   const scale = Math.min(1.18, Math.max(0.78, Math.min(w / 1180, h / 780) * 1.02))
-  // 900px covers phones and iPad portrait. A short landscape phone
-  // (e.g. 844×390) must also stack so the form can scroll.
+  // Phones + tablets (through ~iPad landscape) use the off-canvas drawer.
+  // A short landscape phone (e.g. 844×390) must also stack so the form can scroll.
   const widthBand =
-    w < 900 || (h < 540 && w < 1200) ? 'narrow' : w < 1100 ? 'medium' : 'wide'
+    w < 1024 || (h < 540 && w < 1200) ? 'narrow' : w < 1280 ? 'medium' : 'wide'
   const heightBand = h < 620 ? 'short' : h < 780 ? 'mid' : 'tall'
   return { scale, widthBand, heightBand, width: w, height: h }
 }
