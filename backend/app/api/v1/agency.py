@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_current_user, get_db
-from app.core.exceptions import AppError, NotFoundError
+from app.core.exceptions import ForbiddenError, InvalidInputError, NotFoundError
 from app.core.rbac import Module
 from app.models.agency import Agency, AgencyClientLink, WhiteLabelSettings
 from app.models.workspace import Organization
@@ -63,7 +63,7 @@ def create_agency(
         )
         db.commit()
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     return {"id": row.id, "slug": row.slug, "name": row.name}
 
 
@@ -87,7 +87,7 @@ def add_member(
         )
         db.commit()
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     return {"id": row.id, "role": row.role, "is_active": row.is_active}
 
 
@@ -114,7 +114,7 @@ def link_client(
         )
         db.commit()
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     return {
         "id": row.id,
         "client_tenant_id": row.client_tenant_id,
@@ -133,7 +133,7 @@ def list_clients(
     try:
         ids = agency_svc.list_client_tenant_ids(db, agency, email=current.user.email)
     except ValueError as exc:
-        raise AppError(str(exc), status_code=403) from exc
+        raise ForbiddenError("You do not have access to this agency.") from exc
     if not ids:
         return {"clients": []}
     links = list(
@@ -180,7 +180,7 @@ def upsert_white_label(
         )
         db.commit()
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     return {
         "id": row.id,
         "custom_domain": row.custom_domain,
@@ -200,7 +200,7 @@ def get_white_label(
     try:
         agency_svc.list_client_tenant_ids(db, agency, email=current.user.email)
     except ValueError as exc:
-        raise AppError(str(exc), status_code=403) from exc
+        raise ForbiddenError("You do not have access to this agency.") from exc
     row = db.execute(
         select(WhiteLabelSettings).where(WhiteLabelSettings.agency_id == agency.id)
     ).scalar_one_or_none()

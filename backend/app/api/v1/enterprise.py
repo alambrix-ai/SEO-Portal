@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, get_current_user, get_db
-from app.core.exceptions import AppError, NotFoundError
+from app.core.exceptions import InvalidInputError, NotFoundError
 from app.core.rbac import Module
 from app.models.enterprise_identity import CustomRole, IpAllowlistEntry, SsoConnection
 from app.services import custom_roles, enterprise_sso, ip_allowlist, scim
@@ -109,7 +109,7 @@ def upsert_sso(
             jit_provision=body.jit_provision,
         )
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     db.commit()
     return {"id": row.id, "slug": row.slug, "enabled": row.enabled}
 
@@ -150,7 +150,7 @@ def revoke_scim_token(
             db, current.organization, token_id, actor_email=current.user.email
         )
     except LookupError as exc:
-        raise NotFoundError(str(exc)) from exc
+        raise NotFoundError("Not found.") from exc
     db.commit()
     return {"revoked": True}
 
@@ -173,7 +173,7 @@ def create_custom_role(
             actor_email=current.user.email,
         )
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     db.commit()
     return {"id": row.id, "slug": row.slug, "permissions": row.permissions}
 
@@ -219,7 +219,7 @@ def add_ip(
             actor_email=current.user.email,
         )
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     db.commit()
     return {"id": row.id, "cidr": row.cidr}
 
