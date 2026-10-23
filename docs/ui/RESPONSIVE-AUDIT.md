@@ -8,25 +8,33 @@ Plan for making every route usable from 320px phones through ultrawide desktops,
 
 | Band | Width | Shell behaviour |
 | --- | --- | --- |
-| Narrow (phone / tablet portrait) | &lt; 900px (also short landscape &lt; 1200×540) | Off-canvas sidebar drawer + hamburger; 1-col grids |
-| Medium (tablet landscape / small laptop) | 900–1099px | Collapsible rail; 2-col grids |
-| Wide (laptop) | 1100–1919px | Full rail; multi-col |
+| Narrow (phone / tablet) | &lt; 1024px (also short landscape &lt; 1200×540) | Off-canvas sidebar drawer + hamburger; 1-col grids |
+| Medium (small laptop) | 1024–1279px | Collapsible rail; 2-col grids |
+| Wide (laptop) | 1280–1919px | Full rail; multi-col |
 | Ultrawide | ≥ 1920px | Full rail; content column capped (~1440px) |
 
-Existing `useFitDensity` already maps `narrow` / `medium` / `wide`; media queries must stay aligned to **900px** (not the older 820px strip in `app.css`).
+`useFitDensity` and CSS media queries must stay aligned (no leftover **820px** horizontal-nav strip in `app.css`).
+
+### P0 — Dishant iPhone Overview (prod, ~390px Chrome)
+
+| Symptom | Root cause | Fix |
+| --- | --- | --- |
+| Content only ~left 55%; right side empty cream background | `.dash-board` uses `minmax(340px, 1fr)` so the grid is ~700px wide; `.page { overflow-x: hidden }` clips the rest — looks like a half-width page | Mobile-first 1-col grids; never use 340px track mins below desktop |
+| “Website visits” card clipped vertically; Ask Willy still visible | Shell/`overflow: hidden` + short scrollport; page bottom padding fights the dock | Full-width `.app-main`, `100dvh` shell, scrollable `.page`, safe-area bottom padding |
+| Suspected desktop sidebar width reserved | Conflicting `app.css` narrow/`820px` rules (`position: static`, horizontal strip) vs enterprise drawer | Neutralize legacy rules; fixed drawer **must not** consume flex width; `.app-main { width: 100% }` |
+
+Viewport meta is already in `index.html` (`viewport-fit=cover`); keep it and verify it ships in the built `dist/index.html`.
 
 ## App shell (all authenticated routes)
 
 | Issue | Fix |
 | --- | --- |
-| `app.css` still styles narrow as a horizontal nav strip; `enterprise.css` overrides with a drawer — conflicting 820 vs 900 rules | Neutral legacy strip rules; single off-canvas drawer path |
-| Assistant dock media at 820px while shell is narrow at 900px | Align dock + page bottom padding to 900px + safe-area |
+| `app.css` still styles narrow as a horizontal nav strip; `enterprise.css` overrides with a drawer — conflicting 820 vs 900 rules | Neutral legacy strip rules; single off-canvas drawer path through tablet |
+| Assistant dock media at 820px while shell is narrow | Align dock + page bottom padding to shell breakpoint + safe-area |
 | Touch targets on topbar icons / nav toggle below 44px on mobile | Raise icon buttons to ≥44px under narrow |
-| Ultrawide: page padding grows but content never caps | Cap `.page > *` / page content max-width |
-| Body `overflow: hidden` can hide horizontal bleed instead of fixing it | Keep shell overflow hidden; ensure page children use `min-width: 0` + table wrappers |
+| Ultrawide: page padding grows but content never caps | Cap page content max-width (~1440px) |
+| Body `overflow: hidden` can hide horizontal bleed instead of fixing it | Keep shell overflow hidden; children `min-width: 0` + table wrappers; no page-level clip of wide grids |
 | Safe-area gaps on dock / toasts / drawers | `env(safe-area-inset-*)` on floaters |
-
-Viewport meta already present: `width=device-width, initial-scale=1, viewport-fit=cover`.
 
 ## Route issues
 
@@ -34,7 +42,7 @@ Viewport meta already present: `width=device-width, initial-scale=1, viewport-fi
 | --- | --- | --- |
 | `/login`, `/register`, `/login/mfa`, `/accept-invite` | Auth stack mostly OK via `data-fit-w`; ensure safe-area + full-width inputs | Polish auth padding / min touch targets |
 | `/status` | Centered max-width; OK | Minor fluid padding |
-| `/dashboard` | KPI grid stays 2-col on phones; charts generally scale | 1-col KPIs on ≤480px; chart containers `min-width: 0` |
+| `/dashboard` (**P0**) | Half-width clip from `dash-board` 340px track; KPI/stat grids; vertical clip | Mobile-first stacks; full-bleed main; verify at 375 & 390 |
 | `/onboarding` | Wizard steps may crowd actions | Stack actions; full-width CTAs on narrow |
 | `/agents`, `/agents/:slug` | Data-table card-stack path exists; KPI 2-col | Touch targets; ensure table-wrap |
 | `/content` | `.campaign-cols` is 2-col with **no** breakpoint; tall preview frames | Stack columns ≤899; reduce preview height |

@@ -62,32 +62,34 @@ export function TopicsPage() {
         />
       ) : (
         <Blueprint className="card elev-sm">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Cluster</th>
-                <th>Seeds</th>
-                <th>Pages</th>
-                <th>Gap</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.clusters.map((cluster) => (
-                <tr key={cluster.id}>
-                  <td>
-                    <strong>{cluster.name}</strong>
-                  </td>
-                  <td className="muted">{cluster.seed_terms.join(', ') || '—'}</td>
-                  <td>{cluster.page_count}</td>
-                  <td>{gapPct(cluster.gap_score)}</td>
-                  <td>
-                    <Tag tone={statusTone(cluster.status)}>{cluster.status}</Tag>
-                  </td>
+          <div className="table-scroll">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Cluster</th>
+                  <th>Seeds</th>
+                  <th>Pages</th>
+                  <th>Gap</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.clusters.map((cluster) => (
+                  <tr key={cluster.id}>
+                    <td>
+                      <strong>{cluster.name}</strong>
+                    </td>
+                    <td className="muted">{cluster.seed_terms.join(', ') || '—'}</td>
+                    <td>{cluster.page_count}</td>
+                    <td>{gapPct(cluster.gap_score)}</td>
+                    <td>
+                      <Tag tone={statusTone(cluster.status)}>{cluster.status}</Tag>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Blueprint>
       )}
 

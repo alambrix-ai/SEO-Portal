@@ -248,7 +248,7 @@
   margin-inline: 8px;
 }
 
-/* Narrow: the sidebar becomes an off-canvas drawer. */
+/* Narrow: the sidebar becomes an off-canvas drawer (must not reserve rail width). */
 .app-shell[data-fit-w='narrow'] {
   flex-direction: row;
 }
@@ -258,10 +258,12 @@
   bottom: 0;
   left: 0;
   z-index: 300;
-  width: 272px;
+  flex: 0 0 0;
+  width: min(272px, 86vw);
   height: 100dvh;
   max-height: 100dvh;
   padding: 0;
+  margin: 0;
   border-right: 1px solid var(--color-border);
   border-bottom: 0;
   transform: translateX(-100%);
@@ -280,6 +282,12 @@
 .app-shell[data-fit-w='narrow'] .nav-item {
   white-space: nowrap;
   padding: 8px 10px;
+}
+.app-shell[data-fit-w='narrow'] .app-main {
+  flex: 1 1 100%;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 .sidebar-scrim {
   position: fixed;
@@ -1261,15 +1269,15 @@
 
 .dash-stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
 }
 .dash-stat {
   position: relative;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  min-height: 198px;
+  overflow: visible;
+  min-height: 0;
   padding: 18px 18px 14px;
   gap: var(--space-2);
 }
@@ -1314,7 +1322,9 @@
 }
 .dash-board {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 1fr);
+  /* Mobile-first: a 340px min track made Overview look ~55% wide on phones
+     (page overflow-x clipped the rest). Desktop columns land in responsive.css. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: stretch;
 }
@@ -1342,31 +1352,36 @@
 }
 .dash-split {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 .dash-ops {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
 .dash-ops > .panel {
   margin-top: 0;
 }
-@media (max-width: 1100px) {
+/* Desktop multi-column boards — see also responsive.css (loaded last). */
+@media (min-width: 701px) {
   .dash-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .dash-board,
-  .dash-split,
-  .dash-ops {
-    grid-template-columns: 1fr;
-  }
 }
-@media (max-width: 700px) {
+@media (min-width: 1101px) {
   .dash-stat-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .dash-board {
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  }
+  .dash-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .dash-ops {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 
@@ -1998,11 +2013,11 @@
   color: var(--color-text-subtle);
 }
 
-/* ── Phone, iPad portrait, short landscape ───────────────────────────────
+/* ── Phone, tablet, short landscape ──────────────────────────────────────
    CSS media queries, not only data-fit-w, so the first paint stacks before
-   ResizeObserver runs. 900px covers phones and iPad portrait; a short
+   ResizeObserver runs. 1023px covers phones and tablets; a short
    landscape phone also stacks so the form can scroll. */
-@media (max-width: 899px), (max-height: 539px) and (max-width: 1199px) {
+@media (max-width: 1023px), (max-height: 539px) and (max-width: 1199px) {
   .auth-screen-login {
     display: block;
     height: 100%;

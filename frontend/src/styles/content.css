@@ -189,9 +189,14 @@
 }
 .campaign-cols {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   margin-top: 8px;
+}
+@media (min-width: 900px) {
+  .campaign-cols {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
 }
 .campaign-list {
   margin: 4px 0 10px;
