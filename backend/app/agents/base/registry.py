@@ -39,6 +39,7 @@ FLEET_ORDER: tuple[str, ...] = (
     "competitor_link_monitor",
     "dynamic_creative_optimizer",
     "predictive_budget_engine",
+    "cross_channel_budget",
     "first_party_audience_modeler",
     "click_fraud_controller",
     "local_search_tracker",

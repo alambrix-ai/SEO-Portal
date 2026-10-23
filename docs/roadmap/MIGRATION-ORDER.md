@@ -44,5 +44,6 @@ revision runs.
 | 11 | `feature/product-feed-optimizer` | `0031_product_feed` |
 | 12 | `feature/content-repurposer` | `0032_content_repurpose` |
 | 13 | `feature/creative-studio-expansion` | `0033_creative_video_scripts` |
+| 14 | `feature/cross-channel-budget` | `0034_cross_channel_budget` |
 
 Each revises the previous head. Do not create another sibling of `0024_*`.
