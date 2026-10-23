@@ -46,6 +46,7 @@ from app.models.seo import (
 )
 from app.models.seo_fix import SeoIssueFixProposal
 from app.models.topic_cluster import ContentBrief, TopicCluster, TopicClusterPage
+from app.models.alerts import AlertEvent, AlertRule
 from app.models.reports import ReportArtifact, ScheduledReport
 from app.models.visibility import (
     VisibilityObservation,
@@ -84,6 +85,8 @@ __all__ = [
     "ReviewReply",
     "AdChannel",
     "AdCreative",
+    "AlertEvent",
+    "AlertRule",
     "AeoQaPair",
     "AgentRecord",
     "AgentRun",
