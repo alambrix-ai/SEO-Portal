@@ -43,6 +43,7 @@ from app.models.seo import (
     SeoPage,
 )
 from app.models.topic_cluster import ContentBrief, TopicCluster, TopicClusterPage
+from app.models.reports import ReportArtifact, ScheduledReport
 from app.models.willy import WillyGroundingTrace
 from app.models.workspace import (
     AuditLogEntry,
@@ -112,6 +113,8 @@ __all__ = [
     "FeatureKind",
     "RefreshToken",
     "ReferralSpamEvent",
+    "ReportArtifact",
+    "ScheduledReport",
     "RunStatus",
     "SchemaPatch",
     "SeoIssue",
