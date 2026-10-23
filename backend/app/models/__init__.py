@@ -55,6 +55,12 @@ from app.models.budget import CrossChannelBudgetProposal
 from app.models.competitor_ads import CompetitorAd
 from app.models.landing import AbExperiment, LandingPage
 from app.models.locations import Location
+from app.models.compliance import (
+    AiGovernancePolicy,
+    AuditExportJob,
+    RetentionPolicy,
+    SubjectRequest,
+)
 from app.models.enterprise_identity import (
     CustomRole,
     IpAllowlistEntry,
@@ -157,6 +163,10 @@ __all__ = [
     "IpAllowlistEntry",
     "ScimToken",
     "SsoConnection",
+    "AiGovernancePolicy",
+    "AuditExportJob",
+    "RetentionPolicy",
+    "SubjectRequest",
     "RefreshToken",
     "ReferralSpamEvent",
     "ReportArtifact",
