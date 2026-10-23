@@ -42,6 +42,7 @@ from app.models.seo import (
     SeoIssue,
     SeoPage,
 )
+from app.models.seo_fix import SeoIssueFixProposal
 from app.models.workspace import (
     AuditLogEntry,
     Invitation,
@@ -112,6 +113,7 @@ __all__ = [
     "RunStatus",
     "SchemaPatch",
     "SeoIssue",
+    "SeoIssueFixProposal",
     "SeoPage",
     "SocialPostMetric",
     "User",

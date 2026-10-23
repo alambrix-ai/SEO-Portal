@@ -91,7 +91,14 @@ class MagentoConnector(CmsConnector):
         return self._to_remote(row)
 
     # ── Writes ─────────────────────────────────────────────────────────────
-    def write_page(self, remote_id: str, *, body: str, title: str | None = None) -> bool:
+    def write_page(
+        self,
+        remote_id: str,
+        *,
+        body: str,
+        title: str | None = None,
+        meta_description: str | None = None,
+    ) -> bool:
         payload: dict = {"id": int(remote_id), "content": body}
         if title:
             payload["title"] = title

@@ -564,6 +564,8 @@ export const api = {
     request<ActionResult>(`/seo/audit/${seg(id)}/ignore`, { method: 'POST', body: { note } }),
   reopenIssue: (id: string) =>
     request<ActionResult>(`/seo/audit/${seg(id)}/reopen`, { method: 'POST' }),
+  proposeIssueFix: (id: string) =>
+    request<ActionResult>(`/seo/audit/${seg(id)}/propose-fix`, { method: 'POST' }),
   requestPageApproval: (id: string) =>
     request<ActionResult>(`/seo/pages/${seg(id)}/request-approval`, { method: 'POST' }),
 

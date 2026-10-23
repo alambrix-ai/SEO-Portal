@@ -1311,7 +1311,13 @@ ISSUE_LABELS: dict[str, str] = {
 }
 
 
-def issue_out(issue: SeoIssue) -> SeoIssueOut:
+def issue_out(
+    issue: SeoIssue,
+    *,
+    pending_fix_ids: set[str] | None = None,
+) -> SeoIssueOut:
+    from app.services import technical_fixes as fixes
+
     return SeoIssueOut(
         id=issue.id,
         url=issue.url,
@@ -1329,6 +1335,8 @@ def issue_out(issue: SeoIssue) -> SeoIssueOut:
             else f"ignored {since(issue.updated_at)}"
         ),
         ignore_note=issue.ignore_note,
+        fixable=issue.status == "open" and fixes.is_auto_fixable(issue.kind),
+        pending_fix=bool(pending_fix_ids and issue.id in pending_fix_ids),
     )
 
 

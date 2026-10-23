@@ -250,7 +250,14 @@ class WebflowConnector(CmsConnector):
         )
 
     # ── Writes ─────────────────────────────────────────────────────────────
-    def write_page(self, remote_id: str, *, body: str, title: str | None = None) -> bool:
+    def write_page(
+        self,
+        remote_id: str,
+        *,
+        body: str,
+        title: str | None = None,
+        meta_description: str | None = None,
+    ) -> bool:
         collection_id, _, item_id = remote_id.partition(":")
         if not item_id:
             raise ConnectorError("Webflow ids look like '<collectionId>:<itemId>'")

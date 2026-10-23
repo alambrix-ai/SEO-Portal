@@ -182,6 +182,9 @@ def audit(
     issues = list(
         db.execute(stmt.order_by(rank, SeoIssue.first_seen_at)).scalars()
     )
+    pending_fix_ids = _pending_fix_issue_ids(
+        db, current.tenant_id, [issue.id for issue in issues]
+    )
 
     open_rows = list(
         db.execute(
@@ -227,7 +230,9 @@ def audit(
     ).scalars().first()
 
     return SeoAuditOut(
-        issues=[views.issue_out(issue) for issue in issues],
+        issues=[
+            views.issue_out(issue, pending_fix_ids=pending_fix_ids) for issue in issues
+        ],
         open_count=len(open_rows),
         high_count=sum(1 for row in open_rows if row.severity == "high"),
         fixed_this_month=fixed,
@@ -252,6 +257,109 @@ def audit(
         last_audit_at=last_run.finished_at if last_run else None,
         read_only=not current.can_write(Module.SEO),
     )
+
+
+@router.post("/audit/{issue_id}/propose-fix", response_model=ActionResult)
+def propose_fix(
+    issue_id: str, current: CurrentUserDep, db: DbSession, ip: ClientIp
+) -> ActionResult:
+    """Queue a CMS/git fix for one open finding through the approval gate.
+
+    Never writes to the CMS directly — the Approvals module applies the same
+    applier the Technical Fix Applier agent uses when autonomy allows it.
+    """
+    current.require_write(Module.SEO)
+    from app.agents.base.context import AgentContext
+    from app.agents.technical_fix_applier import agent as fix_agent
+    from app.models.agent import AgentRecord
+    from app.services import technical_fixes as fixes
+    from types import SimpleNamespace
+
+    issue = _issue(db, current.tenant_id, issue_id)
+    if issue.status != "open":
+        raise ConflictError("Only open findings can be proposed as fixes")
+    if not fixes.is_auto_fixable(issue.kind):
+        raise ConflictError(
+            "This finding needs a human decision — it is not an auto-fixable kind"
+        )
+
+    existing = approvals.find_open_proposal(
+        db,
+        tenant_id=current.tenant_id,
+        agent_slug="technical_fix_applier",
+        target_kind=fix_agent.TARGET_KIND,
+        target_id=issue.id,
+    )
+    if existing is not None:
+        raise ConflictError("A fix for this finding is already waiting in Approvals")
+
+    record = db.execute(
+        select(AgentRecord).where(
+            AgentRecord.tenant_id == current.tenant_id,
+            AgentRecord.slug == "technical_fix_applier",
+        )
+    ).scalar_one_or_none()
+    cipher = current.cipher
+    org = current.organization
+    ctx = AgentContext(
+        db=db,
+        org=org,
+        record=record
+        or AgentRecord(
+            slug="technical_fix_applier",
+            name="Technical Fix Applier",
+            category="seo",
+            scope="",
+            settings={},
+            max_actions_per_day=20,
+            actions_today=0,
+            actions_today_date="",
+        ),
+        cipher=cipher,
+        llm=SimpleNamespace(),  # type: ignore[arg-type]
+        connectors={},
+        connected_slugs=frozenset(),
+    )
+    action = fix_agent.build_action_for_issue(ctx, issue)
+    if action is None:
+        raise ConflictError("Could not build a safe write payload for this finding")
+
+    item = approvals.queue_manual(
+        db,
+        org=org,
+        type_=ApprovalType.TECHNICAL_FIX.value,
+        title=action.title,
+        agent_slug="technical_fix_applier",
+        agent_name="Technical Fix Applier",
+        target_kind=fix_agent.TARGET_KIND,
+        target_id=issue.id,
+        payload=action.payload,
+    )
+    from app.models.seo_fix import SeoIssueFixProposal
+
+    proposal = db.execute(
+        select(SeoIssueFixProposal).where(
+            SeoIssueFixProposal.tenant_id == current.tenant_id,
+            SeoIssueFixProposal.issue_id == issue.id,
+        )
+    ).scalar_one_or_none()
+    if proposal is not None:
+        proposal.approval_item_id = item.id
+        proposal.status = "proposed"
+
+    audit_service.record_user_action(
+        db,
+        user=current.user,
+        action=(
+            f"proposed a technical fix for the "
+            f"{views.ISSUE_LABELS.get(issue.kind, issue.kind)} on {issue.url}"
+        ),
+        module="seo",
+        ip_address=ip,
+        context={"issue": issue.kind, "approval_id": item.id},
+    )
+    db.commit()
+    return ActionResult(toast=Toast(message="Fix sent for approval"))
 
 
 @router.post("/audit/{issue_id}/ignore", response_model=ActionResult)
@@ -318,3 +426,22 @@ def _issue(db: DbSession, tenant_id: str, issue_id: str) -> SeoIssue:
     if issue is None:
         raise NotFoundError("Issue not found")
     return issue
+
+
+def _pending_fix_issue_ids(
+    db: DbSession, tenant_id: str, issue_ids: list[str]
+) -> set[str]:
+    if not issue_ids:
+        return set()
+    from app.agents.technical_fix_applier.agent import TARGET_KIND
+    from app.models.approval import ApprovalItem, ApprovalStatus
+
+    rows = db.execute(
+        select(ApprovalItem.target_id).where(
+            ApprovalItem.tenant_id == tenant_id,
+            ApprovalItem.status == ApprovalStatus.PENDING.value,
+            ApprovalItem.target_kind == TARGET_KIND,
+            ApprovalItem.target_id.in_(issue_ids),
+        )
+    ).scalars()
+    return {row for row in rows if row}

@@ -121,7 +121,14 @@ class CustomApiConnector(CmsConnector):
         return self._to_remote(row if isinstance(row, dict) else {})
 
     # ── Writes ─────────────────────────────────────────────────────────────
-    def write_page(self, remote_id: str, *, body: str, title: str | None = None) -> bool:
+    def write_page(
+        self,
+        remote_id: str,
+        *,
+        body: str,
+        title: str | None = None,
+        meta_description: str | None = None,
+    ) -> bool:
         payload: dict = {"body": body}
         if title:
             payload["title"] = title

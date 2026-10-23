@@ -92,6 +92,22 @@ export function TechnicalSeoPage() {
     }
   }
 
+  const proposeFix = async (issue: SeoIssueOut) => {
+    if (!writable) {
+      push('View-only access for your role', 'warning')
+      return
+    }
+    setBusyId(issue.id)
+    try {
+      fromResult(await api.proposeIssueFix(issue.id))
+      await reload()
+    } catch (caught) {
+      fromError(caught)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   if (loading && !data) return <Loading label="Loading the audit…" />
   if (error && !data) return <ErrorState message={error} onRetry={reload} />
   if (!data) return null
@@ -247,13 +263,28 @@ export function TechnicalSeoPage() {
                       Reopen
                     </button>
                   ) : issue.status === 'open' ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => setIgnoring(issue)}
-                    >
-                      Ignore
-                    </button>
+                    <>
+                      {issue.fixable && !issue.pending_fix ? (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={busyId === issue.id}
+                          onClick={() => void proposeFix(issue)}
+                        >
+                          Propose fix
+                        </button>
+                      ) : null}
+                      {issue.pending_fix ? (
+                        <span className="card-meta">Fix waiting in Approvals</span>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => setIgnoring(issue)}
+                      >
+                        Ignore
+                      </button>
+                    </>
                   ) : null}
                 </div>
               ) : null}

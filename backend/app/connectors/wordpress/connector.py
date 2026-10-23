@@ -207,10 +207,20 @@ class WordPressConnector(CmsConnector):
         raise ConnectorError(f"WordPress has no page or post with id {remote_id}")
 
     # ── Writes ─────────────────────────────────────────────────────────────
-    def write_page(self, remote_id: str, *, body: str, title: str | None = None) -> bool:
+    def write_page(
+        self,
+        remote_id: str,
+        *,
+        body: str,
+        title: str | None = None,
+        meta_description: str | None = None,
+    ) -> bool:
         payload: dict = {"content": body}
         if title:
             payload["title"] = title
+        if meta_description is not None:
+            # Themes and SEO plugins use the excerpt as the fallback description.
+            payload["excerpt"] = meta_description
         for endpoint in ("pages", "posts"):
             try:
                 self.request("POST", f"/wp-json/wp/v2/{endpoint}/{remote_id}", json_body=payload)
