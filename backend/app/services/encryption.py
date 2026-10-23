@@ -130,3 +130,4 @@ class Ctx:
     CREATIVE_BRIEF = "creative_job.brief"
     CREATIVE_FEEDBACK = "creative_job.feedback"
     HISTORY_PAYLOAD = "audit_snapshot.payload"
+    CONTENT_BRIEF = "content_brief.body"

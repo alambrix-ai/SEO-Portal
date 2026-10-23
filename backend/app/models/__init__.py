@@ -42,6 +42,7 @@ from app.models.seo import (
     SeoIssue,
     SeoPage,
 )
+from app.models.topic_cluster import ContentBrief, TopicCluster, TopicClusterPage
 from app.models.workspace import (
     AuditLogEntry,
     Invitation,
@@ -88,6 +89,7 @@ __all__ = [
     "BudgetAllocation",
     "CodePurpose",
     "CompetitorAlert",
+    "ContentBrief",
     "ConnectorCategory",
     "ConnectorHealth",
     "ConnectorRecord",
@@ -114,5 +116,7 @@ __all__ = [
     "SeoIssue",
     "SeoPage",
     "SocialPostMetric",
+    "TopicCluster",
+    "TopicClusterPage",
     "User",
 ]

@@ -22,6 +22,7 @@ log = get_logger(__name__)
 FLEET_ORDER: tuple[str, ...] = (
     "on_page_seo_sync",
     "technical_seo_auditor",
+    "topic_cluster_planner",
     "aeo_qa_injector",
     "knowledge_graph_schema",
     "referral_spam_guard",
