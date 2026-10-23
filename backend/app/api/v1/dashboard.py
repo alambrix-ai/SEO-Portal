@@ -112,10 +112,8 @@ def notifications(
     caller is allowed to see — a Client viewer must not learn about ad-budget
     moves through the notification panel that RBAC keeps off their Ads screen.
     """
-    from app.core.rbac import Module, access_map
-
     allowed = {
-        module for module, level in access_map(current.user.role).items() if level != "none"
+        module for module, level in current.access_map().items() if level != "none"
     }
     entries = [
         views.audit_out(entry)

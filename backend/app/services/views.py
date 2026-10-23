@@ -1419,7 +1419,13 @@ def module_values() -> list[str]:
 
 
 # ── Navigation badges ──────────────────────────────────────────────────────
-def nav_counts(db: Session, *, tenant_id: str, role: str) -> dict[str, int]:
+def nav_counts(
+    db: Session,
+    *,
+    tenant_id: str,
+    role: str,
+    access: dict[str, str] | None = None,
+) -> dict[str, int]:
     """How much is waiting on each screen, keyed by route.
 
     Each number answers "how much needs me here", not "how many rows exist".
@@ -1437,7 +1443,8 @@ def nav_counts(db: Session, *, tenant_id: str, role: str) -> dict[str, int]:
     from app.services import approvals as approval_service
     from app.services import connectors as connector_service
 
-    allowed = {m for m, level in access_map(role).items() if level != "none"}
+    levels = access if access is not None else access_map(role)
+    allowed = {m for m, level in levels.items() if level != "none"}
 
     def count(model, *where) -> int:  # noqa: ANN001
         return db.execute(

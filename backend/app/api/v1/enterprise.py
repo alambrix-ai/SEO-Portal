@@ -179,6 +179,7 @@ def create_custom_role(
             permissions=body.permissions,
             description=body.description,
             actor_email=current.user.email,
+            actor_access=current.effective_access,
         )
     except ValueError as exc:
         raise InvalidInputError("That request could not be completed.") from exc
