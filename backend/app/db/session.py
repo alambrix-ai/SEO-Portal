@@ -224,8 +224,8 @@ def run_per_organization(
 
 
 #: What the runtime role can do that it must not: be a superuser, bypass
-#: row-level security, or (directly or through a role it belongs to) own the
-#: tables whose protections the owner can switch off.
+#: row-level security, or (directly or through a role it belongs to) own any
+#: RLS-protected table (the owner can disable policies even with FORCE).
 _ROLE_CHECK = text(
     """
     SELECT r.rolsuper,
@@ -234,8 +234,9 @@ _ROLE_CHECK = text(
                SELECT 1
                FROM pg_class c
                JOIN pg_namespace n ON n.oid = c.relnamespace
-               WHERE c.relname IN ('audit_log', 'users')
+               WHERE c.relkind = 'r'
                  AND n.nspname = ANY (current_schemas(false))
+                 AND c.relname = ANY (:scoped_tables)
                  AND pg_has_role(c.relowner, 'MEMBER')
            ) AS owns_tables
     FROM pg_roles r
@@ -249,7 +250,11 @@ def privileged_role_problems(conn: Connection) -> list[str]:
 
     Empty when the role is an ordinary, non-owning application role.
     """
-    row = conn.execute(_ROLE_CHECK).first()
+    from app.db.rls import TENANT_SCOPED_TABLES
+
+    row = conn.execute(
+        _ROLE_CHECK, {"scoped_tables": list(TENANT_SCOPED_TABLES)}
+    ).first()
     if row is None:
         return ["the current database role could not be inspected"]
     superuser, bypass_rls, owns_tables = (bool(value) for value in row)
@@ -259,28 +264,37 @@ def privileged_role_problems(conn: Connection) -> list[str]:
     if bypass_rls:
         problems.append("it has BYPASSRLS")
     if owns_tables:
-        problems.append("it owns audit_log or users")
+        problems.append("it owns one or more RLS-protected tables")
     return problems
 
 
 def check_db_role(conn: Connection) -> None:
-    """Production: refuse a role that defeats row-level security or the
-    append-only audit log, unless ALLOW_PRIVILEGED_DB_ROLE says otherwise."""
-    if not settings.is_production or settings.allow_privileged_db_role:
-        return
+    """Refuse a role that defeats row-level security or the append-only audit
+    log. Fail closed in every environment; ``ALLOW_PRIVILEGED_DB_ROLE`` is the
+    only escape hatch (loud warning; never for production traffic)."""
     problems = privileged_role_problems(conn)
-    if problems:
-        raise RuntimeError(
-            "Refusing to start: the database role in DATABASE_URL is too "
-            "powerful (" + "; ".join(problems) + "). Connect as the "
-            "automarket_app role from scripts/bootstrap.sql, or set "
-            "ALLOW_PRIVILEGED_DB_ROLE=true for a throwaway environment."
+    if not problems:
+        return
+    detail = "; ".join(problems)
+    if settings.allow_privileged_db_role:
+        log.warning(
+            "ALLOW_PRIVILEGED_DB_ROLE is true: continuing with a privileged "
+            "database role (%s). Row-level security and the append-only audit "
+            "log may be ineffective. Never enable this for real customer data.",
+            detail,
         )
+        return
+    raise RuntimeError(
+        "Refusing to start: the database role in DATABASE_URL is too "
+        "powerful (" + detail + "). Connect as the automarket_app role from "
+        "scripts/bootstrap.sql, or set ALLOW_PRIVILEGED_DB_ROLE=true only for "
+        "a throwaway local/test environment."
+    )
 
 
 def check_connection() -> None:
-    """Verify the database is reachable, that the link is encrypted, and (in
-    production) that the role is not privileged."""
+    """Verify the database is reachable, that the link is encrypted, and that
+    the runtime role is not privileged."""
     with engine.connect() as conn:
         check_db_role(conn)
         version = conn.execute(text("SHOW server_version")).scalar_one()

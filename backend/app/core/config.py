@@ -16,7 +16,7 @@ from functools import lru_cache
 from typing import Annotated, Literal
 from urllib.parse import parse_qs, quote_plus, urlsplit
 
-from pydantic import Field, computed_field, field_validator, model_validator
+from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -199,10 +199,11 @@ class Settings(BaseSettings):
     # Postgres row-level security: every session pins its organisation id so a
     # missing WHERE clause cannot leak another tenant's rows.
     db_enforce_rls: bool = True
-    #: Production refuses to start when the runtime database role is a
-    #: superuser, has BYPASSRLS, or owns the audit_log/users tables: any of
-    #: those switches row-level security or the append-only audit log off.
-    #: True only for a throwaway environment that has no separate app role.
+    #: Refuse to start when the runtime database role is a superuser, has
+    #: BYPASSRLS, or owns any RLS-protected table: any of those switches
+    #: row-level security or the append-only audit log off. True only for a
+    #: throwaway environment that has no separate app role (dev/test opt-in;
+    #: never production).
     allow_privileged_db_role: bool = False
 
     # ── Site crawler ───────────────────────────────────────────────────────
@@ -489,8 +490,15 @@ class Settings(BaseSettings):
     #: Whether the container entrypoint runs `alembic upgrade head` on start.
     #: Turn off when a separate release job owns migrations.
     run_migrations: bool = True
-    #: DSN for migrations (a schema-owner role). Blank uses DATABASE_URL.
-    migration_database_url: str = ""
+    #: DSN for migrations (a schema-owner role). Blank uses DATABASE_URL
+    #: (with a loud warning from Alembic). ``DATABASE_ADMIN_URL`` is accepted
+    #: as an alias for the same setting.
+    migration_database_url: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "MIGRATION_DATABASE_URL", "DATABASE_ADMIN_URL", "migration_database_url"
+        ),
+    )
 
     # ── LLM transport knobs (optional) ─────────────────────────────────────
     # Which model an agent writes with comes from the connector the operator
@@ -1002,8 +1010,9 @@ class Settings(BaseSettings):
             )
         if self.allow_privileged_db_role:
             logger.warning(
-                "ALLOW_PRIVILEGED_DB_ROLE is true: the database role is not "
-                "checked for superuser, BYPASSRLS or table ownership"
+                "ALLOW_PRIVILEGED_DB_ROLE is true: a privileged database role "
+                "is permitted (superuser, BYPASSRLS, or table owner). Never "
+                "enable this for real customer data."
             )
         if self.self_hosted_llm_allow_plain_http:
             logger.warning(

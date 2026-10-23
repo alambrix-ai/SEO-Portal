@@ -387,7 +387,14 @@ def _every_hours(hours: int) -> object:
 
 if CELERY_AVAILABLE:
     from celery.schedules import crontab
-    from celery.signals import worker_process_shutdown
+    from celery.signals import worker_process_init, worker_process_shutdown
+
+    @worker_process_init.connect
+    def _check_db_role_on_worker(**_kwargs: object) -> None:
+        """Refuse a privileged DATABASE_URL in every worker child process."""
+        from app.db.session import check_connection
+
+        check_connection()
 
     @worker_process_shutdown.connect
     def _close_renderer(**_kwargs: object) -> None:
