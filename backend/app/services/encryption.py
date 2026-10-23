@@ -137,3 +137,4 @@ class Ctx:
     PSEO_PAGE_BODY = "pseo_page_job.body"
     REPURPOSE_PACK = "content_repurpose.pack"
     VIDEO_SCRIPT = "video_script.body"
+    BUDGET_SNAPSHOT = "cross_channel_budget.snapshot"
