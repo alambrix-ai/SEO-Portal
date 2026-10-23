@@ -51,6 +51,7 @@ from app.models.visibility import (
     VisibilityQuery,
     VisibilitySettings,
 )
+from app.models.willy import WillyGroundingTrace
 from app.models.workspace import (
     AuditLogEntry,
     Invitation,
@@ -133,4 +134,5 @@ __all__ = [
     "VisibilityObservation",
     "VisibilityQuery",
     "VisibilitySettings",
+    "WillyGroundingTrace",
 ]

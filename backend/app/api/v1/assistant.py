@@ -67,12 +67,20 @@ class ActionPlanOut(ApiModel):
     steps: list[ActionStepOut] = Field(default_factory=list)
 
 
+class GroundingSourceOut(ApiModel):
+    kind: str
+    id: str
+    label: str = ""
+
+
 class AssistantChatResponse(ApiModel):
     reply: str
     mode: Literal["ask", "action"]
     recommendations: RecommendationsOut
     action_plan: ActionPlanOut | None = None
     model: str = ""
+    #: Tenant-scoped records Willy used for numeric claims (empty when none).
+    sources: list[GroundingSourceOut] = Field(default_factory=list)
 
 
 def _require_assistant_access(current: CurrentUserDep) -> None:

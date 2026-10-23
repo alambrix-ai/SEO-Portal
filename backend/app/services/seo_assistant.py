@@ -486,6 +486,7 @@ def _refusal_payload(mode: AssistantMode) -> dict[str, Any]:
         "recommendations": {"connectors": [], "agents": []},
         "action_plan": None,
         "model": _env_model() or "guardrail",
+        "sources": [],
     }
 
 
@@ -542,6 +543,7 @@ def _finalize_turn(
     recommendations_raw: Any,
     action_plan_raw: Any,
     model: str,
+    sources: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     recommendations = recommendations_raw or {"connectors": [], "agents": []}
     if not isinstance(recommendations, dict):
@@ -584,6 +586,7 @@ def _finalize_turn(
         "recommendations": {"connectors": rec_connectors, "agents": rec_agents},
         "action_plan": action_plan,
         "model": model or _env_model(),
+        "sources": list(sources or []),
     }
 
 
@@ -606,14 +609,27 @@ def chat(
 
     catalogue = _catalogue(db, tenant_id)
     provider = _provider()
+    from app.llm import untrusted
+    from app.services import willy_grounding
+
+    grounding = willy_grounding.gather(db, tenant_id=str(tenant_id), question=text)
+    grounded_message = text
+    block = grounding.as_untrusted_block()
+    if block:
+        grounded_message = (
+            f"{block}\n\n"
+            f"{untrusted.wrap('user_question', text, max_chars=8000)}\n\n"
+            "Answer the user_question using workspace_metrics for any numbers."
+        )
+    system = _system_prompt(catalogue, mode) + willy_grounding.grounding_system_addon()
 
     try:
         from app.llm.willy_chat_engine import run_chat_engine
 
         result = run_chat_engine(
             provider=provider,
-            system_prompt=_system_prompt(catalogue, mode),
-            message=text,
+            system_prompt=system,
+            message=grounded_message,
             history=history,
         )
     except AssistantConfigError:
@@ -625,6 +641,16 @@ def chat(
         log.error("SEO Assistant chat engine failed (%s)", type(exc).__name__)
         raise AssistantUpstreamError(_TURN_FAILED) from exc
 
+    try:
+        willy_grounding.record_trace(
+            db,
+            tenant_id=str(tenant_id),
+            prompt_hash=grounding.prompt_hash,
+            tool_calls=[{"tool": "gather", "sources": grounding.sources_out()}],
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Willy grounding trace skipped: %s", exc)
+
     parsed = _extract_json(result.text)
     return _finalize_turn(
         catalogue=catalogue,
@@ -633,6 +659,7 @@ def chat(
         recommendations_raw=parsed.get("recommendations"),
         action_plan_raw=parsed.get("action_plan"),
         model=result.model or _env_model(),
+        sources=grounding.sources_out(),
     )
 
 
@@ -664,6 +691,20 @@ def chat_stream(
         yield {"event": "error", "detail": _NOT_SET_UP}
         return
 
+    from app.llm import untrusted
+    from app.services import willy_grounding
+
+    grounding = willy_grounding.gather(db, tenant_id=str(tenant_id), question=text)
+    grounded_message = text
+    block = grounding.as_untrusted_block()
+    if block:
+        grounded_message = (
+            f"{block}\n\n"
+            f"{untrusted.wrap('user_question', text, max_chars=8000)}\n\n"
+            "Answer the user_question using workspace_metrics for any numbers."
+        )
+    system = _system_prompt(catalogue, mode, streaming=True) + willy_grounding.grounding_system_addon()
+
     yield {"event": "status", "text": "thinking"}
 
     try:
@@ -675,8 +716,8 @@ def chat_stream(
         model = _env_model()
         for item in run_chat_engine_stream(
             provider=provider,
-            system_prompt=_system_prompt(catalogue, mode, streaming=True),
-            message=text,
+            system_prompt=system,
+            message=grounded_message,
             history=history,
         ):
             kind = item[0]
@@ -708,7 +749,17 @@ def chat_stream(
             recommendations_raw=parsed.get("recommendations"),
             action_plan_raw=parsed.get("action_plan"),
             model=model,
+            sources=grounding.sources_out(),
         )
+        try:
+            willy_grounding.record_trace(
+                db,
+                tenant_id=str(tenant_id),
+                prompt_hash=grounding.prompt_hash,
+                tool_calls=[{"tool": "gather", "sources": grounding.sources_out()}],
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Willy grounding trace skipped: %s", exc)
         streamed = ("".join(reply_parts) or reply).strip()
         if streamed and final["reply"].startswith(streamed) and final["reply"] != streamed:
             suffix = final["reply"][len(streamed) :]
