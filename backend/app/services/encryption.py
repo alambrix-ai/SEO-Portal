@@ -135,3 +135,4 @@ class Ctx:
     PSEO_TEMPLATE = "pseo_template.body"
     PSEO_DATASET = "pseo_dataset.rows"
     PSEO_PAGE_BODY = "pseo_page_job.body"
+    REPURPOSE_PACK = "content_repurpose.pack"

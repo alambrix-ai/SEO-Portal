@@ -43,5 +43,6 @@ revision runs.
 | 10 | `feature/programmatic-seo` | `0030_pseo_pages` |
 | 11 | `feature/product-feed-optimizer` | `0031_product_feed` |
 | 12 | `feature/content-repurposer` | `0032_content_repurpose` |
+| 13 | `feature/creative-studio-expansion` | `0033_creative_video_scripts` |
 
 Each revises the previous head. Do not create another sibling of `0024_*`.
