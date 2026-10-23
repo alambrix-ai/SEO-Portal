@@ -108,6 +108,7 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     "webauthn_credentials",
     "mfa_pending_challenges",
     "user_approval_scopes",
+    "warehouse_export_jobs",
     "aeo_qa_pairs",
     "schema_patches",
     "referral_spam_events",
