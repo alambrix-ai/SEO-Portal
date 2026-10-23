@@ -21,7 +21,7 @@ argon2-cffi==23.1.0
 # with exclusive C14N / wrapping-resistant verification. Login stays
 # fail-closed until SSO_LOGIN_ENABLED is set (see app.core.config).
 authlib==1.6.9
-signxml==4.2.0
+signxml==5.2.0
 lxml==6.0.2
 pyotp==2.9.0
 webauthn==2.7.0
