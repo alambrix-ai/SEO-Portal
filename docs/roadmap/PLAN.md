@@ -368,6 +368,9 @@ without autonomy + caps.
 
 **Security.** Do not weaken passwordless threat model; SSO must bind to
 verified IdP attributes; SCIM bearer tokens workspace-encrypted.
+SAML via **signxml** (exclusive C14N, wrapping-resistant); OIDC via
+**Authlib** JOSE (JWKS/PEM). ``SSO_LOGIN_ENABLED`` defaults to false
+(fail-closed) until IdPs are certified.
 
 ---
 

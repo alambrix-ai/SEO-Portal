@@ -390,6 +390,19 @@ class Settings(BaseSettings):
     #: Shape: {slug: {name, price_monthly, currency, seats, features, metrics}}.
     billing_plan_catalog: Annotated[dict, NoDecode] = Field(default_factory=dict)
 
+    # ── Enterprise SSO ─────────────────────────────────────────────────────
+    #: When false (default), SSO login stays fail-closed: assertion/token
+    #: verification refuses every call and connections cannot be enabled for
+    #: sign-in. Turn on only after IdP certs / JWKS are configured and
+    #: certified. Structural/unsigned acceptance is never allowed.
+    sso_login_enabled: bool = False
+    #: Max age for SAML Assertion/@IssueInstant and Conditions NotOnOrAfter
+    #: skew window (seconds).
+    sso_clock_skew_seconds: int = Field(default=120, ge=0, le=600)
+    #: How long a consumed SAML Assertion ID / OIDC ``jti``/nonce is retained
+    #: for replay rejection.
+    sso_replay_ttl_seconds: int = Field(default=600, ge=60, le=3600)
+
     # ── Registration policy ────────────────────────────────────────────────
     allow_public_signup: bool = True
     # Blocks free-mail domains from creating organisations.
