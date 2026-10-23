@@ -106,6 +106,9 @@ AGENT_CATEGORY_MODULE: dict[str, Module] = {
 }
 
 
+_ACCESS_RANK = {Access.NONE: 0, Access.VIEW: 1, Access.FULL: 2}
+
+
 def access_for(role: Role | str, module: Module | str) -> Access:
     return ROLE_ACCESS[Role(role)][Module(module)]
 
@@ -121,3 +124,49 @@ def can_write(role: Role | str, module: Module | str) -> bool:
 def access_map(role: Role | str) -> dict[str, str]:
     """Serialisable access map for the ``/auth/me`` payload."""
     return {m.value: a.value for m, a in ROLE_ACCESS[Role(role)].items()}
+
+
+def validate_permission_map(permissions: dict) -> dict[str, str]:
+    """Normalise a custom-role permission map; reject unknown modules/levels."""
+    if not isinstance(permissions, dict):
+        raise ValueError("permissions must be an object")
+    out: dict[str, str] = {}
+    for key, value in permissions.items():
+        module = Module(str(key))
+        access = Access(str(value).lower())
+        out[module.value] = access.value
+    return out
+
+
+def merge_access(
+    base_role: Role | str,
+    overlay: dict[str, str] | None,
+) -> dict[Module, Access]:
+    """Built-in role access, widened (never narrowed below NONE) by overlay.
+
+    Custom roles may grant additional view/full on modules the base role
+    already allows at least NONE for; they cannot invent modules outside
+    :class:`Module`. Overlay values that are lower than the base are ignored
+    so a custom role cannot strip Admin rights by accident.
+    """
+    merged = dict(ROLE_ACCESS[Role(base_role)])
+    if not overlay:
+        return merged
+    for key, value in overlay.items():
+        try:
+            module = Module(str(key))
+            access = Access(str(value).lower())
+        except ValueError:
+            continue
+        if _ACCESS_RANK[access] > _ACCESS_RANK[merged[module]]:
+            merged[module] = access
+    return merged
+
+
+def access_for_merged(
+    base_role: Role | str,
+    module: Module | str,
+    overlay: dict[str, str] | None = None,
+) -> Access:
+    module_key = Module(module) if not isinstance(module, Module) else module
+    return merge_access(base_role, overlay)[module_key]

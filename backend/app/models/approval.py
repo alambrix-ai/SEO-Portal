@@ -90,6 +90,10 @@ class ApprovalItem(Base, TimestampMixin, TenantScopedMixin):
     payload_digest: Mapped[str] = mapped_column(String(32), default="", index=True)
     # Non-sensitive one-liner for the card, e.g. "submitted 2h ago".
     meta: Mapped[str] = mapped_column(String(120), default="")
+    #: Enterprise scoped approvals (brand / region / channel).
+    scope_brand: Mapped[str] = mapped_column(String(80), default="")
+    scope_region: Mapped[str] = mapped_column(String(80), default="")
+    scope_channel: Mapped[str] = mapped_column(String(80), default="")
 
     status: Mapped[str] = mapped_column(
         String(16), default=ApprovalStatus.PENDING.value, nullable=False, index=True
