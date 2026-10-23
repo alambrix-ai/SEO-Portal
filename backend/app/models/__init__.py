@@ -61,6 +61,7 @@ from app.models.agency import (
     AgencyMembership,
     WhiteLabelSettings,
 )
+from app.models.billing import BillingAccount, PlanEntitlement, UsageMeter
 from app.models.workflow import (
     ApiToken,
     ApprovalStep,
@@ -185,6 +186,9 @@ __all__ = [
     "OutboundWebhook",
     "RoiAttributionSnapshot",
     "WebhookDeliveryLog",
+    "BillingAccount",
+    "PlanEntitlement",
+    "UsageMeter",
     "AiGovernancePolicy",
     "AuditExportJob",
     "RetentionPolicy",
