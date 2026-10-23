@@ -150,6 +150,14 @@ def queue_action(
         target_id=action.target_id,
     )
 
+    from app.services import approval_scopes
+
+    brand = (action.scope_brand or "").strip()[:80]
+    region = (action.scope_region or "").strip()[:80]
+    channel = (action.scope_channel or "").strip()[:80]
+    if not (brand or region or channel):
+        brand, region, channel = approval_scopes.scopes_from_action_payload(action.payload)
+
     if existing is not None:
         if existing.payload_digest == digest:
             log.debug(
@@ -166,6 +174,9 @@ def queue_action(
         existing.payload_digest = digest
         existing.submitted_at = now
         existing.meta = humanize_age(timedelta(0))
+        existing.scope_brand = brand
+        existing.scope_region = region
+        existing.scope_channel = channel
         db.flush()
         log.info("Updated the pending %s from %s with a new proposal", existing.type, record.slug)
         return existing, False
@@ -183,6 +194,9 @@ def queue_action(
         meta=humanize_age(timedelta(0)),
         status=ApprovalStatus.PENDING.value,
         submitted_at=now,
+        scope_brand=brand,
+        scope_region=region,
+        scope_channel=channel,
     )
     db.add(item)
     db.flush()
@@ -228,7 +242,13 @@ def queue_manual(
 
 
 # ── Reads ──────────────────────────────────────────────────────────────────
-def list_pending(db: Session, *, tenant_id: str, limit: int = 100) -> list[ApprovalItem]:
+def list_pending(
+    db: Session,
+    *,
+    tenant_id: str,
+    limit: int = 100,
+    viewer: User | None = None,
+) -> list[ApprovalItem]:
     items = list(
         db.execute(
             select(ApprovalItem)
@@ -237,14 +257,23 @@ def list_pending(db: Session, *, tenant_id: str, limit: int = 100) -> list[Appro
                 ApprovalItem.status == ApprovalStatus.PENDING.value,
             )
             .order_by(ApprovalItem.submitted_at.desc())
-            .limit(limit)
+            .limit(limit * 4 if viewer is not None else limit)
         ).scalars()
     )
+    if viewer is not None:
+        from app.services import approval_scopes
+
+        items = approval_scopes.filter_items(db, viewer, items)[:limit]
     now = utcnow()
     for item in items:
         # Recomputed on read so "2h ago" is true when it is displayed, not
-        # when it was written.
-        item.meta = humanize_age(now - item.submitted_at)
+        # when it was written. SQLite may strip tzinfo on round-trip.
+        submitted = item.submitted_at
+        if submitted.tzinfo is None:
+            from datetime import timezone
+
+            submitted = submitted.replace(tzinfo=timezone.utc)
+        item.meta = humanize_age(now - submitted)
     return items
 
 
@@ -272,15 +301,17 @@ def why_waiting(payload: dict | None) -> list[str]:
     return [str(line) for line in raw] if isinstance(raw, list) else []
 
 
-def pending_count(db: Session, *, tenant_id: str) -> int:
-    return db.execute(
-        select(func.count())
-        .select_from(ApprovalItem)
-        .where(
-            ApprovalItem.tenant_id == tenant_id,
-            ApprovalItem.status == ApprovalStatus.PENDING.value,
-        )
-    ).scalar_one()
+def pending_count(db: Session, *, tenant_id: str, viewer: User | None = None) -> int:
+    if viewer is None:
+        return db.execute(
+            select(func.count())
+            .select_from(ApprovalItem)
+            .where(
+                ApprovalItem.tenant_id == tenant_id,
+                ApprovalItem.status == ApprovalStatus.PENDING.value,
+            )
+        ).scalar_one()
+    return len(list_pending(db, tenant_id=tenant_id, limit=500, viewer=viewer))
 
 
 def get_item(db: Session, *, tenant_id: str, item_id: str) -> ApprovalItem:
@@ -319,7 +350,9 @@ def approve(
     if item.status != ApprovalStatus.PENDING.value:
         raise ConflictError("That item has already been decided")
 
-    from app.services import agent_safety
+    from app.services import agent_safety, approval_scopes
+
+    approval_scopes.assert_can_act(db, actor, item)
 
     halted = agent_safety.halt_reason(db, org)
     if halted:
@@ -395,9 +428,12 @@ def reject(
     ip_address: str | None = None,
 ) -> ApprovalItem:
     """Decline a queued change and revert the target to a settled state."""
+    from app.services import approval_scopes
+
     item = get_item(db, tenant_id=org.id, item_id=item_id)
     if item.status != ApprovalStatus.PENDING.value:
         raise ConflictError("That item has already been decided")
+    approval_scopes.assert_can_act(db, actor, item)
 
     rejecter = REJECTERS.get(item.target_kind)
     if rejecter is not None:
@@ -637,6 +673,8 @@ def request_changes(
     Bounded by ``creative_max_revisions`` per piece of work, counted across
     the chain of revisions (``REVISION_KEY``).
     """
+    from app.services import approval_scopes
+
     text = (feedback or "").strip()
     if not text:
         raise InvalidInputError("Say what you would like changed.")
@@ -644,6 +682,7 @@ def request_changes(
         raise InvalidInputError(f"Keep your feedback under {MAX_FEEDBACK_CHARS} characters.")
 
     item = _lock_pending(db, tenant_id=org.id, item_id=item_id)
+    approval_scopes.assert_can_act(db, actor, item)
     reviser = REVISERS.get(item.target_kind)
     if reviser is None:
         raise ConflictError(_NO_REVISE)

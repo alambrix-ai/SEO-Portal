@@ -76,6 +76,10 @@ class AgentAction:
     # a connector that has not been verified against a live account
     # (app.agents.base.safety). Empty means it reaches no vendor.
     writes_via: tuple[str, ...] = ()
+    #: Optional enterprise approval scopes (empty = visible to all approvers).
+    scope_brand: str = ""
+    scope_region: str = ""
+    scope_channel: str = ""
 
 
 @dataclass(slots=True)

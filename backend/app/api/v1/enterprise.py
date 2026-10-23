@@ -11,7 +11,15 @@ from app.api.deps import CurrentUser, client_ip as resolve_client_ip, get_curren
 from app.core.exceptions import InvalidInputError, NotFoundError
 from app.core.rbac import Module
 from app.models.enterprise_identity import CustomRole, IpAllowlistEntry, SsoConnection
-from app.services import custom_roles, enterprise_sso, ip_allowlist, mfa as mfa_service, scim
+from app.models.workspace import User
+from app.services import (
+    approval_scopes,
+    custom_roles,
+    enterprise_sso,
+    ip_allowlist,
+    mfa as mfa_service,
+    scim,
+)
 
 
 def _step_up(current: CurrentUser) -> None:
@@ -52,6 +60,13 @@ class IpEntryIn(BaseModel):
 
 class IpToggleIn(BaseModel):
     enabled: bool
+
+
+class ApprovalScopeIn(BaseModel):
+    user_id: str
+    brands: list[str] = Field(default_factory=list)
+    regions: list[str] = Field(default_factory=list)
+    channels: list[str] = Field(default_factory=list)
 
 
 @router.get("/sso")
@@ -274,4 +289,36 @@ def list_ip(
     return {
         "enabled": current.organization.ip_allowlist_enabled,
         "entries": [{"id": r.id, "cidr": r.cidr, "label": r.label, "enabled": r.enabled} for r in rows],
+    }
+
+
+@router.post("/approval-scopes")
+def set_approval_scope(
+    body: ApprovalScopeIn,
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    current.require_write(Module.ADMIN)
+    _step_up(current)
+    user = db.get(User, body.user_id)
+    if user is None or user.tenant_id != current.tenant_id:
+        raise NotFoundError("Not found.")
+    try:
+        row = approval_scopes.set_user_scope(
+            db,
+            current.organization,
+            user,
+            brands=body.brands,
+            regions=body.regions,
+            channels=body.channels,
+            actor_email=current.user.email,
+        )
+    except LookupError as exc:
+        raise NotFoundError("Not found.") from exc
+    db.commit()
+    return {
+        "user_id": row.user_id,
+        "brands": list(row.brands or []),
+        "regions": list(row.regions or []),
+        "channels": list(row.channels or []),
     }

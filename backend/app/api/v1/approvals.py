@@ -64,7 +64,9 @@ def list_pending(
     limit: int = Query(default=100, ge=1, le=200),
 ) -> list[ApprovalOut]:
     current.require_view(Module.APPROVALS)
-    items = approval_service.list_pending(db, tenant_id=current.tenant_id, limit=limit)
+    items = approval_service.list_pending(
+        db, tenant_id=current.tenant_id, limit=limit, viewer=current.user
+    )
     # Decrypted for the "why it waits" line a spending agent's hold adds.
     return _cards(current, db, items)
 
@@ -94,7 +96,11 @@ def list_practised(
 def pending_count(current: CurrentUserDep, db: DbSession) -> dict[str, int]:
     """Backs the sidebar badge, so it can refresh without the full list."""
     current.require_view(Module.APPROVALS)
-    return {"pending": approval_service.pending_count(db, tenant_id=current.tenant_id)}
+    return {
+        "pending": approval_service.pending_count(
+            db, tenant_id=current.tenant_id, viewer=current.user
+        )
+    }
 
 
 #: How each decided state reads in the history.
@@ -159,7 +165,10 @@ def list_history(
 def get_item(item_id: str, current: CurrentUserDep, db: DbSession) -> ApprovalDetailOut:
     """The pending change in full, decrypted for a reviewer."""
     current.require_view(Module.APPROVALS)
+    from app.services import approval_scopes
+
     item = approval_service.get_item(db, tenant_id=current.tenant_id, item_id=item_id)
+    approval_scopes.assert_can_act(db, current.user, item)
     payload = approval_service.read_payload(current.organization, item)
     base = _cards(current, db, [item])[0]
     return ApprovalDetailOut(**base.model_dump(), payload=payload)

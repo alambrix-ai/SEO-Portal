@@ -12,6 +12,7 @@ from app.models.ads import (
 )
 from app.models.agent import AgentRecord, AgentRun, AgentStatus, RunStatus
 from app.models.approval import ApprovalItem, ApprovalStatus, ApprovalType
+from app.models.approval_scope import UserApprovalScope
 from app.models.connector import ConnectorCategory, ConnectorHealth, ConnectorRecord
 from app.models.identity import AuthIdentity, CodePurpose, LoginCode
 from app.models.membership import WorkspaceMembership
@@ -131,6 +132,7 @@ __all__ = [
     "ApprovalItem",
     "ApprovalStatus",
     "ApprovalType",
+    "UserApprovalScope",
     "AudienceCluster",
     "AuthIdentity",
     "WorkspaceMembership",

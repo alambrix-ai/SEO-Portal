@@ -659,7 +659,7 @@ def _process_actions(
             )
 
         elif decision is Decision.QUEUE:
-            _, created = queue_action(
+            item, created = queue_action(
                 db, org=org, record=record, action=action, cipher=ctx.cipher, why=notes
             )
             # A proposal that was already pending is not newly queued. Counting
@@ -667,6 +667,14 @@ def _process_actions(
             # that has simply not changed its mind.
             if created:
                 tally.queued += 1
+                # Scoped-approval filter: only approvers whose brand/region/
+                # channel allow-set covers this item are eligible. Counts are
+                # audited without listing emails (no PII in logs).
+                from app.services import approval_scopes
+
+                in_scope = approval_scopes.users_in_scope_for_item(
+                    db, tenant_id=org.id, item=item
+                )
                 # Recorded, because this is the outcome that needs a person and
                 # it used to be recorded nowhere. Every agent ships paused and
                 # under human review, so queueing is the *normal* result — and
@@ -678,6 +686,10 @@ def _process_actions(
                     "impact": action.impact.value,
                     "awaiting_approval": True,
                     "run_id": run_id,
+                    "scope_brand": item.scope_brand or "",
+                    "scope_region": item.scope_region or "",
+                    "scope_channel": item.scope_channel or "",
+                    "scoped_approver_count": len(in_scope),
                 }
                 if notes:
                     context["held"] = notes
