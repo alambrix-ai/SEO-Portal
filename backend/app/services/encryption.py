@@ -136,3 +136,4 @@ class Ctx:
     PSEO_DATASET = "pseo_dataset.rows"
     PSEO_PAGE_BODY = "pseo_page_job.body"
     REPURPOSE_PACK = "content_repurpose.pack"
+    VIDEO_SCRIPT = "video_script.body"

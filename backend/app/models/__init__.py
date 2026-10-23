@@ -48,6 +48,7 @@ from app.models.product_feed import ProductFeedFinding
 from app.models.pseo import PseoDataset, PseoPageJob, PseoTemplate
 from app.models.repurpose import ContentRepurposeJob
 from app.models.reports import ReportArtifact, ScheduledReport
+from app.models.video_script import VideoScriptJob
 from app.models.willy import WillyGroundingTrace
 from app.models.workspace import (
     AuditLogEntry,
@@ -122,6 +123,7 @@ __all__ = [
     "PseoTemplate",
     "ProductFeedFinding",
     "ContentRepurposeJob",
+    "VideoScriptJob",
     "RefreshToken",
     "ReferralSpamEvent",
     "ReportArtifact",

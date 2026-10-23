@@ -24,6 +24,7 @@ class ApprovalType(StrEnum):
     PSEO_PAGE = "Programmatic Page"
     PRODUCT_FEED_FIX = "Product Feed Fix"
     CONTENT_REPURPOSE = "Content Repurpose"
+    VIDEO_SCRIPT = "Video Script"
     PR_PITCH = "PR Pitch"
     AD_CREATIVE = "Ad Creative"
     BUDGET_SHIFT = "Budget Shift"

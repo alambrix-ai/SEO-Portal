@@ -25,6 +25,8 @@ class AssetKind:
     #: A Creative Studio output: a banner, social image, flyer, brochure or
     #: email header, rendered from a creative job.
     CREATIVE = "creative"
+    #: Short-form video script + captions (text asset; thumbnails are CREATIVE).
+    VIDEO_SCRIPT = "video_script"
 
 
 class AssetStatus:
