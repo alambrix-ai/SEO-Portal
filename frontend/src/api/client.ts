@@ -145,6 +145,8 @@ function seg(value: string | null | undefined): string {
     text === '.' ||
     text === '..' ||
     text.length > MAX_SEGMENT_CHARS ||
+    // Reject ASCII controls deliberately (path-segment hardening).
+    // eslint-disable-next-line no-control-regex -- intentional C0 / DEL check
     /[\u0000-\u001f\u007f]/.test(text)
   ) {
     throw new ApiError(400, 'invalid_path', 'That link is not valid. Please go back and try again.')

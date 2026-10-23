@@ -1,0 +1,11 @@
+# Bandit config for Synaprank backend.
+# B101: assert used in non-test helper paths we accept.
+# B613: Trojan-source plugin fires on defensive regexes that *strip*
+#       bidirectional controls (llm/untrusted, brand_kits, creative schema).
+exclude_dirs:
+  - tests
+  - .venv
+  - venv
+skips:
+  - B101
+  - B613

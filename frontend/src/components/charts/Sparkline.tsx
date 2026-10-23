@@ -27,8 +27,8 @@ export interface SparklineProps {
 
 /** Vertical domain so a quiet series does not look violent. */
 export function sparkDomain(known: readonly number[], invert: boolean): { low: number; high: number } {
-  let low = Math.min(...known)
-  let high = Math.max(...known)
+  const low = Math.min(...known)
+  const high = Math.max(...known)
   if (high === low) {
     if (!invert && low >= 0) {
       return { low: 0, high: high === 0 ? 1 : high * 1.12 }
