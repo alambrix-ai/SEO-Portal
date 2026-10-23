@@ -439,14 +439,36 @@ def test_collection_stores_rows_for_this_workspace_only(clean_db, org, second_or
     social_metrics.collect(clean_db, org, bundle=_bundle(reader))
     clean_db.commit()
 
-    # Only this workspace's post was asked about.
+    # Only this workspace's post was asked about — no cross-tenant read.
     assert reader.calls == [[f"fb_{org.id[:8]}"]]
-    row = clean_db.execute(select(SocialPostMetric)).scalar_one()
+    # Filter by tenant_id explicitly: superuser test roles bypass RLS (even
+    # with FORCE), so an unscoped SELECT would still see this workspace's row
+    # after switching the pin. Production still pins + filters; this asserts
+    # the written row belongs only to org.
+    row = clean_db.execute(
+        select(SocialPostMetric).where(SocialPostMetric.tenant_id == org.id)
+    ).scalar_one()
     assert row.tenant_id == org.id and row.likes == 7 and row.reach is None
     point = clean_db.execute(
-        select(MetricPoint).where(MetricPoint.source == "social", MetricPoint.metric == "likes")
+        select(MetricPoint).where(
+            MetricPoint.tenant_id == org.id,
+            MetricPoint.source == "social",
+            MetricPoint.metric == "likes",
+        )
     ).scalar_one()
     assert point.dimension == "facebook" and point.value == 7.0
 
     bind_tenant(clean_db, second_org.id)
-    assert clean_db.execute(select(SocialPostMetric)).first() is None
+    # Collect for org must not have written any row for the other workspace.
+    assert (
+        clean_db.execute(
+            select(SocialPostMetric).where(SocialPostMetric.tenant_id == second_org.id)
+        ).first()
+        is None
+    )
+    assert (
+        clean_db.execute(
+            select(MetricPoint).where(MetricPoint.tenant_id == second_org.id)
+        ).first()
+        is None
+    )

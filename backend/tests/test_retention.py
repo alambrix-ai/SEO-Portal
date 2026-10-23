@@ -341,11 +341,31 @@ def test_only_unreferenced_old_uploads_are_pruned(clean_db, org, second_org) -> 
     clean_db.commit()
 
     assert result.files == 1
-    left = set(clean_db.execute(select(StoredFile.id)).scalars())
+    # Filter by tenant_id explicitly: the suite often connects as a superuser
+    # (e.g. POSTGRES_USER in CI), and superusers bypass RLS even with FORCE.
+    left = set(
+        clean_db.execute(
+            select(StoredFile.id).where(StoredFile.tenant_id == org.id)
+        ).scalars()
+    )
     assert left == {recent, kit_logo, photo, in_job, in_asset, render}
 
     bind_tenant(clean_db, second_org.id)
-    assert clean_db.execute(select(StoredFile.id)).scalars().all() == [theirs]
+    assert (
+        clean_db.execute(
+            select(StoredFile.id).where(StoredFile.tenant_id == second_org.id)
+        ).scalars().all()
+        == [theirs]
+    )
+    # Cross-tenant safety: the other workspace's product pointed at our orphan
+    # id, but that must not resurrect the deleted row in *our* table, and must
+    # not have created a SocialPostMetric-style leak into their file list.
+    assert orphan not in left
+    assert orphan not in set(
+        clean_db.execute(
+            select(StoredFile.id).where(StoredFile.tenant_id == second_org.id)
+        ).scalars()
+    )  # second workspace never gained a copy of the pruned file
 
 
 @requires_db
