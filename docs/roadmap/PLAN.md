@@ -394,30 +394,44 @@ rules.
 tenant — agency access is explicit membership, not shared tenant_id.
 White-label emails must not break auth origin checks.
 
+**Data.** `agencies`, `agency_memberships`, `agency_client_links`,
+`white_label_settings` (platform-level; no shared `tenant_id`).
+
 **Effort.** L (multi-PR)
+
+**Status.** Implemented on `feature/agency-tier` (`0042_agency_tier`).
 
 ---
 
-## Phase 12 — Workflow depth
+## Phase 12 — Workflow depth + public API
 
-Multi-step approval chains with SLAs/escalation; approve from Slack/email
-(signed tokens, short TTL); content calendar; tasks for humans and agents.
+Multi-step / multi-approver approval chains with SLAs; ROI / attribution
+reporting; public API with hashed scoped tokens; outbound webhooks (HMAC
+signed, replay-protected). (Moved public API + ROI here from the former
+Phase 13 split so commercial billing stays isolated — see MIGRATION-ORDER
+`0043_workflow_public_api`.)
 
-**Design.** Extend `approval_items` with chain steps; Slack connector for
-interactive approve (verify signing secret); calendar on
-`marketing_assets.scheduled_for`.
+**Design.** Extend approvals with `approval_steps`; tokens hashed at rest;
+webhooks via egress allowlist + timestamp/nonce replay window.
 
 **Effort.** L
 
 ---
 
-## Phase 13 — Commercial platform
+## Phase 13 — Commercial platform (billing)
 
-ROI attribution; scheduled executive reports; warehouse exports (BigQuery,
-Snowflake) via egress-controlled connectors; public API + webhooks (HMAC
-signed); plans, usage limits, metering dashboard; status page + SLA hooks.
+Plans, seat and usage metering, entitlements; billing behind a provider
+abstraction with a test/fake provider (no real payment keys required);
+prices in config only. Warehouse exports / status page remain follow-ups.
 
 **Effort.** L (multi-PR)
+
+---
+
+## Done vs planned notes
+
+Phases 9–11 landed on `development` via feature branches (never `main`).
+Phases 12–13 follow the same rule.
 
 ---
 
@@ -429,12 +443,13 @@ signed); plans, usage limits, metering dashboard; status page + SLA hooks.
 4. **Phase 4** — Ask Willy grounding, weekly report, anomalies  
 5. Then Phases 5–8 (growth) interleaved with 9–10 (enterprise) as sales
    requires — identity (9) before agency (11); governance (10) before public
-   API (13).
+   API (12); billing (13) last.
 
 ## Branch & PR policy (owner)
 
 - Never commit, push, or merge to `main`.
-- One focused PR per phase or feature; target `main`; owner merges.
+- One focused PR per phase or feature; target `development` (integration);
+  owner merges.
 - Name examples: `feature/roadmap-plan-and-foundations`,
   `feature/ai-visibility-tracker`, `feature/content-refresh-agent`, …
 - Stack only when a hard dependency exists; otherwise branch from `main`.
@@ -443,5 +458,10 @@ signed); plans, usage limits, metering dashboard; status page + SLA hooks.
 
 | Phase | Planned | Implemented |
 |-------|---------|-------------|
-| 0 Foundations | Yes | See PR for this branch |
-| 1–13 | Yes (this doc) | Separate PRs as built |
+| 0 Foundations | Yes | On `development` |
+| 1–8 Growth / agents | Yes | On `development` (see MIGRATION-ORDER) |
+| 9 Enterprise identity | Yes | `0040_enterprise_identity` |
+| 10 Compliance / residency | Yes | `0041_compliance_residency` |
+| 11 Agency tier | Yes | `0042_agency_tier` |
+| 12 Workflow + public API | Yes | In progress / `0043_workflow_public_api` |
+| 13 Commercial billing | Yes | Planned / `0044_commercial_billing` |

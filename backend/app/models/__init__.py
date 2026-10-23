@@ -55,6 +55,12 @@ from app.models.budget import CrossChannelBudgetProposal
 from app.models.competitor_ads import CompetitorAd
 from app.models.landing import AbExperiment, LandingPage
 from app.models.locations import Location
+from app.models.agency import (
+    Agency,
+    AgencyClientLink,
+    AgencyMembership,
+    WhiteLabelSettings,
+)
 from app.models.compliance import (
     AiGovernancePolicy,
     AuditExportJob,
@@ -163,6 +169,10 @@ __all__ = [
     "IpAllowlistEntry",
     "ScimToken",
     "SsoConnection",
+    "Agency",
+    "AgencyClientLink",
+    "AgencyMembership",
+    "WhiteLabelSettings",
     "AiGovernancePolicy",
     "AuditExportJob",
     "RetentionPolicy",
