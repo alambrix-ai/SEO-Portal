@@ -151,6 +151,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements-dev.txt
           pip install pip-audit==2.7.3 bandit==1.8.3 semgrep==1.110.0
+          # llama-index pulls setuptools 82+, which dropped pkg_resources;
+          # Semgrep 1.110 still imports it at startup.
+          pip install 'setuptools>=80.9.0,<82'
 
       - name: pip-audit
         working-directory: backend
