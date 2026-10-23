@@ -64,6 +64,7 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     "topic_clusters",
     "topic_cluster_pages",
     "content_briefs",
+    "willy_grounding_traces",
     "aeo_qa_pairs",
     "schema_patches",
     "referral_spam_events",
