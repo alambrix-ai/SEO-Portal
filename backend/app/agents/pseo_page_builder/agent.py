@@ -21,7 +21,7 @@ from app.connectors.base.connector import Capability
 from app.db.base import utcnow
 from app.models.approval import ApprovalItem, ApprovalType
 from app.models.pseo import PseoDataset, PseoPageJob, PseoTemplate
-from app.models.seo import PageStatus, SeoPage
+from app.models.seo import SeoPage
 from app.models.workspace import Organization
 from app.services.approvals import register_applier, register_rejecter
 from app.services.encryption import Ctx, OrgCipher
@@ -292,7 +292,7 @@ def _publish_job(
         cms_id=str(remote_id),
         cms_slug=getattr(cms, "slug", "") or "",
         body_encrypted=cipher.encrypt(body, context=Ctx.PAGE_BODY),
-        status=PageStatus.LIVE.value,
+        status="live",
         schema_types=[],
         missing_topics=[],
         target_keywords=[],

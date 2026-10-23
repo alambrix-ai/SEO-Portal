@@ -22,7 +22,16 @@ from sqlalchemy.orm import Session
 
 from app.core.money import money
 from app.models.ads import CHANNEL_LABELS, AdCreative, AudienceCluster, BudgetAllocation, FraudEvent
+from app.models.budget import CrossChannelBudgetProposal
+from app.models.competitor_ads import CompetitorAd
+from app.models.content_refresh import ContentRefreshCandidate
+from app.models.internal_link import InternalLinkSuggestion
+from app.models.landing import LandingPage
+from app.models.locations import Location
 from app.models.offpage import BacklinkTarget, CompetitorAlert, OutreachPitch
+from app.models.product_feed import ProductFeedFinding
+from app.models.pseo import PseoPageJob
+from app.models.repurpose import ContentRepurposeJob
 from app.models.seo import (
     PAGE_STATUS_LABELS,
     AeoQaPair,
@@ -31,6 +40,11 @@ from app.models.seo import (
     SeoIssue,
     SeoPage,
 )
+from app.models.seo_fix import SeoIssueFixProposal
+from app.models.social_mentions import SocialMention
+from app.models.topic_cluster import TopicCluster
+from app.models.video_script import VideoScriptJob
+from app.models.visibility import VisibilityObservation
 from app.services.encryption import Ctx, OrgCipher
 
 ROW_LIMIT = 25
@@ -792,6 +806,256 @@ def _reviews(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
     )
 
 
+def _status_table(
+    db: Session,
+    tenant_id: str,
+    *,
+    model: type,
+    title: str,
+    description: str,
+    empty: str,
+    label_attr: str,
+    order_attr: str = "created_at",
+    status_attr: str = "status",
+    link: str = "/agents",
+    link_label: str = "Open Agents",
+) -> Results:
+    """Newest-first status table for roadmap agents that write one row type."""
+    order_col = getattr(model, order_attr)
+    rows = db.execute(
+        select(model)
+        .where(model.tenant_id == tenant_id)
+        .order_by(order_col.desc())
+        .limit(ROW_LIMIT)
+    ).scalars()
+    return Results(
+        title=title,
+        description=description,
+        metrics=[("Recorded", str(_count(db, model, tenant_id)))],
+        columns=[
+            Column("item", "Item"),
+            Column("status", "Status", "status"),
+            Column("when", "When", "muted"),
+        ],
+        rows=[
+            Row(
+                cells={
+                    "item": str(getattr(row, label_attr, "") or "")[:160],
+                    "status": str(getattr(row, status_attr, "") or ""),
+                    "when": _when(getattr(row, order_attr, None)),
+                },
+                tones={"status": "neutral"},
+            )
+            for row in rows
+        ],
+        total=_count(db, model, tenant_id),
+        empty=empty,
+        link=link,
+        link_label=link_label,
+    )
+
+
+def _ai_visibility(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=VisibilityObservation,
+        title="Answer-engine observations",
+        description="Citations recorded when answer engines were asked your tracked questions.",
+        empty="No observations yet. They appear after the first visibility run.",
+        label_attr="engine",
+        order_attr="observed_at",
+        status_attr="engine",
+        link="/visibility",
+        link_label="Open AI Visibility",
+    )
+
+
+def _content_refresh(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=ContentRefreshCandidate,
+        title="Pages flagged for refresh",
+        description="Search Console pages with material click or ranking drops.",
+        empty="No refresh candidates yet.",
+        label_attr="url",
+        link="/approvals",
+        link_label="Open Approvals",
+    )
+
+
+def _technical_fix(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=SeoIssueFixProposal,
+        title="Technical fix proposals",
+        description="CMS or git fixes proposed for open audit findings.",
+        empty="No fix proposals yet.",
+        label_attr="fix_kind",
+        link="/approvals",
+        link_label="Open Approvals",
+    )
+
+
+def _internal_linking(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=InternalLinkSuggestion,
+        title="Internal link suggestions",
+        description="Proposed links from one synced page to a related page.",
+        empty="No link suggestions yet.",
+        label_attr="anchor",
+        link="/approvals",
+        link_label="Open Approvals",
+    )
+
+
+def _topic_clusters(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=TopicCluster,
+        title="Topic clusters",
+        description="Query and keyword clusters with coverage gaps.",
+        empty="No topic clusters yet.",
+        label_attr="name",
+        link="/topics",
+        link_label="Open Topics",
+    )
+
+
+def _pseo(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=PseoPageJob,
+        title="Programmatic page jobs",
+        description="Template renders proposed for CMS publish.",
+        empty="No programmatic pages proposed yet.",
+        label_attr="path",
+        link="/approvals",
+        link_label="Open Approvals",
+    )
+
+
+def _product_feed(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=ProductFeedFinding,
+        title="Product feed findings",
+        description="Merchant-ready gaps found on workspace products.",
+        empty="No product feed findings yet.",
+        label_attr="summary",
+        link="/approvals",
+        link_label="Open Approvals",
+    )
+
+
+def _content_repurpose(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=ContentRepurposeJob,
+        title="Repurpose packs",
+        description="Social, email and short-script packs drafted from approved articles.",
+        empty="No repurpose packs yet.",
+        label_attr="source_title",
+        link="/approvals",
+        link_label="Open Approvals",
+    )
+
+
+def _video_scripts(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=VideoScriptJob,
+        title="Video scripts",
+        description="Short-form scripts drafted for Creative Studio.",
+        empty="No video scripts yet.",
+        label_attr="title",
+        link="/approvals",
+        link_label="Open Approvals",
+    )
+
+
+def _cross_channel(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=CrossChannelBudgetProposal,
+        title="Cross-channel budget proposals",
+        description="Blended-ROAS reallocations awaiting approval.",
+        empty="No budget proposals yet.",
+        label_attr="rationale",
+        link="/approvals",
+        link_label="Open Approvals",
+    )
+
+
+def _landing_pages(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=LandingPage,
+        title="Landing pages",
+        description="Draft landing pages and experiment candidates.",
+        empty="No landing pages yet.",
+        label_attr="title",
+        link="/approvals",
+        link_label="Open Approvals",
+    )
+
+
+def _competitor_ads(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=CompetitorAd,
+        title="Competitor ads seen",
+        description="Public ad-library creatives captured for configured competitors.",
+        empty="No competitor ads recorded yet.",
+        label_attr="advertiser",
+        order_attr="last_seen_at",
+        status_attr="platform",
+        link="/agents",
+        link_label="Open Agents",
+    )
+
+
+def _locations(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=Location,
+        title="Locations tracked",
+        description="Active multi-location entities used for local rank checks.",
+        empty="No locations configured yet.",
+        label_attr="name",
+        link="/agents",
+        link_label="Open Agents",
+    )
+
+
+def _social_mentions(db: Session, tenant_id: str, cipher: OrgCipher) -> Results:
+    return _status_table(
+        db,
+        tenant_id,
+        model=SocialMention,
+        title="Social mentions",
+        description="Ingested mentions with sentiment and reply routing status.",
+        empty="No social mentions yet.",
+        label_attr="author",
+        order_attr="observed_at",
+        link="/approvals",
+        link_label="Open Approvals",
+    )
+
+
 BUILDERS: dict[str, Callable[[Session, str, OrgCipher], Results]] = {
     "on_page_seo_sync": _on_page,
     "technical_seo_auditor": _auditor,
@@ -807,6 +1071,20 @@ BUILDERS: dict[str, Callable[[Session, str, OrgCipher], Results]] = {
     "click_fraud_controller": _fraud,
     "local_search_tracker": _local_search,
     "review_responder": _reviews,
+    "ai_visibility_tracker": _ai_visibility,
+    "content_refresh": _content_refresh,
+    "technical_fix_applier": _technical_fix,
+    "internal_linking": _internal_linking,
+    "topic_cluster_planner": _topic_clusters,
+    "pseo_page_builder": _pseo,
+    "product_feed_optimizer": _product_feed,
+    "content_repurposer": _content_repurpose,
+    "creative_video_scripts": _video_scripts,
+    "cross_channel_budget": _cross_channel,
+    "landing_page_builder": _landing_pages,
+    "competitor_ad_watch": _competitor_ads,
+    "multi_location_local_seo": _locations,
+    "social_listening": _social_mentions,
 }
 
 

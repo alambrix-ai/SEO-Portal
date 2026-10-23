@@ -19,7 +19,7 @@ from app.db.base import utcnow
 from app.models.approval import ApprovalItem, ApprovalType
 from app.models.content import AssetKind, AssetStatus, MarketingAsset
 from app.models.repurpose import ContentRepurposeJob
-from app.models.seo import PageStatus, SeoPage
+from app.models.seo import SeoPage
 from app.models.workspace import Organization
 from app.services import assets, content_repurpose as repurpose
 from app.services.approvals import register_applier, register_rejecter
@@ -210,7 +210,7 @@ class ContentRepurposerAgent(BaseAgent):
                 select(SeoPage)
                 .where(
                     SeoPage.tenant_id == ctx.tenant_id,
-                    SeoPage.status == PageStatus.LIVE.value,
+                    SeoPage.status == "live",
                 )
                 .limit(10)
             ).scalars()

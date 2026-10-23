@@ -30,7 +30,7 @@ from app.connectors.base.connector import Capability
 from app.db.base import utcnow
 from app.models.approval import ApprovalItem, ApprovalStatus, ApprovalType
 from app.models.content_refresh import ContentRefreshCandidate
-from app.models.seo import PageStatus, SeoPage
+from app.models.seo import SeoPage
 from app.services import content_refresh as refresh_svc
 from app.services.encryption import Ctx
 
@@ -183,7 +183,7 @@ class ContentRefreshAgent(BaseAgent):
             page.rewrite_rationale_encrypted = ctx.cipher.encrypt(
                 rationale, context=Ctx.PAGE_RATIONALE
             )
-            page.status = PageStatus.QUEUED.value
+            page.status = "queued"
             candidate.rationale_encrypted = page.rewrite_rationale_encrypted
             candidate.status = "proposed"
 

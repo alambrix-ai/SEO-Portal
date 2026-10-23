@@ -590,6 +590,20 @@ def _finalize_turn(
     }
 
 
+
+def _grounding_bundle(db: Session, *, tenant_id: Any, question: str):
+    """Gather grounding facts when a session is available; never fail the turn."""
+    from app.services import willy_grounding
+
+    if db is None:
+        return willy_grounding.GroundingBundle()
+    try:
+        return willy_grounding.gather(db, tenant_id=str(tenant_id), question=question)
+    except Exception as exc:  # noqa: BLE001 — grounding is best-effort
+        log.warning("Willy grounding skipped (%s)", type(exc).__name__)
+        return willy_grounding.GroundingBundle()
+
+
 def chat(
     db: Session,
     *,
@@ -612,7 +626,7 @@ def chat(
     from app.llm import untrusted
     from app.services import willy_grounding
 
-    grounding = willy_grounding.gather(db, tenant_id=str(tenant_id), question=text)
+    grounding = _grounding_bundle(db, tenant_id=tenant_id, question=text)
     grounded_message = text
     block = grounding.as_untrusted_block()
     if block:
@@ -694,7 +708,7 @@ def chat_stream(
     from app.llm import untrusted
     from app.services import willy_grounding
 
-    grounding = willy_grounding.gather(db, tenant_id=str(tenant_id), question=text)
+    grounding = _grounding_bundle(db, tenant_id=tenant_id, question=text)
     grounded_message = text
     block = grounding.as_untrusted_block()
     if block:

@@ -404,6 +404,155 @@ GUIDES: dict[str, AgentGuide] = {
         ),
         uses_scope=False,
     ),
+    # ── Roadmap agents (Phase 1–6) ────────────────────────────────────────
+    "ai_visibility_tracker": AgentGuide(
+        summary=(
+            "Asks answer engines your target questions and records whether they cite "
+            "your brand or competitors."
+        ),
+        effect=(
+            "Stores encrypted observations per engine so you can see citation share "
+            "over time. It does not change your website."
+        ),
+        makes_changes=False,
+        uses_scope=False,
+    ),
+    "content_refresh": AgentGuide(
+        summary=(
+            "Finds pages losing clicks or rankings in Search Console and proposes "
+            "refreshed copy."
+        ),
+        effect=(
+            "Queues rewrite proposals through Approvals. Nothing is published until "
+            "you approve."
+        ),
+        uses_data_from="on_page_seo_sync",
+    ),
+    "technical_fix_applier": AgentGuide(
+        summary=(
+            "Turns open technical-audit findings into proposed CMS or git fixes."
+        ),
+        effect=(
+            "Proposes title, meta, canonical, H1 and broken-link fixes through "
+            "Approvals. Nothing is written until you approve."
+        ),
+        uses_data_from="technical_seo_auditor",
+    ),
+    "internal_linking": AgentGuide(
+        summary=(
+            "Finds related synced pages and proposes one internal link insertion "
+            "per source page."
+        ),
+        effect=(
+            "Link suggestions go through Approvals with safe href and density rules. "
+            "Nothing is inserted until you approve."
+        ),
+        uses_data_from="on_page_seo_sync",
+    ),
+    "topic_cluster_planner": AgentGuide(
+        summary=(
+            "Groups Search Console queries and page keywords into topic clusters "
+            "and spots coverage gaps."
+        ),
+        effect=(
+            "Proposes content briefs through Approvals for the article writer. "
+            "No pages are published until you approve."
+        ),
+        uses_data_from="on_page_seo_sync",
+    ),
+    "pseo_page_builder": AgentGuide(
+        summary=(
+            "Renders sandboxed templates against dataset rows and rejects thin "
+            "or duplicate pages."
+        ),
+        effect=(
+            "Proposes draft CMS publishes through Approvals. Traffic never goes "
+            "live without your say-so."
+        ),
+    ),
+    "product_feed_optimizer": AgentGuide(
+        summary=(
+            "Checks workspace products for Merchant-ready gaps and proposes "
+            "description, URL and Product JSON-LD fixes."
+        ),
+        effect="Proposals go through Approvals before any product fields change.",
+        uses_scope=False,
+    ),
+    "content_repurposer": AgentGuide(
+        summary=(
+            "Repurposes approved articles into social posts, email drafts and "
+            "short video scripts."
+        ),
+        effect=(
+            "Creates marketing-asset packs through Approvals. Nothing is posted "
+            "until you approve."
+        ),
+        uses_data_from="on_page_seo_sync",
+    ),
+    "creative_video_scripts": AgentGuide(
+        summary=(
+            "Drafts short-form video scripts and captions from product facts for "
+            "Creative Studio."
+        ),
+        effect=(
+            "Script proposals go through Approvals; thumbnail format targets are "
+            "recorded for later creative work."
+        ),
+        uses_scope=False,
+    ),
+    "cross_channel_budget": AgentGuide(
+        summary=(
+            "Allocates spend across Google, Meta, TikTok and LinkedIn by blended ROAS."
+        ),
+        effect=(
+            "Proposals only, with daily move caps. Budgets do not change until "
+            "you approve."
+        ),
+        uses_scope=False,
+    ),
+    "landing_page_builder": AgentGuide(
+        summary=(
+            "Drafts landing pages to the CMS and proposes A/B experiments."
+        ),
+        effect=(
+            "Traffic splitting never starts without HIGH approval. Drafts stay "
+            "in Approvals until you decide."
+        ),
+    ),
+    "competitor_ad_watch": AgentGuide(
+        summary=(
+            "Fetches public Meta Ad Library and Google Ads Transparency creatives "
+            "for configured competitors."
+        ),
+        effect=(
+            "Stores encrypted third-party ad copy for review. It does not change "
+            "your own ads."
+        ),
+        makes_changes=False,
+        uses_scope=False,
+    ),
+    "multi_location_local_seo": AgentGuide(
+        summary=(
+            "Tracks Maps rankings for every active location, scoped by brand "
+            "or region."
+        ),
+        effect=(
+            "Records local rank checks per location. It does not edit Maps "
+            "listings by itself."
+        ),
+        makes_changes=False,
+    ),
+    "social_listening": AgentGuide(
+        summary=(
+            "Ingests social mentions, scores sentiment, and routes negatives to "
+            "approval-gated reply drafts."
+        ),
+        effect=(
+            "Negative mentions become reply proposals through the same human gate "
+            "as review replies. Nothing is posted until you approve."
+        ),
+        uses_scope=False,
+    ),
 }
 
 

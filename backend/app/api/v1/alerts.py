@@ -100,22 +100,14 @@ def create_rule(
     body: AlertRuleIn, current: CurrentUserDep, db: DbSession, ip: ClientIp
 ) -> ActionResult:
     current.require_write(Module.SEO)
-    try:
-        data = alerts_svc.validate_rule_input(
-            name=body.name,
-            metric=body.metric,
-            threshold=body.threshold,
-            channel=body.channel,
-            webhook_url=body.webhook_url,
-        )
-    except ValueError as exc:
-        raise InvalidInputError(str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001 — netguard raises InvalidInputError too
-        from app.core.exceptions import AppError
-
-        if isinstance(exc, AppError):
-            raise
-        raise InvalidInputError(str(exc)) from exc
+    # validate_rule_input / netguard raise InvalidInputError with operator-facing copy.
+    data = alerts_svc.validate_rule_input(
+        name=body.name,
+        metric=body.metric,
+        threshold=body.threshold,
+        channel=body.channel,
+        webhook_url=body.webhook_url,
+    )
 
     rule = AlertRule(tenant_id=current.tenant_id, enabled="on", **data)
     db.add(rule)

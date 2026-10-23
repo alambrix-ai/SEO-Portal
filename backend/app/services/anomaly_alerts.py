@@ -109,17 +109,19 @@ def validate_rule_input(
     channel: str,
     webhook_url: str = "",
 ) -> dict[str, Any]:
+    from app.core.exceptions import InvalidInputError
+
     name = (name or "").strip()[:120]
     if len(name) < 2:
-        raise ValueError("Rule name is required")
+        raise InvalidInputError("Rule name is required")
     if metric not in ALLOWED_METRICS:
-        raise ValueError(f"Unsupported metric: {metric}")
+        raise InvalidInputError(f"Unsupported metric: {metric}")
     if channel not in ALLOWED_CHANNELS:
-        raise ValueError(f"Unsupported channel: {channel}")
+        raise InvalidInputError(f"Unsupported channel: {channel}")
     url = (webhook_url or "").strip()
     if channel == "webhook":
         if not url:
-            raise ValueError("Webhook channel requires a URL")
+            raise InvalidInputError("Webhook channel requires a URL")
         # Public HTTPS only — blocks private/link-local and non-http schemes.
         netguard.check_public_url(url)
     return {
