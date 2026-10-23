@@ -686,9 +686,9 @@ def _process_actions(
                     "impact": action.impact.value,
                     "awaiting_approval": True,
                     "run_id": run_id,
-                    "scope_brand": item.scope_brand or "",
-                    "scope_region": item.scope_region or "",
-                    "scope_channel": item.scope_channel or "",
+                    "scope_brand": getattr(item, "scope_brand", "") or "",
+                    "scope_region": getattr(item, "scope_region", "") or "",
+                    "scope_channel": getattr(item, "scope_channel", "") or "",
                     "scoped_approver_count": len(in_scope),
                 }
                 if notes:
