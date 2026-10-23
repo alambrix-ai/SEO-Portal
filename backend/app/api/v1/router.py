@@ -28,6 +28,7 @@ from app.api.v1 import (
     seo,
     site_analysis,
     social,
+    topics,
     verification,
     visibility,
     workspaces,
@@ -50,6 +51,7 @@ api_router.include_router(assistant.router)
 api_router.include_router(agents.router)
 api_router.include_router(seo.router)
 api_router.include_router(visibility.router)
+api_router.include_router(topics.router)
 api_router.include_router(site_analysis.router)
 api_router.include_router(history.router)
 api_router.include_router(offpage.router)

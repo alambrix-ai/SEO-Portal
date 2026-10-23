@@ -22,6 +22,7 @@ class ApprovalType(StrEnum):
     SCHEMA_PATCH = "Schema Patch"
 TECHNICAL_FIX = "Technical Fix"
     INTERNAL_LINK = "Internal Link"
+    CONTENT_BRIEF = "Content Brief"
     PR_PITCH = "PR Pitch"
     AD_CREATIVE = "Ad Creative"
     BUDGET_SHIFT = "Budget Shift"

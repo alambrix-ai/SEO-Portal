@@ -45,6 +45,7 @@ from app.models.seo import (
     SeoPage,
 )
 from app.models.seo_fix import SeoIssueFixProposal
+from app.models.topic_cluster import ContentBrief, TopicCluster, TopicClusterPage
 from app.models.visibility import (
     VisibilityObservation,
     VisibilityQuery,
@@ -97,6 +98,7 @@ __all__ = [
     "BudgetAllocation",
     "CodePurpose",
     "CompetitorAlert",
+    "ContentBrief",
     "ConnectorCategory",
     "ConnectorHealth",
     "ConnectorRecord",
@@ -125,6 +127,8 @@ __all__ = [
     "SeoIssueFixProposal",
     "SeoPage",
     "SocialPostMetric",
+    "TopicCluster",
+    "TopicClusterPage",
     "User",
     "VisibilityObservation",
     "VisibilityQuery",
