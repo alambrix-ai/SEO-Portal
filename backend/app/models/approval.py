@@ -20,6 +20,7 @@ class ApprovalType(StrEnum):
     CONTENT_REWRITE = "Content Rewrite"
     AEO_INJECTION = "AEO Injection"
     SCHEMA_PATCH = "Schema Patch"
+    INTERNAL_LINK = "Internal Link"
     PR_PITCH = "PR Pitch"
     AD_CREATIVE = "Ad Creative"
     BUDGET_SHIFT = "Budget Shift"
