@@ -149,3 +149,7 @@ class Ctx:
     WEBHOOK_SECRET = "outbound_webhook.secret"
     CMK_WRAP = "customer_managed_key.wrap"
     WHITE_LABEL = "white_label.settings"
+    SUBJECT_EXPORT = "subject_request.export"
+    AUDIT_EXPORT = "audit_export_job.body"
+    API_TOKEN_META = "api_token.meta"
+    BILLING_SECRET = "billing_account.secret"
