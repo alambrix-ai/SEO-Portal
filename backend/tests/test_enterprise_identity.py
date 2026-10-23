@@ -184,6 +184,39 @@ def test_ip_allowlist_fail_closed(ent_db):  # noqa: ANN001
     assert ip_allowlist.is_allowed(db, org, "198.51.100.1") is False
 
 
+def test_ip_allowlist_ipv6_cidr(ent_db):  # noqa: ANN001
+    db, org = ent_db
+    org.ip_allowlist_enabled = True
+    ip_allowlist.add_entry(
+        db, org, cidr="2001:db8::/32", label="v6", actor_email="a@example.com"
+    )
+    assert ip_allowlist.is_allowed(db, org, "2001:db8::1") is True
+    assert ip_allowlist.is_allowed(db, org, "2001:db9::1") is False
+
+
+def test_ip_allowlist_lockout_safety(ent_db):  # noqa: ANN001
+    db, org = ent_db
+    ip_allowlist.add_entry(
+        db, org, cidr="203.0.113.0/24", label="office", actor_email="a@example.com"
+    )
+    with pytest.raises(Exception, match="locked out|current IP"):
+        ip_allowlist.set_enabled(
+            db,
+            org,
+            enabled=True,
+            actor_email="a@example.com",
+            actor_ip="198.51.100.9",
+        )
+    ip_allowlist.set_enabled(
+        db,
+        org,
+        enabled=True,
+        actor_email="a@example.com",
+        actor_ip="203.0.113.50",
+    )
+    assert org.ip_allowlist_enabled is True
+
+
 def test_group_role_mapping() -> None:
     assert scim.map_group_to_role(["seo"]) == "seo"
     assert scim.map_group_to_role(["unknown"]) == "client"

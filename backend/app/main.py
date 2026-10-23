@@ -25,6 +25,7 @@ from app.api.middleware import (
     BodySizeLimitMiddleware,
     HostCheckMiddleware,
     HttpsRedirectMiddleware,
+    IpAllowlistMiddleware,
     RateLimitMiddleware,
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
@@ -221,6 +222,8 @@ def create_app() -> FastAPI:
     # The host check and redirect come first, so nothing else runs for a
     # request that is refused or sent elsewhere. A 429 or 413 still gets a
     # request id, the security headers and CORS.
+    # Innermost: tenant IP allowlist (needs bearer identity + DB).
+    app.add_middleware(IpAllowlistMiddleware)
     app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)

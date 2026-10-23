@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, get_current_user, get_db
+from app.api.deps import CurrentUser, client_ip as resolve_client_ip, get_current_user, get_db
 from app.core.exceptions import InvalidInputError, NotFoundError
 from app.core.rbac import Module
 from app.models.enterprise_identity import CustomRole, IpAllowlistEntry, SsoConnection
@@ -236,17 +236,23 @@ def add_ip(
 @router.post("/ip-allowlist/toggle")
 def toggle_ip(
     body: IpToggleIn,
+    request: Request,
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     current.require_write(Module.ADMIN)
     _step_up(current)
-    org = ip_allowlist.set_enabled(
-        db,
-        current.organization,
-        enabled=body.enabled,
-        actor_email=current.user.email,
-    )
+    actor_ip = resolve_client_ip(request) or None
+    try:
+        org = ip_allowlist.set_enabled(
+            db,
+            current.organization,
+            enabled=body.enabled,
+            actor_email=current.user.email,
+            actor_ip=actor_ip,
+        )
+    except InvalidInputError:
+        raise
     db.commit()
     return {"ip_allowlist_enabled": org.ip_allowlist_enabled}
 
