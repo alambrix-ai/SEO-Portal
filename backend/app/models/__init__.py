@@ -51,6 +51,7 @@ from app.models.reports import ReportArtifact, ScheduledReport
 from app.models.budget import CrossChannelBudgetProposal
 from app.models.competitor_ads import CompetitorAd
 from app.models.landing import AbExperiment, LandingPage
+from app.models.locations import Location
 from app.models.video_script import VideoScriptJob
 from app.models.willy import WillyGroundingTrace
 from app.models.workspace import (
@@ -131,6 +132,7 @@ __all__ = [
     "AbExperiment",
     "LandingPage",
     "CompetitorAd",
+    "Location",
     "RefreshToken",
     "ReferralSpamEvent",
     "ReportArtifact",

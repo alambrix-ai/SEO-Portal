@@ -14,18 +14,25 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import PK, Base, TenantScopedMixin, TimestampMixin, new_id
+from app.db.base import FK, PK, Base, TenantScopedMixin, TimestampMixin, new_id
 
 
 class LocalRankCheck(Base, TenantScopedMixin):
     __tablename__ = "local_rank_checks"
-    __table_args__ = (Index("ix_local_rank_tenant_checked", "tenant_id", "checked_at"),)
+    __table_args__ = (
+        Index("ix_local_rank_tenant_checked", "tenant_id", "checked_at"),
+        Index("ix_local_rank_tenant_location", "tenant_id", "location_id"),
+    )
 
     id: Mapped[str] = mapped_column(PK, primary_key=True, default=new_id)
+    #: Optional multi-location pointer (nullable for legacy single-site checks).
+    location_id: Mapped[str | None] = mapped_column(
+        FK, ForeignKey("locations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     run_id: Mapped[str] = mapped_column(String(36), default="", nullable=False)
     phrase: Mapped[str] = mapped_column(String(160), nullable=False)
