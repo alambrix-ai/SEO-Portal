@@ -138,6 +138,7 @@ def test_middleware_order_is_host_then_redirect_outermost(locked_down: None, mon
         BodySizeLimitMiddleware,
         HostCheckMiddleware,
         HttpsRedirectMiddleware,
+        IpAllowlistMiddleware,
         RateLimitMiddleware,
         RequestContextMiddleware,
         SecurityHeadersMiddleware,
@@ -148,7 +149,10 @@ def test_middleware_order_is_host_then_redirect_outermost(locked_down: None, mon
     assert order[1] is HttpsRedirectMiddleware
     assert order.index(SecurityHeadersMiddleware) < order.index(RateLimitMiddleware)
     assert order.index(RequestContextMiddleware) < order.index(RateLimitMiddleware)
-    assert order[-1] is BodySizeLimitMiddleware
+    assert order.index(BodySizeLimitMiddleware) < order.index(IpAllowlistMiddleware) or (
+        order[-1] is IpAllowlistMiddleware
+    )
+    assert order[-1] is IpAllowlistMiddleware
 
 
 # ── Error handlers ─────────────────────────────────────────────────────────
