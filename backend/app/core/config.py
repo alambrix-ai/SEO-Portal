@@ -382,6 +382,13 @@ class Settings(BaseSettings):
     default_plan_name: str = "Enterprise Plan"
     default_seats: int = 25
     default_plan_days: int = 30
+    #: Billing provider id. ``fake`` needs no keys; real providers stay off
+    #: until certified (see ``app.services.billing_provider.get_provider``).
+    billing_provider: str = "fake"
+    #: Plan catalogue + prices as JSON in BILLING_PLAN_CATALOG. Prices must
+    #: never be hard-coded in application logic — only read from this setting.
+    #: Shape: {slug: {name, price_monthly, currency, seats, features, metrics}}.
+    billing_plan_catalog: Annotated[dict, NoDecode] = Field(default_factory=dict)
 
     # ── Registration policy ────────────────────────────────────────────────
     allow_public_signup: bool = True
@@ -763,6 +770,30 @@ class Settings(BaseSettings):
                     "model patterns may use letters, digits, '.', '-', '_', "
                     "':', '/', '*', '?' and [ ] only, up to 128 characters"
                 )
+        return v
+
+    @field_validator("billing_plan_catalog", mode="before")
+    @classmethod
+    def _parse_billing_catalog(cls, v: object) -> object:
+        if isinstance(v, str):
+            if not v.strip():
+                return {}
+            try:
+                v = json.loads(v)
+            except ValueError:
+                raise ValueError("BILLING_PLAN_CATALOG must be valid JSON") from None
+        if not isinstance(v, dict):
+            raise ValueError("BILLING_PLAN_CATALOG must be a JSON object")
+        if len(v) > 50:
+            raise ValueError("BILLING_PLAN_CATALOG may hold at most 50 plans")
+        for slug, plan in v.items():
+            if not isinstance(slug, str) or not slug.strip() or len(slug) > 64:
+                raise ValueError("BILLING_PLAN_CATALOG keys must be plan slugs")
+            if not isinstance(plan, dict):
+                raise ValueError("BILLING_PLAN_CATALOG values must be objects")
+            price = plan.get("price_monthly", 0)
+            if not isinstance(price, (int, float)) or isinstance(price, bool) or price < 0:
+                raise ValueError("price_monthly must be a non-negative number")
         return v
 
     @field_validator("llm_price_table", mode="before")

@@ -427,9 +427,14 @@ webhooks via egress allowlist + timestamp/nonce replay window.
 
 Plans, seat and usage metering, entitlements; billing behind a provider
 abstraction with a test/fake provider (no real payment keys required);
-prices in config only. Warehouse exports / status page remain follow-ups.
+prices in config only (`BILLING_PLAN_CATALOG`). Warehouse exports / status
+page remain follow-ups pending Dishant’s provider choice.
+
+**Data.** `billing_accounts`, `usage_meters`, `plan_entitlements`.
 
 **Effort.** L (multi-PR)
+
+**Status.** Implemented on `feature/commercial-billing` (`0044_commercial_billing`).
 
 ---
 
@@ -469,4 +474,4 @@ Phases 12–13 follow the same rule.
 | 10 Compliance / residency | Yes | `0041_compliance_residency` |
 | 11 Agency tier | Yes | `0042_agency_tier` |
 | 12 Workflow + public API | Yes | `0043_workflow_public_api` |
-| 13 Commercial billing | Yes | Planned / `0044_commercial_billing` |
+| 13 Commercial billing | Yes | `0044_commercial_billing` |

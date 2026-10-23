@@ -9,6 +9,7 @@ from app.api.v1 import (
     agency,
     agents,
     alerts,
+    billing,
     approvals,
     assistant,
     auth,
@@ -74,6 +75,7 @@ api_router.include_router(admin.router)
     api_router.include_router(enterprise.router)
     api_router.include_router(agency.router)
     api_router.include_router(workflow.router)
+    api_router.include_router(billing.router)
     api_router.include_router(portal.router)
 api_router.include_router(verification.router)
 

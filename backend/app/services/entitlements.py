@@ -89,6 +89,30 @@ class FeaturePolicy:
     reason: str = ""
 
 
-def feature_policy(db: Any, org: Any, feature: str) -> FeaturePolicy:  # noqa: ANN401, ARG001
-    """The plan's limits on a feature such as ``"site_analysis"``. Unrestricted today."""
-    return FeaturePolicy()
+def feature_policy(db: Any, org: Any, feature: str) -> FeaturePolicy:  # noqa: ANN401
+    """The plan's limits on a feature such as ``"site_analysis"``.
+
+    Reads synced ``plan_entitlements`` (from the billing catalog in config).
+    When no billing row exists yet, remains unrestricted so existing workspaces
+    are not locked out mid-rollout.
+    """
+    if db is None or org is None:
+        return FeaturePolicy()
+    try:
+        from app.services import billing
+
+        spec = billing.resolved_feature(db, org, feature)
+    except Exception:
+        return FeaturePolicy()
+    if not spec:
+        return FeaturePolicy()
+    allowed = bool(spec.get("allowed", True))
+    max_per_day = spec.get("max_per_day")
+    max_history = spec.get("max_history")
+    reason = "" if allowed else "Not included in your plan."
+    return FeaturePolicy(
+        allowed=allowed,
+        max_per_day=int(max_per_day) if max_per_day is not None else None,
+        max_history=int(max_history) if max_history is not None else None,
+        reason=reason,
+    )
