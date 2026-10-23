@@ -24,6 +24,7 @@ FLEET_ORDER: tuple[str, ...] = (
     "technical_seo_auditor",
     "topic_cluster_planner",
     "pseo_page_builder",
+    "product_feed_optimizer",
     "aeo_qa_injector",
     "knowledge_graph_schema",
     "referral_spam_guard",

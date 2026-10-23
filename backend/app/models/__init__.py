@@ -44,6 +44,7 @@ from app.models.seo import (
 )
 from app.models.topic_cluster import ContentBrief, TopicCluster, TopicClusterPage
 from app.models.alerts import AlertEvent, AlertRule
+from app.models.product_feed import ProductFeedFinding
 from app.models.pseo import PseoDataset, PseoPageJob, PseoTemplate
 from app.models.reports import ReportArtifact, ScheduledReport
 from app.models.willy import WillyGroundingTrace
@@ -118,6 +119,7 @@ __all__ = [
     "PseoDataset",
     "PseoPageJob",
     "PseoTemplate",
+    "ProductFeedFinding",
     "RefreshToken",
     "ReferralSpamEvent",
     "ReportArtifact",
