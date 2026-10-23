@@ -468,5 +468,5 @@ Phases 12–13 follow the same rule.
 | 9 Enterprise identity | Yes | `0040_enterprise_identity` |
 | 10 Compliance / residency | Yes | `0041_compliance_residency` |
 | 11 Agency tier | Yes | `0042_agency_tier` |
-| 12 Workflow + public API | Yes | In progress / `0043_workflow_public_api` |
+| 12 Workflow + public API | Yes | `0043_workflow_public_api` |
 | 13 Commercial billing | Yes | Planned / `0044_commercial_billing` |
