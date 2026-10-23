@@ -312,7 +312,7 @@ def test_an_ordinary_app_role_passes(production_db: None) -> None:
     [
         ((True, False, True), "superuser"),
         ((False, True, False), "BYPASSRLS"),
-        ((False, False, True), "owns audit_log or users"),
+        ((False, False, True), "owns one or more RLS-protected tables"),
     ],
 )
 def test_a_privileged_role_is_refused_in_production(production_db: None, row: tuple, reason: str) -> None:
@@ -330,22 +330,29 @@ def test_an_uninspectable_role_is_refused(production_db: None) -> None:
         check_db_role(_RoleConn(None))  # type: ignore[arg-type]
 
 
-def test_the_escape_hatch_skips_the_check(production_db: None, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_escape_hatch_warns_but_allows(
+    production_db: None, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     from app.db.session import check_db_role
 
     monkeypatch.setattr(settings, "allow_privileged_db_role", True)
     conn = _RoleConn((True, True, True))
-    check_db_role(conn)  # type: ignore[arg-type]
-    assert conn.statements == []
+    with caplog.at_level("WARNING"):
+        check_db_role(conn)  # type: ignore[arg-type]
+    assert conn.statements  # still inspected
+    assert "ALLOW_PRIVILEGED_DB_ROLE" in caplog.text
 
 
-def test_the_check_is_skipped_outside_production(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("app_env", ["development", "test", "staging"])
+def test_a_privileged_role_is_refused_outside_production_without_opt_in(
+    monkeypatch: pytest.MonkeyPatch, app_env: str
+) -> None:
     from app.db.session import check_db_role
 
-    monkeypatch.setattr(settings, "app_env", "development")
-    conn = _RoleConn((True, True, True))
-    check_db_role(conn)  # type: ignore[arg-type]
-    assert conn.statements == []
+    monkeypatch.setattr(settings, "app_env", app_env)
+    monkeypatch.setattr(settings, "allow_privileged_db_role", False)
+    with pytest.raises(RuntimeError, match="superuser"):
+        check_db_role(_RoleConn((True, False, False)))  # type: ignore[arg-type]
 
 
 def test_check_connection_runs_the_role_check_first(production_db: None, monkeypatch: pytest.MonkeyPatch) -> None:

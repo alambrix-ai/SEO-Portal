@@ -87,6 +87,11 @@ SELECT format('CREATE ROLE automarket_app LOGIN PASSWORD %L', :'app_password')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'automarket_app')
 \gexec
 
+-- Harden attributes even when the roles already existed (idempotent re-run).
+-- CREATE ROLE defaults to NOSUPERUSER NOBYPASSRLS; ALTER covers older roles.
+ALTER ROLE automarket_owner NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+ALTER ROLE automarket_app NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+
 -- ── Database ────────────────────────────────────────────────────────────────
 -- CREATE DATABASE cannot run inside a transaction block or a DO block, so it
 -- is guarded with \gexec instead of an IF NOT EXISTS.

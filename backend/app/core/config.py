@@ -11,6 +11,7 @@ import ipaddress
 import json
 import logging
 import math
+import os
 import re
 from functools import lru_cache
 from typing import Annotated, Literal
@@ -199,10 +200,11 @@ class Settings(BaseSettings):
     # Postgres row-level security: every session pins its organisation id so a
     # missing WHERE clause cannot leak another tenant's rows.
     db_enforce_rls: bool = True
-    #: Production refuses to start when the runtime database role is a
-    #: superuser, has BYPASSRLS, or owns the audit_log/users tables: any of
-    #: those switches row-level security or the append-only audit log off.
-    #: True only for a throwaway environment that has no separate app role.
+    #: Refuse to start when the runtime database role is a superuser, has
+    #: BYPASSRLS, or owns any RLS-protected table: any of those switches
+    #: row-level security or the append-only audit log off. True only for a
+    #: throwaway environment that has no separate app role (dev/test opt-in;
+    #: never production).
     allow_privileged_db_role: bool = False
 
     # ── Site crawler ───────────────────────────────────────────────────────
@@ -489,7 +491,9 @@ class Settings(BaseSettings):
     #: Whether the container entrypoint runs `alembic upgrade head` on start.
     #: Turn off when a separate release job owns migrations.
     run_migrations: bool = True
-    #: DSN for migrations (a schema-owner role). Blank uses DATABASE_URL.
+    #: DSN for migrations (a schema-owner role). Blank uses DATABASE_URL
+    #: (with a loud warning from Alembic). ``DATABASE_ADMIN_URL`` is accepted
+    #: as an alias when ``MIGRATION_DATABASE_URL`` is unset.
     migration_database_url: str = ""
 
     # ── LLM transport knobs (optional) ─────────────────────────────────────
@@ -860,6 +864,19 @@ class Settings(BaseSettings):
         """File extensions and directory names are matched case-insensitively."""
         return [item.lower() for item in v]
 
+    @field_validator("migration_database_url", mode="before")
+    @classmethod
+    def _alias_database_admin_url(cls, v: object) -> object:
+        """``DATABASE_ADMIN_URL`` fills the migration DSN when it is blank.
+
+        Kept as a before-validator (not ``AliasChoices``) so constructor
+        kwargs still override the process environment — required by the
+        settings guardrail tests that build ``Settings(_env_file=None, …)``.
+        """
+        if isinstance(v, str) and v.strip():
+            return v
+        return os.environ.get("DATABASE_ADMIN_URL", "") or v or ""
+
     @field_validator("database_url", "migration_database_url")
     @classmethod
     def _require_postgres(cls, v: str) -> str:
@@ -1002,8 +1019,9 @@ class Settings(BaseSettings):
             )
         if self.allow_privileged_db_role:
             logger.warning(
-                "ALLOW_PRIVILEGED_DB_ROLE is true: the database role is not "
-                "checked for superuser, BYPASSRLS or table ownership"
+                "ALLOW_PRIVILEGED_DB_ROLE is true: a privileged database role "
+                "is permitted (superuser, BYPASSRLS, or table owner). Never "
+                "enable this for real customer data."
             )
         if self.self_hosted_llm_allow_plain_http:
             logger.warning(

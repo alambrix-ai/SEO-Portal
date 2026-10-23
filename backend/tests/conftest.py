@@ -4,8 +4,14 @@ Tests that need a database use the real PostgreSQL schema — SQLite would not
 exercise JSONB, row-level security, or the upsert the metrics service relies
 on, so testing against it would prove the wrong thing.
 
-Set ``TEST_DATABASE_URL`` to a throwaway database. Without it, the
-database-backed tests skip and the pure-logic tests still run.
+Set ``TEST_DATABASE_URL`` to a throwaway database as the *app* role
+(``automarket_app``). Set ``TEST_MIGRATION_DATABASE_URL`` (or
+``MIGRATION_DATABASE_URL``) to the schema-owner role for create_all /
+TRUNCATE. Without ``TEST_DATABASE_URL``, database-backed tests skip and the
+pure-logic tests still run.
+
+See ``scripts/ensure_test_roles.sql`` and the CI workflow for bootstrapping
+both roles so RLS is actually enforced under the suite.
 """
 from __future__ import annotations
 
@@ -38,8 +44,21 @@ os.environ.setdefault("LLM_PROVIDER", "anthropic")
 os.environ.setdefault("LLM_MODEL", "test-model-not-called")
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
+# Prefer the test-specific owner DSN; fall back to MIGRATION_DATABASE_URL only
+# for reading — do not write MIGRATION_DATABASE_URL back into the process env,
+# or Settings() constructions in unit tests inherit a non-production sslmode.
+TEST_MIGRATION_DATABASE_URL = (
+    os.environ.get("TEST_MIGRATION_DATABASE_URL")
+    or os.environ.get("MIGRATION_DATABASE_URL")
+    or ""
+)
 if TEST_DATABASE_URL:
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+# Schema setup uses the owner role (TRUNCATE / DISABLE TRIGGER). The app under
+# test must not. When only one URL is provided, allow the privileged path with
+# an explicit opt-in so local one-DSN runs still work — and shout about it.
+if TEST_DATABASE_URL and not TEST_MIGRATION_DATABASE_URL:
+    os.environ.setdefault("ALLOW_PRIVILEGED_DB_ROLE", "true")
 
 requires_db = pytest.mark.skipif(
     not TEST_DATABASE_URL,
@@ -57,12 +76,20 @@ def pytest_report_header() -> str:
     """
     if TEST_DATABASE_URL:
         target = TEST_DATABASE_URL.rsplit("/", 1)[-1]
-        return f"database tests: ON ({target})"
+        if TEST_MIGRATION_DATABASE_URL:
+            return (
+                f"database tests: ON ({target}, app role + owner setup)"
+            )
+        return (
+            f"database tests: ON ({target}, single DSN — "
+            "ALLOW_PRIVILEGED_DB_ROLE; RLS may be bypassed)"
+        )
     return (
         "database tests: SKIPPED — no TEST_DATABASE_URL. The API, scheduler, "
         "RLS and agent-pipeline tests will not run. Set it to a throwaway "
         "database whose name contains 'test' — for example "
-        "postgresql+psycopg://user:pass@127.0.0.1:5432/automarket_test"
+        "postgresql+psycopg://automarket_app:pass@127.0.0.1:5432/automarket_test "
+        "plus TEST_MIGRATION_DATABASE_URL for automarket_owner"
     )
 
 
@@ -192,20 +219,58 @@ def mailbox(monkeypatch):  # noqa: ANN001, ANN201
     return install(monkeypatch)
 
 
+def _engine_from_url(url: str, application_name: str):  # noqa: ANN201
+    from sqlalchemy import create_engine
+
+    from app.core.config import settings
+
+    connect_args: dict = {
+        "connect_timeout": 10,
+        "application_name": application_name,
+    }
+    if settings.postgres_sslrootcert:
+        connect_args["sslrootcert"] = settings.postgres_sslrootcert
+    if settings.effective_sslmode:
+        connect_args["sslmode"] = settings.effective_sslmode
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=5,
+        hide_parameters=True,
+        connect_args=connect_args,
+        future=True,
+    )
+
+
+@pytest.fixture(scope="session")
+def owner_engine():  # noqa: ANN201
+    """Schema-owner engine for create_all / TRUNCATE / audit-guard toggles."""
+    url = TEST_MIGRATION_DATABASE_URL or TEST_DATABASE_URL
+    if not url:
+        pytest.skip("no database URL")
+    eng = _engine_from_url(url, "automarket-test-owner")
+    yield eng
+    eng.dispose()
+
+
 @pytest.fixture(scope="session")
 def engine():  # noqa: ANN201
+    """Runtime app-role engine (what the API and workers use)."""
     from app.db.session import engine as app_engine
 
     return app_engine
 
 
 @pytest.fixture(scope="session")
-def schema(engine) -> Iterator[None]:  # noqa: ANN001
+def schema(owner_engine, engine) -> Iterator[None]:  # noqa: ANN001
     """Create the schema once for the session, and tear it down after.
 
-    The audit-log guard (append-only and no-TRUNCATE triggers) is installed
-    too, so tests run against the schema the migrations produce.
+    Tables are created as the owner role, then DML is granted to the app role
+    so SessionLocal exercises real RLS. The audit-log guard is installed too.
     """
+    from sqlalchemy import text
+
     from app.db import audit_guard
     from app.db.base import Base
     from app.db.rls import apply_policies
@@ -215,21 +280,52 @@ def schema(engine) -> Iterator[None]:  # noqa: ANN001
     # Checked against the *engine's* database name rather than the environment
     # variable that was meant to set it. Those two came apart once and took a
     # working workspace with them.
-    assert_disposable(engine)
+    assert_disposable(owner_engine)
 
-    with engine.begin() as conn:
+    with owner_engine.begin() as conn:
         Base.metadata.drop_all(bind=conn)
         Base.metadata.create_all(bind=conn)
         apply_policies(conn)
         audit_guard.install(conn)
+        # Re-apply DML grants after create_all when the app role exists
+        # (default privileges cover the owner role's future tables).
+        conn.execute(
+            text(
+                """
+                DO $$ BEGIN
+                  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'automarket_app') THEN
+                    GRANT USAGE ON SCHEMA public TO automarket_app;
+                    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES
+                      IN SCHEMA public TO automarket_app;
+                    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
+                      TO automarket_app;
+                    IF to_regclass('public.audit_log') IS NOT NULL THEN
+                      REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM automarket_app;
+                    END IF;
+                  END IF;
+                END $$
+                """
+            )
+        )
+    # Prove the runtime engine is not a superuser when dual roles are configured.
+    if TEST_MIGRATION_DATABASE_URL:
+        with engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT current_user, rolsuper, rolbypassrls "
+                    "FROM pg_roles WHERE rolname = current_user"
+                )
+            ).one()
+            assert row[0] == "automarket_app", row
+            assert row[1] is False and row[2] is False, row
     yield
-    with engine.begin() as conn:
+    with owner_engine.begin() as conn:
         Base.metadata.drop_all(bind=conn)
 
 
 @pytest.fixture
 def db(schema) -> Iterator:  # noqa: ANN001, ANN201
-    """A session per test, rolled back afterwards."""
+    """A session per test, rolled back afterwards (app role)."""
     from app.db.session import SessionLocal
 
     session = SessionLocal()
@@ -241,20 +337,24 @@ def db(schema) -> Iterator:  # noqa: ANN001, ANN201
 
 
 @pytest.fixture
-def clean_db(schema) -> Iterator:  # noqa: ANN001, ANN201
-    """A session that truncates every table first, for isolation.
+def clean_db(schema, owner_engine) -> Iterator:  # noqa: ANN001, ANN201
+    """An owner-role session that truncates every table first, for isolation.
 
-    The audit log refuses TRUNCATE. The test role owns the schema, so it
-    lifts that trigger for this one transaction only, the same controlled
-    path an owner-run purge would take; the trigger is back on at commit.
+    The audit log refuses TRUNCATE. The owner role lifts that trigger for this
+    one transaction only, the same controlled path an owner-run purge would
+    take; the trigger is back on at commit. Test code that needs to assert
+    RLS itself should open an app-role session (``db`` / ``SessionLocal``).
     """
     from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
 
     from app.db import audit_guard
     from app.db.base import Base
-    from app.db.session import SessionLocal
 
-    session = SessionLocal()
+    OwnerSession = sessionmaker(
+        bind=owner_engine, autoflush=False, expire_on_commit=False
+    )
+    session = OwnerSession()
     tables = ", ".join(t.name for t in reversed(Base.metadata.sorted_tables))
     guard = f"{audit_guard.TABLE} {{}} TRIGGER {audit_guard.TRUNCATE_TRIGGER}"
     session.execute(text(f"ALTER TABLE {guard.format('DISABLE')}"))

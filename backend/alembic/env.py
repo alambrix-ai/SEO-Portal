@@ -2,11 +2,13 @@
 
 The database URL comes from application settings rather than ``alembic.ini``,
 so migrations and the running service can never point at different databases.
-``MIGRATION_DATABASE_URL`` (the schema-owner role) wins when it is set; the
-service itself connects as the app role through ``DATABASE_URL``.
+``MIGRATION_DATABASE_URL`` / ``DATABASE_ADMIN_URL`` (the schema-owner role)
+wins when set; the service itself connects as the app role through
+``DATABASE_URL``.
 """
 from __future__ import annotations
 
+import logging
 from logging.config import fileConfig
 
 from alembic import context
@@ -18,10 +20,20 @@ from app.db.base import Base
 # Importing the model package registers every mapper for autogenerate.
 import app.models  # noqa: F401
 
+log = logging.getLogger("alembic.env")
+
 
 def migration_url() -> str:
     """The owner DSN when MIGRATION_DATABASE_URL is set, else the app's DSN."""
-    return settings.migration_database_url or settings.sqlalchemy_url
+    if settings.migration_database_url:
+        return settings.migration_database_url
+    log.warning(
+        "MIGRATION_DATABASE_URL (or DATABASE_ADMIN_URL) is unset; Alembic is "
+        "falling back to DATABASE_URL. Migrations should connect as the "
+        "schema-owner role (automarket_owner), not the runtime app role. "
+        "Set MIGRATION_DATABASE_URL in every non-local environment."
+    )
+    return settings.sqlalchemy_url
 
 
 config = context.config

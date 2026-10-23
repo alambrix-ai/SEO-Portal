@@ -207,7 +207,9 @@ def test_database_and_redis_are_published_on_loopback_only(services: dict[str, d
 
 def test_alembic_prefers_the_migration_url() -> None:
     source = ALEMBIC_ENV.read_text(encoding="utf-8")
-    assert "settings.migration_database_url or settings.sqlalchemy_url" in source
+    assert "settings.migration_database_url" in source
+    assert "settings.sqlalchemy_url" in source
+    assert "falling back to DATABASE_URL" in source
     assert 'set_main_option("sqlalchemy.url", migration_url()' in source
     assert "url=migration_url()" in source
     # The app's own URL is no longer handed to Alembic directly.

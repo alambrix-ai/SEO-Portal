@@ -110,9 +110,10 @@ The last query prints both roles. `bypasses_rls` must be `false` for both.
 | Setting | Default | Meaning |
 |---|---|---|
 | `DATABASE_URL` | (built from `POSTGRES_*`) | The `automarket_app` DSN. Every long-running service uses it. Production needs `sslmode` `require`, `verify-ca` or `verify-full` (`prefer` is refused). Without `?sslmode=` in the URL, `POSTGRES_SSLMODE` is used. |
-| `MIGRATION_DATABASE_URL` | blank (uses `DATABASE_URL`) | The `automarket_owner` DSN. Give it **only** to the migration job. Compose blanks it for every other container. In production it must carry its own `?sslmode=require` (or `verify-ca` / `verify-full`). |
-| `ALLOW_PRIVILEGED_DB_ROLE` | `false` | At startup in production the API checks the role in `DATABASE_URL` and refuses to start if it is a superuser, has `BYPASSRLS`, or owns (directly or through role membership) `audit_log` or `users`: each of those switches row-level security or the append-only audit log off. Set `true` only for a throwaway environment with no separate app role (the Render test blueprint). |
+| `MIGRATION_DATABASE_URL` | blank (falls back to `DATABASE_URL` with a warning) | The `automarket_owner` DSN. Give it **only** to the migration job. Compose blanks it for every other container. Alias: `DATABASE_ADMIN_URL`. In production it must carry its own `?sslmode=require` (or `verify-ca` / `verify-full`). |
+| `ALLOW_PRIVILEGED_DB_ROLE` | `false` | At startup the API **and** each Celery worker child check the role in `DATABASE_URL` and refuse to start if it is a superuser, has `BYPASSRLS`, or owns (directly or through role membership) any RLS-protected table. Fail closed in every `APP_ENV`; set `true` only for a throwaway local/test environment with no separate app role (loud warning). Never for real customer data. |
 | `RUN_MIGRATIONS` | `true` | Whether the image's entrypoint runs `alembic upgrade head` on start. Compose sets `false` for `api`, workers and `beat`, because `migrate` owns migrations. Set `false` anywhere a separate release job migrates. |
+| `AUTOMARKET_OWNER_PASSWORD` / `AUTOMARKET_APP_PASSWORD` | (unset) | Only needed when migration `0049_app_role_grants` must *create* missing roles. Prefer `scripts/bootstrap.sql` for first-time create. Never commit real values. |
 
 ### 2.3 Secrets
 
@@ -366,9 +367,11 @@ text-only and Facebook/Instagram metrics stay empty.
   purge run by the owner role, which disables the trigger inside one
   transaction, deletes, and re-enables it. No such tool ships yet: plan,
   review and record any purge as a change.
-- **Runtime database role.** Production refuses to start when the API's
-  role is a superuser, has `BYPASSRLS` or owns `audit_log`/`users`
-  (`ALLOW_PRIVILEGED_DB_ROLE` overrides it, test environments only).
+- **Runtime database role.** The API and Celery workers refuse to start when
+  the role is a superuser, has `BYPASSRLS`, or owns any RLS-protected table
+  (`ALLOW_PRIVILEGED_DB_ROLE` overrides it with a loud warning — local/test
+  only). See [NON-SUPERUSER-DB-ROLE.md](./security/NON-SUPERUSER-DB-ROLE.md)
+  for the production rollout runbook.
 - **Errors in logs.** Unhandled errors are logged as the exception type, a
   redacted and length-capped message, a hash and the request id, with no
   traceback. The database engine hides bound parameters from its errors.
