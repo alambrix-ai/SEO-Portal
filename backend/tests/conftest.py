@@ -44,6 +44,9 @@ os.environ.setdefault("LLM_PROVIDER", "anthropic")
 os.environ.setdefault("LLM_MODEL", "test-model-not-called")
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
+# Prefer the test-specific owner DSN; fall back to MIGRATION_DATABASE_URL only
+# for reading — do not write MIGRATION_DATABASE_URL back into the process env,
+# or Settings() constructions in unit tests inherit a non-production sslmode.
 TEST_MIGRATION_DATABASE_URL = (
     os.environ.get("TEST_MIGRATION_DATABASE_URL")
     or os.environ.get("MIGRATION_DATABASE_URL")
@@ -51,8 +54,6 @@ TEST_MIGRATION_DATABASE_URL = (
 )
 if TEST_DATABASE_URL:
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
-if TEST_MIGRATION_DATABASE_URL:
-    os.environ["MIGRATION_DATABASE_URL"] = TEST_MIGRATION_DATABASE_URL
 # Schema setup uses the owner role (TRUNCATE / DISABLE TRIGGER). The app under
 # test must not. When only one URL is provided, allow the privileged path with
 # an explicit opt-in so local one-DSN runs still work — and shout about it.

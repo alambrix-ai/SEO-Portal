@@ -11,12 +11,13 @@ import ipaddress
 import json
 import logging
 import math
+import os
 import re
 from functools import lru_cache
 from typing import Annotated, Literal
 from urllib.parse import parse_qs, quote_plus, urlsplit
 
-from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
+from pydantic import Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -492,13 +493,8 @@ class Settings(BaseSettings):
     run_migrations: bool = True
     #: DSN for migrations (a schema-owner role). Blank uses DATABASE_URL
     #: (with a loud warning from Alembic). ``DATABASE_ADMIN_URL`` is accepted
-    #: as an alias for the same setting.
-    migration_database_url: str = Field(
-        default="",
-        validation_alias=AliasChoices(
-            "MIGRATION_DATABASE_URL", "DATABASE_ADMIN_URL", "migration_database_url"
-        ),
-    )
+    #: as an alias when ``MIGRATION_DATABASE_URL`` is unset.
+    migration_database_url: str = ""
 
     # ── LLM transport knobs (optional) ─────────────────────────────────────
     # Which model an agent writes with comes from the connector the operator
@@ -867,6 +863,19 @@ class Settings(BaseSettings):
     def _lowercase(cls, v: list[str]) -> list[str]:
         """File extensions and directory names are matched case-insensitively."""
         return [item.lower() for item in v]
+
+    @field_validator("migration_database_url", mode="before")
+    @classmethod
+    def _alias_database_admin_url(cls, v: object) -> object:
+        """``DATABASE_ADMIN_URL`` fills the migration DSN when it is blank.
+
+        Kept as a before-validator (not ``AliasChoices``) so constructor
+        kwargs still override the process environment — required by the
+        settings guardrail tests that build ``Settings(_env_file=None, …)``.
+        """
+        if isinstance(v, str) and v.strip():
+            return v
+        return os.environ.get("DATABASE_ADMIN_URL", "") or v or ""
 
     @field_validator("database_url", "migration_database_url")
     @classmethod

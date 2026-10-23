@@ -20,6 +20,9 @@ def _production(**overrides: Any) -> Settings:
         "blind_index_key": "YmxpbmQtaW5kZXgta2V5LWZvci10ZXN0cy1vbmx5LTM=",
         "postgres_sslmode": "require",
         "database_url": "",
+        # Ignore a dual-role suite's MIGRATION_DATABASE_URL in the process env
+        # unless the test opts in with its own override.
+        "migration_database_url": "",
         "trusted_hosts": ["api.synaprank.ai"],
         "force_https": True,
         "rate_limit_enabled": True,
@@ -37,7 +40,12 @@ def _production(**overrides: Any) -> Settings:
 
 
 def _dev(**overrides: Any) -> Settings:
-    return Settings(_env_file=None, app_env="development", **overrides)
+    values: dict[str, Any] = {
+        "app_env": "development",
+        "migration_database_url": "",
+    }
+    values.update(overrides)
+    return Settings(_env_file=None, **values)
 
 
 # ── Happy path ─────────────────────────────────────────────────────────────

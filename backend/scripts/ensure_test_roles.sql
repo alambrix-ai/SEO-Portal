@@ -53,28 +53,23 @@ SELECT format('ALTER DATABASE %I OWNER TO automarket_owner', current_database())
 
 SELECT format('GRANT CONNECT ON DATABASE %I TO automarket_app', current_database())
 \gexec
-ALTER SCHEMA public OWNER TO automarket_owner;
+
+-- Fresh public schema owned by the migrator so leftover superuser-owned
+-- functions from earlier runs cannot block create_all.
+DROP SCHEMA IF EXISTS public CASCADE;
+CREATE SCHEMA public AUTHORIZATION automarket_owner;
 GRANT USAGE ON SCHEMA public TO automarket_app;
 GRANT CREATE ON SCHEMA public TO automarket_owner;
 REVOKE CREATE ON SCHEMA public FROM automarket_app;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 
--- DML for whatever tables already exist; create_all / migrations add more,
--- and the suite's schema fixture re-grants after create_all.
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO automarket_app;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO automarket_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE automarket_owner IN SCHEMA public
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO automarket_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE automarket_owner IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO automarket_app;
 
-DO $$
-BEGIN
-    IF to_regclass('public.audit_log') IS NOT NULL THEN
-        REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM automarket_app;
-    END IF;
-END
-$$;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS citext;
 
 SELECT
     r.rolname,

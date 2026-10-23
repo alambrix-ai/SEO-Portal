@@ -77,19 +77,14 @@ def main() -> int:
                     sql.Identifier(dbname)
                 )
             )
-            cur.execute("ALTER SCHEMA public OWNER TO automarket_owner")
+            # Wipe public so leftover tables/functions owned by a superuser
+            # from earlier runs cannot block automarket_owner's create_all.
+            cur.execute("DROP SCHEMA IF EXISTS public CASCADE")
+            cur.execute("CREATE SCHEMA public AUTHORIZATION automarket_owner")
             cur.execute("GRANT USAGE ON SCHEMA public TO automarket_app")
             cur.execute("GRANT CREATE ON SCHEMA public TO automarket_owner")
             cur.execute("REVOKE CREATE ON SCHEMA public FROM automarket_app")
             cur.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
-            cur.execute(
-                "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES "
-                "IN SCHEMA public TO automarket_app"
-            )
-            cur.execute(
-                "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public "
-                "TO automarket_app"
-            )
             cur.execute(
                 "ALTER DEFAULT PRIVILEGES FOR ROLE automarket_owner "
                 "IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE "
@@ -100,16 +95,9 @@ def main() -> int:
                 "IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES "
                 "TO automarket_app"
             )
-            cur.execute(
-                """
-                DO $$ BEGIN
-                  IF to_regclass('public.audit_log') IS NOT NULL THEN
-                    REVOKE UPDATE, DELETE, TRUNCATE ON audit_log
-                      FROM automarket_app;
-                  END IF;
-                END $$
-                """
-            )
+            # Extensions live outside public; recreate the ones bootstrap uses.
+            cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+            cur.execute("CREATE EXTENSION IF NOT EXISTS citext")
             cur.execute(
                 """
                 SELECT rolname, rolsuper, rolbypassrls
