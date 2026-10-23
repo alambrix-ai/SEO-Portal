@@ -150,6 +150,13 @@ def build_session(db: DbSession, user: User, org: Organization) -> SessionOut:
 
 
 def _auth_response(db: DbSession, result: AuthResult) -> AuthResponse:
+    if result.mfa_token and result.tokens is None:
+        return AuthResponse(
+            mfa_required=True,
+            mfa_token=result.mfa_token,
+            mfa_methods=list(result.mfa_methods),
+        )
+    assert result.tokens is not None
     return AuthResponse(
         tokens=TokenResponse(
             access_token=result.tokens.access_token,

@@ -11,6 +11,7 @@
  * than the workspace.
  */
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { ApiError, api } from '@/api/client'
 import type { RegistrationPolicy } from '@/api/types'
@@ -57,6 +58,13 @@ export function AccountPage() {
         title="Account"
         description="Your profile and sign-in sessions."
       />
+      <Blueprint>
+        <SectionHeading title="Multi-factor authentication" />
+        <p className="muted">Protect your account with an authenticator app or passkey.</p>
+        <Link className="btn btn-secondary" to="/account/mfa">
+          Set up authenticator
+        </Link>
+      </Blueprint>
 
       <Blueprint className="card elev-sm">
         <div className="card-kicker">{session.organization.name}</div>

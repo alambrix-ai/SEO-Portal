@@ -109,6 +109,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clear])
 
   const adopt = useCallback((response: AuthResponse) => {
+    if (!response.tokens || !response.session) {
+      throw new Error('Session incomplete')
+    }
     tokenStore.set(response.tokens)
     // A new sign-in or workspace: nothing cached for the previous one may show.
     invalidateResourceCache()
@@ -121,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await api.switchWorkspace(organizationId)
       invalidateResourceCache()
       adopt(response)
-      return response.session
+      return response.session!
     },
     [adopt],
   )
@@ -131,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await api.createWorkspace(payload)
       invalidateResourceCache()
       adopt(response)
-      return response.session
+      return response.session!
     },
     [adopt],
   )
@@ -141,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await api.deleteWorkspace(organizationId)
       invalidateResourceCache()
       adopt(response)
-      return response.session
+      return response.session!
     },
     [adopt],
   )
@@ -149,8 +152,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(
     async (email: string, code: string) => {
       const response = await api.login(email, code)
+      if (response.mfa_required && response.mfa_token) {
+        const err = new Error('MFA_REQUIRED') as Error & {
+          mfa_token: string
+          mfa_methods: string[]
+        }
+        err.mfa_token = response.mfa_token
+        err.mfa_methods = response.mfa_methods ?? []
+        throw err
+      }
       adopt(response)
-      return response.session
+      return response.session!
     },
     [adopt],
   )
@@ -159,7 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (payload: Parameters<AuthState['signUp']>[0]) => {
       const response = await api.register(payload)
       adopt(response)
-      return response.session
+      return response.session!
     },
     [adopt],
   )

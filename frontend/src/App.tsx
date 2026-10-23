@@ -32,6 +32,8 @@ import { ContentPage } from '@/pages/ContentPage'
 import { CreativeStudioPage } from '@/pages/CreativeStudioPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { LoginPage } from '@/pages/LoginPage'
+import { MfaChallengePage } from '@/pages/MfaChallengePage'
+import { MfaSetupPage } from '@/pages/MfaSetupPage'
 import { OffPagePage } from '@/pages/OffPagePage'
 import { OnboardingPage } from '@/pages/OnboardingPage'
 import { PortalAdminPage } from '@/pages/PortalAdminPage'
@@ -115,6 +117,7 @@ export function App() {
           </PublicOnly>
         }
       />
+      <Route path="/login/mfa" element={<MfaChallengePage />} />
       <Route
         path="/register"
         element={
@@ -282,6 +285,7 @@ export function App() {
         />
         <Route path="/portal" element={<PortalAdminPage />} />
         <Route path="/account" element={<AccountPage />} />
+        <Route path="/account/mfa" element={<MfaSetupPage />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

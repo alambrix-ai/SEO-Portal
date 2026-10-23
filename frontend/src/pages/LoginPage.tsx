@@ -128,6 +128,14 @@ export function LoginPage() {
           : '/dashboard'
       navigate(target, { replace: true })
     } catch (caught) {
+      const mfa = caught as Error & { mfa_token?: string; mfa_methods?: string[] }
+      if (mfa?.message === 'MFA_REQUIRED' && mfa.mfa_token) {
+        navigate('/login/mfa', {
+          replace: true,
+          state: { mfa_token: mfa.mfa_token, methods: mfa.mfa_methods ?? [] },
+        })
+        return
+      }
       setError(message(caught, 'Could not sign you in'))
     } finally {
       setBusy(false)
