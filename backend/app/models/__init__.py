@@ -35,6 +35,7 @@ from app.models.offpage import BacklinkStatus, BacklinkTarget, CompetitorAlert, 
 from app.models.portal import FeatureKind, PlatformOAuthApp, PortalFeatureFlag
 from app.models.social import MetricPoint, SocialPostMetric
 from app.models.verification import ConnectorVerification, PlatformSetting
+from app.models.internal_link import InternalLinkSuggestion
 from app.models.seo import (
     AeoQaPair,
     PageStatus,
@@ -101,6 +102,7 @@ __all__ = [
     "ConnectorRecord",
     "DailyMetric",
     "FraudEvent",
+    "InternalLinkSuggestion",
     "Invitation",
     "LoginCode",
     "MetricPoint",
