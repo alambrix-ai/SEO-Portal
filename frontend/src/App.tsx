@@ -40,6 +40,7 @@ import { ReportsPage } from '@/pages/ReportsPage'
 import { SeoPage } from '@/pages/SeoPage'
 import { SiteAnalysisPage } from '@/pages/SiteAnalysisPage'
 import { TechnicalSeoPage } from '@/pages/TechnicalSeoPage'
+import { VisibilityPage } from '@/pages/VisibilityPage'
 
 /** Paths reachable while the workspace still has unfinished onboarding. */
 const ONBOARDING_OPEN_PATHS = new Set([
@@ -212,6 +213,14 @@ export function App() {
           element={
             <RequireModule module="seo">
               <SeoPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/visibility"
+          element={
+            <RequireModule module="seo">
+              <VisibilityPage />
             </RequireModule>
           }
         />

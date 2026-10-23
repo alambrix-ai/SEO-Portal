@@ -98,6 +98,22 @@ class CitationHit:
     position: int = 0
 
 
+@dataclass(slots=True)
+class VisibilityProbe:
+    """One answer-engine response, with every source URL it exposed.
+
+    Used by the AI visibility tracker. Unlike :class:`CitationHit`, this keeps
+    the full ordered source list so competitor domains can be attributed —
+    not only whether the customer was cited.
+    """
+
+    engine: str
+    query: str
+    sources: list[str]
+    #: Optional short answer text from the engine; treat as untrusted.
+    answer_excerpt: str = ""
+
+
 # ── Interfaces ─────────────────────────────────────────────────────────────
 class CmsConnector(BaseConnector):
     """A content system the platform can crawl and write back to."""

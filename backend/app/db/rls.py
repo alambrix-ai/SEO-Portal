@@ -91,6 +91,10 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     # Metrics and versions (0021_metrics_usage_versions)
     "metric_points",
     "social_post_metrics",
+    # AI visibility tracker (0024_ai_visibility)
+    "visibility_queries",
+    "visibility_settings",
+    "visibility_observations",
 )
 
 # Tables that carry a tenant_id column but are deliberately NOT under RLS,

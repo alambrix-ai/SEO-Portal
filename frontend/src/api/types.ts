@@ -769,6 +769,58 @@ export interface SeoWorkspace {
   read_only: boolean
 }
 
+// ── AI visibility ──────────────────────────────────────────────────────────
+export interface VisibilityQueryOut {
+  id: string
+  question: string
+  label: string
+  active: boolean
+  tags: string[]
+  created_at: string
+}
+
+export interface VisibilityObservationOut {
+  id: string
+  query_id: string | null
+  question: string
+  engine: string
+  brand_cited: boolean
+  brand_position: number | null
+  cited_domains: string[]
+  competitors_cited: string[]
+  answer_excerpt: string
+  observed_at: string
+}
+
+export interface VisibilityEngineShare {
+  engine: string
+  probes: number
+  brand_citations: number
+  share: number
+}
+
+export interface VisibilityCompetitorShare {
+  domain: string
+  sightings: number
+}
+
+export interface VisibilitySummaryOut {
+  probes: number
+  brand_citations: number
+  brand_share: number
+  by_engine: VisibilityEngineShare[]
+  top_competitors: VisibilityCompetitorShare[]
+  read_only: boolean
+}
+
+export interface VisibilityWorkspace {
+  queries: VisibilityQueryOut[]
+  competitors: string[]
+  recent: VisibilityObservationOut[]
+  summary: VisibilitySummaryOut
+  read_only: boolean
+}
+
 // ── Off-page ───────────────────────────────────────────────────────────────
 export interface BacklinkOut {
   id: string
