@@ -101,6 +101,31 @@ def _ensure_test_llm(client, token: str) -> str:  # noqa: ANN001
     return "openai"
 
 
+def _add_seat(db, organization, *, email: str, name: str, role: str):  # noqa: ANN001, ANN201
+    """Create a User + AuthIdentity + WorkspaceMembership under the org pin.
+
+    Sign-in resolves seats through ``workspace_memberships``; an identity
+    alone is no longer enough for a code to be mailed.
+    """
+    from app.core.crypto import email_index
+    from app.models.workspace import User
+    from app.services import auth as auth_service
+
+    index = email_index(email)
+    user = User(
+        tenant_id=organization.id,
+        name=name,
+        email=email,
+        email_index=index,
+        role=role,
+        email_verified=True,
+    )
+    db.add(user)
+    db.flush()
+    auth_service.register_identity(db, user)
+    return user
+
+
 def configure(client, token: str, slug: str = "on_page_seo_sync", **overrides):  # noqa: ANN001, ANN201
     """Configure an agent — the precondition for starting or running one.
 
@@ -565,11 +590,9 @@ def test_role_restrictions_are_enforced_by_the_api(client, clean_db):  # noqa: A
     """A view-only role must be refused at the API, not just in the UI."""
     from sqlalchemy import select
 
-    from app.core.crypto import email_index
     from app.core.rbac import Role
     from app.db.session import bind_tenant
-    from app.models.identity import AuthIdentity
-    from app.models.workspace import Organization, User
+    from app.models.workspace import Organization
 
     owner = register(client)
     org_id = owner["session"]["organization"]["id"]
@@ -578,23 +601,12 @@ def test_role_restrictions_are_enforced_by_the_api(client, clean_db):  # noqa: A
     organization = clean_db.execute(
         select(Organization).where(Organization.id == org_id)
     ).scalar_one()
-    viewer_index = email_index("viewer@northgate.example")
-    viewer_user = User(
-        tenant_id=organization.id,
-        name="Client Viewer",
+    _add_seat(
+        clean_db,
+        organization,
         email="viewer@northgate.example",
-        email_index=viewer_index,
+        name="Client Viewer",
         role=Role.CLIENT.value,
-        email_verified=True,
-    )
-    clean_db.add(viewer_user)
-    clean_db.flush()
-    clean_db.add(
-        AuthIdentity(
-            email_index=viewer_index,
-            user_id=viewer_user.id,
-            tenant_id=organization.id,
-        )
     )
     clean_db.commit()
 
@@ -1150,11 +1162,9 @@ def test_the_notification_panel_respects_the_access_map(client, clean_db):  # no
     """
     from sqlalchemy import select
 
-    from app.core.crypto import email_index
     from app.core.rbac import Role
     from app.db.session import bind_tenant
-    from app.models.identity import AuthIdentity
-    from app.models.workspace import Organization, User
+    from app.models.workspace import Organization
 
     owner = register(client)
     admin_token = owner["tokens"]["access_token"]
@@ -1171,19 +1181,12 @@ def test_the_notification_panel_respects_the_access_map(client, clean_db):  # no
     organization = clean_db.execute(
         select(Organization).where(Organization.id == org_id)
     ).scalar_one()
-    index = email_index("viewer@northgate.example")
-    viewer = User(
-        tenant_id=organization.id,
-        name="Client Viewer",
+    _add_seat(
+        clean_db,
+        organization,
         email="viewer@northgate.example",
-        email_index=index,
+        name="Client Viewer",
         role=Role.CLIENT.value,
-        email_verified=True,
-    )
-    clean_db.add(viewer)
-    clean_db.flush()
-    clean_db.add(
-        AuthIdentity(email_index=index, user_id=viewer.id, tenant_id=organization.id)
     )
     clean_db.commit()
 
@@ -1251,20 +1254,13 @@ def test_configuring_an_agent_gives_it_a_summary_to_show(client, clean_db):  # n
     """Configuring is one of the two things that reveals the detail block."""
     token = register(client)["tokens"]["access_token"]
 
-    saved = client.put(
-        "/api/v1/agents/on_page_seo_sync/config",
-        json={
-            "schedule": "Every 6 hours",
-            "scope": "/inventory/*",
-            # None: nothing is connected here, and a channel that cannot
-            # deliver is refused now rather than warned about. The summary is
-            # what this test is about.
-            "notify_channel": "None",
-            "max_actions_per_day": 20,
-        },
-        headers=auth(token),
+    saved = configure(
+        client,
+        token,
+        "on_page_seo_sync",
+        schedule="Every 6 hours",
+        scope="/inventory/*",
     )
-    assert saved.status_code == 200, saved.text
 
     agent = next(
         a
@@ -1273,6 +1269,7 @@ def test_configuring_an_agent_gives_it_a_summary_to_show(client, clean_db):  # n
     )
     assert agent["configured"] is True
     assert "Every 6 hours" in agent["config_summary"]
+    assert saved["configured"] is True
 
 
 def test_an_unconfigured_agent_cannot_be_started(client, clean_db):  # noqa: ANN001
@@ -1418,11 +1415,9 @@ def test_the_indicator_ignores_activity_the_viewer_cannot_see(client, clean_db):
     """
     from sqlalchemy import select
 
-    from app.core.crypto import email_index
     from app.core.rbac import Role
     from app.db.session import bind_tenant
-    from app.models.identity import AuthIdentity
-    from app.models.workspace import Organization, User
+    from app.models.workspace import Organization
     from app.services import audit as audit_service
 
     owner = register(client)
@@ -1432,18 +1427,13 @@ def test_the_indicator_ignores_activity_the_viewer_cannot_see(client, clean_db):
     organization = clean_db.execute(
         select(Organization).where(Organization.id == org_id)
     ).scalar_one()
-    index = email_index("viewer@northgate.example")
-    viewer = User(
-        tenant_id=organization.id,
-        name="Client Viewer",
+    _add_seat(
+        clean_db,
+        organization,
         email="viewer@northgate.example",
-        email_index=index,
+        name="Client Viewer",
         role=Role.CLIENT.value,
-        email_verified=True,
     )
-    clean_db.add(viewer)
-    clean_db.flush()
-    clean_db.add(AuthIdentity(email_index=index, user_id=viewer.id, tenant_id=organization.id))
     audit_service.record_agent_action(
         clean_db,
         tenant_id=organization.id,
@@ -1611,11 +1601,9 @@ def test_the_dashboard_hides_connectors_from_a_role_that_cannot_see_them(client,
     """The panel must not be a way around the access map."""
     from sqlalchemy import select
 
-    from app.core.crypto import email_index
     from app.core.rbac import Role
     from app.db.session import bind_tenant
-    from app.models.identity import AuthIdentity
-    from app.models.workspace import Organization, User
+    from app.models.workspace import Organization
 
     owner = register(client)
     admin_token = owner["tokens"]["access_token"]
@@ -1631,18 +1619,13 @@ def test_the_dashboard_hides_connectors_from_a_role_that_cannot_see_them(client,
     organization = clean_db.execute(
         select(Organization).where(Organization.id == org_id)
     ).scalar_one()
-    index = email_index("outsider@northgate.example")
-    member = User(
-        tenant_id=organization.id,
-        name="No Connectors",
+    _add_seat(
+        clean_db,
+        organization,
         email="outsider@northgate.example",
-        email_index=index,
+        name="No Connectors",
         role=Role.CLIENT.value,
-        email_verified=True,
     )
-    clean_db.add(member)
-    clean_db.flush()
-    clean_db.add(AuthIdentity(email_index=index, user_id=member.id, tenant_id=organization.id))
     clean_db.commit()
 
     token = sign_in(client, "outsider@northgate.example").json()["tokens"]["access_token"]
@@ -1711,11 +1694,9 @@ def test_removing_a_configuration_keeps_the_run_history(client, clean_db):  # no
 def test_a_view_only_role_cannot_remove_a_configuration(client, clean_db):  # noqa: ANN001
     from sqlalchemy import select
 
-    from app.core.crypto import email_index
     from app.core.rbac import Role
     from app.db.session import bind_tenant
-    from app.models.identity import AuthIdentity
-    from app.models.workspace import Organization, User
+    from app.models.workspace import Organization
 
     owner = register(client)
     admin_token = owner["tokens"]["access_token"]
@@ -1726,18 +1707,13 @@ def test_a_view_only_role_cannot_remove_a_configuration(client, clean_db):  # no
     organization = clean_db.execute(
         select(Organization).where(Organization.id == org_id)
     ).scalar_one()
-    index = email_index("viewer@northgate.example")
-    viewer = User(
-        tenant_id=organization.id,
-        name="Client Viewer",
+    _add_seat(
+        clean_db,
+        organization,
         email="viewer@northgate.example",
-        email_index=index,
+        name="Client Viewer",
         role=Role.CLIENT.value,
-        email_verified=True,
     )
-    clean_db.add(viewer)
-    clean_db.flush()
-    clean_db.add(AuthIdentity(email_index=index, user_id=viewer.id, tenant_id=organization.id))
     clean_db.commit()
 
     token = sign_in(client, "viewer@northgate.example").json()["tokens"]["access_token"]
@@ -2068,18 +2044,13 @@ def test_a_workable_channel_produces_no_warning(client, clean_db):  # noqa: ANN0
         headers=auth(token),
     )
 
-    response = client.put(
-        "/api/v1/agents/on_page_seo_sync/config",
-        json={
-            "schedule": "Every 6 hours",
-            "scope": "",
-            "notify_channel": "Slack",
-            "max_actions_per_day": 20,
-        },
-        headers=auth(token),
+    response = configure(
+        client,
+        token,
+        "on_page_seo_sync",
+        notify_channel="Slack",
     )
-    assert response.status_code == 200, response.text
-    assert response.json()["warnings"] == []
+    assert response["warnings"] == []
 
 
 def test_the_scheduler_keeps_connector_health_current(client, clean_db):  # noqa: ANN001
@@ -2678,7 +2649,8 @@ def test_the_navigation_counts_what_is_waiting_not_what_exists(client, clean_db)
     client.post("/api/v1/agents/on_page_seo_sync/resume", headers=auth(token))
 
     counts = client.get("/api/v1/auth/me", headers=auth(token)).json()["nav_counts"]
-    assert counts["/connectors"] == 1
+    # fake_cms plus the AI model configure() attaches for requires_llm agents
+    assert counts["/connectors"] == 2
     assert counts["/agents"] == 1
 
 

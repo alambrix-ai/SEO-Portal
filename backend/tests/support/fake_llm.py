@@ -43,6 +43,10 @@ class FakeLLMProvider(LLMProvider):
         self.report_usage = report_usage
         self.model = model
         self.calls: list[dict] = []
+        # Match real HTTP providers so connector verify / choice tests that
+        # briefly see this double do not AttributeError on cleanup.
+        self.temperature: float | None = None
+        self.default_max_tokens: int | None = None
 
     def complete(
         self,
@@ -72,6 +76,9 @@ class FakeLLMProvider(LLMProvider):
             else UnreportedUsage()
         )
         return LLMResponse(text=text, usage=usage, model=self.model, stop_reason="end_turn")
+
+    def close(self) -> None:
+        """No-op — real providers close an HTTP client here."""
 
 
 # ── Prompt field extraction ────────────────────────────────────────────────

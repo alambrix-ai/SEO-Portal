@@ -84,10 +84,13 @@ def test_a_page_awaiting_a_rewrite_is_still_offered_to_the_other_agents(
     from app.orchestration.runner import build_context
     from tests.test_api_flows import register
 
+    from tests.test_seo_pipeline import _connect_llm
+
     body = register(client)
     org_id = body["session"]["organization"]["id"]
     bind_tenant(clean_db, org_id)
     org = clean_db.get(Organization, org_id)
+    _connect_llm(clean_db, org)
 
     clean_db.add(
         SeoPage(
@@ -112,6 +115,8 @@ def test_a_page_awaiting_a_rewrite_is_still_offered_to_the_other_agents(
                 AgentRecord.tenant_id == org_id, AgentRecord.slug == slug
             )
         ).scalar_one()
+        record.llm_connector = "openai"
+        clean_db.flush()
         ctx = build_context(clean_db, record, org, trigger="test")
         selected = getattr(get_agent(slug), method)(ctx)
         assert [p.url for p in selected] == ["/pricing"], (slug, selected)

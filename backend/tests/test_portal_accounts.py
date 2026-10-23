@@ -72,6 +72,9 @@ def test_the_same_email_is_one_account_with_two_workspaces(clean_db, org, second
             sso_provider="google",
         )
     )
+    # Flush under this pin before switching — a deferred multi-tenant flush
+    # would insert every pending user under the last GUC and trip RLS.
+    clean_db.flush()
     bind_tenant(clean_db, second_org.id)
     clean_db.add(
         User(
@@ -126,6 +129,7 @@ def test_overview_counts_unique_people_not_only_seats(clean_db, org, second_org,
             role=Role.MANAGER.value,
         )
     )
+    clean_db.flush()
     bind_tenant(clean_db, second_org.id)
     clean_db.add(
         User(
@@ -140,6 +144,9 @@ def test_overview_counts_unique_people_not_only_seats(clean_db, org, second_org,
 
     monkeypatch.setattr(settings, "portal_admin_emails", ["ops@platform.example"])
 
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
     async def _noop_lifespan(_app):  # noqa: ANN001, ANN202
         yield
 

@@ -362,8 +362,8 @@ def test_expired_codes_tokens_and_demo_requests_are_pruned_and_live_ones_kept(cl
     user = clean_db.execute(select(User).where(User.tenant_id == org.id)).scalars().first()
     clean_db.add_all(
         [
-            LoginCode(email_index="e" * 64, purpose="sign_in", code_hash="1" * 64, expires_at=now - timedelta(days=30)),
-            LoginCode(email_index="e" * 64, purpose="sign_in", code_hash="2" * 64, expires_at=now + timedelta(minutes=5)),
+            LoginCode(email_index="e" * 44, purpose="sign_in", code_hash="1" * 64, expires_at=now - timedelta(days=30)),
+            LoginCode(email_index="e" * 44, purpose="sign_in", code_hash="2" * 64, expires_at=now + timedelta(minutes=5)),
             RefreshToken(tenant_id=org.id, user_id=user.id, token_hash="3" * 64, family_id=org.id, expires_at=now - timedelta(days=60)),
             RefreshToken(tenant_id=org.id, user_id=user.id, token_hash="4" * 64, family_id=org.id, expires_at=now + timedelta(days=5)),
         ]

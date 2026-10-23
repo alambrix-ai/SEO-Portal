@@ -535,7 +535,13 @@ def test_request_changes_against_the_database(clean_db, org, second_org, test_re
         approvals.request_changes(clean_db, org=org, actor=actor, item_id=item.id, feedback=FEEDBACK)
     clean_db.rollback()
 
+    item_id = item.id
     bind_tenant(clean_db, second_org.id)
+    # Drop the identity-mapped row so RLS hiding it does not surface as
+    # ObjectDeletedError when the id is read or the lock query runs.
+    clean_db.expunge(item)
     with pytest.raises(NotFoundError):
-        approvals.request_changes(clean_db, org=second_org, actor=actor, item_id=item.id, feedback=FEEDBACK)
+        approvals.request_changes(
+            clean_db, org=second_org, actor=actor, item_id=item_id, feedback=FEEDBACK
+        )
     clean_db.rollback()

@@ -1585,6 +1585,10 @@ def list_workspace_cards(
         )
     # Current workspace first, then alphabetical.
     cards.sort(key=lambda c: (not c.is_current, c.name.lower()))
+    # The loop above leaves the session pinned to whichever seat was visited
+    # last. Callers keep writing under the current workspace, so put that pin
+    # back before returning.
+    bind_tenant(db, current_tenant_id)
     return cards
 
 
@@ -1735,6 +1739,9 @@ def delete_workspace(
         email_index_value=actor.email_index,
         current_tenant_id=actor.tenant_id,
     )
+    # Card listing re-pins to the actor's current seat; the soft-delete and
+    # its audit row must run under the workspace being removed.
+    bind_tenant(db, organization_id)
     if len(live_cards) <= 1:
         raise ConflictError("You need at least one workspace. Create another before deleting this one.")
 

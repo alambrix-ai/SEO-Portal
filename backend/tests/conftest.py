@@ -83,6 +83,20 @@ def fake_llm():  # noqa: ANN201
 
 
 
+# Modules that assert on the real provider_from_connector path (missing model,
+# vendor verify, temperature plumbing). The autouse double must not mask them.
+# Pytest reports these as bare module names (not package-qualified).
+_REAL_CONNECTOR_LLM_MODULES = frozenset(
+    {
+        "test_llm_new_providers",
+        "test_verify_steps_crm_ai",
+        "test_required_fields_audit",
+        "test_model_choice",
+        "test_review_egress",
+    }
+)
+
+
 @pytest.fixture(autouse=True)
 def fake_connector_llm_provider(monkeypatch, request):  # noqa: ANN001, ANN201
     """DB tests: agent LLM choice resolves to FakeLLMProvider, not a live vendor.
@@ -91,6 +105,9 @@ def fake_connector_llm_provider(monkeypatch, request):  # noqa: ANN001, ANN201
     row is real; the provider must not call out with the fixture key.
     """
     if "TEST_DATABASE_URL" not in os.environ:
+        yield
+        return
+    if request.module.__name__.rsplit(".", 1)[-1] in _REAL_CONNECTOR_LLM_MODULES:
         yield
         return
     from app.llm import from_connector
