@@ -4,6 +4,7 @@
 import { useState } from 'react'
 
 import { api } from '@/api/client'
+import type { CustomRoleOut, EnterpriseSsoOut, IpAllowlistOut } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { useToasts } from '@/components/Toasts'
 import {
@@ -17,6 +18,7 @@ import {
   Tag,
 } from '@/components/ui'
 import { useResource } from '@/hooks/useResource'
+import { asList } from '@/lib/safeData'
 
 export function EnterprisePage() {
   const { canWrite, session } = useAuth()
@@ -40,6 +42,11 @@ export function EnterprisePage() {
   if ((sso.loading && !sso.data) || (roles.loading && !roles.data) || (ip.loading && !ip.data)) {
     return <Loading label="Loading enterprise settings…" />
   }
+
+  if (sso.forbidden || roles.forbidden || ip.forbidden) {
+    return <ErrorState message="You do not have permission to view enterprise settings." />
+  }
+
   const firstError = sso.error || roles.error || ip.error
   if (firstError && !sso.data && !roles.data && !ip.data) {
     return (
@@ -53,6 +60,11 @@ export function EnterprisePage() {
       />
     )
   }
+
+  const connections = asList<EnterpriseSsoOut>(sso.data?.connections)
+  const customRoles = asList<CustomRoleOut>(roles.data?.roles)
+  const ipData = ip.data as IpAllowlistOut | null
+  const entries = asList<IpAllowlistOut['entries'][number]>(ipData?.entries)
 
   const addIp = async () => {
     if (!writable) return push('View-only access for your role', 'warning')
@@ -140,16 +152,22 @@ export function EnterprisePage() {
         description="SSO connections, SCIM provisioning tokens, custom roles, IP allowlists and scoped approvals."
       />
 
+      {firstError && (sso.data || roles.data || ip.data) ? (
+        <div className="banner banner-warning" role="status" style={{ marginBottom: 16 }}>
+          {firstError}
+        </div>
+      ) : null}
+
       <SectionHeading title="SSO connections" spaced={false} />
       <Blueprint className="card elev-sm">
-        {(sso.data?.connections.length ?? 0) === 0 ? (
+        {connections.length === 0 ? (
           <EmptyState
             title="No SSO connections"
-            description="Add an IdP connection via the API or ask support to wire your organisation's SAML/OIDC provider."
+            description="Add an IdP connection via the API or ask support to wire your organisation's SAML/OIDC provider. SSO login stays off until SSO_LOGIN_ENABLED is set on the API."
           />
         ) : (
           <ul className="stack-sm">
-            {sso.data!.connections.map((row) => (
+            {connections.map((row) => (
               <li key={row.id} className="list-row">
                 <div className="list-row-main">
                   <div className="list-row-title">{row.name}</div>
@@ -170,11 +188,11 @@ export function EnterprisePage() {
       <div className="split-1-1">
         <Blueprint className="card elev-sm">
           <SectionHeading title="Custom roles" />
-          {(roles.data?.roles.length ?? 0) === 0 ? (
+          {customRoles.length === 0 ? (
             <EmptyState title="No custom roles" description="Built-in roles still apply." />
           ) : (
             <ul className="stack-sm">
-              {roles.data!.roles.map((role) => (
+              {customRoles.map((role) => (
                 <li key={role.id} className="list-row">
                   <div className="list-row-main">
                     <div className="list-row-title">{role.name}</div>
@@ -205,25 +223,25 @@ export function EnterprisePage() {
         <Blueprint className="card elev-sm">
           <SectionHeading
             title="IP allowlist"
-            description={ip.data?.enabled ? 'Only listed CIDRs can reach the console.' : 'Allowlist is off.'}
+            description={ipData?.enabled ? 'Only listed CIDRs can reach the console.' : 'Allowlist is off.'}
             action={
               writable ? (
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
                   disabled={busy}
-                  onClick={() => void toggleIp(!ip.data?.enabled)}
+                  onClick={() => void toggleIp(!ipData?.enabled)}
                 >
-                  {ip.data?.enabled ? 'Disable' : 'Enable'}
+                  {ipData?.enabled ? 'Disable' : 'Enable'}
                 </button>
               ) : null
             }
           />
-          {(ip.data?.entries.length ?? 0) === 0 ? (
+          {entries.length === 0 ? (
             <EmptyState title="No entries" description="Add a CIDR before enabling the allowlist." />
           ) : (
             <ul className="stack-sm">
-              {ip.data!.entries.map((entry) => (
+              {entries.map((entry) => (
                 <li key={entry.id} className="list-row">
                   <div className="list-row-main">
                     <div className="list-row-title mono-sub">{entry.cidr}</div>

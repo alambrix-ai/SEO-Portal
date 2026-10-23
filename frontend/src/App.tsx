@@ -136,6 +136,12 @@ export function App() {
       />
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
       <Route path="/status" element={<StatusPage />} />
+      {/* Short aliases used in docs / older links → admin paths in the shell. */}
+      <Route path="/billing" element={<Navigate to="/admin/billing" replace />} />
+      <Route path="/developer" element={<Navigate to="/admin/developer" replace />} />
+      <Route path="/agency" element={<Navigate to="/admin/agency" replace />} />
+      <Route path="/warehouse" element={<Navigate to="/admin/warehouse" replace />} />
+      <Route path="/enterprise" element={<Navigate to="/admin/enterprise" replace />} />
 
       {/* ── Authenticated console ──────────────────────────────────────── */}
       <Route

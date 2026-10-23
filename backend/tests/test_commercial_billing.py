@@ -74,7 +74,9 @@ def test_default_provider_is_fake() -> None:
 
 
 def test_unknown_provider_refused() -> None:
-    with pytest.raises(ValueError, match="not enabled"):
+    from app.core.exceptions import FeatureNotConfiguredError
+
+    with pytest.raises(FeatureNotConfiguredError, match="not configured"):
         get_provider("stripe")
 
 

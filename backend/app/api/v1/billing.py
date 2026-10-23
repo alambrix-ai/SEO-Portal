@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_current_user, get_db
-from app.core.exceptions import InvalidInputError
+from app.core.config import settings
+from app.core.exceptions import FeatureNotConfiguredError, InvalidInputError
 from app.core.rbac import Module
 from app.models.billing import BillingAccount, PlanEntitlement, UsageMeter
 from app.services import billing as billing_svc
@@ -37,7 +38,17 @@ def get_catalog(
 ) -> dict:
     current.require_view(Module.ADMIN)
     # Prices come from config; never invent them here.
-    return {"plans": plan_catalog(), "provider": "see settings.billing_provider"}
+    # Always an array of `{slug, ...}` — a bare slug→meta map crashes the
+    # console (``plans.map is not a function`` → blank screen).
+    catalog = plan_catalog()
+    plans = [
+        {"slug": slug, **(meta if isinstance(meta, dict) else {"name": slug})}
+        for slug, meta in catalog.items()
+    ]
+    return {
+        "plans": plans,
+        "provider": (settings.billing_provider or "fake").strip().lower() or "fake",
+    }
 
 
 @router.get("/account")
@@ -81,6 +92,8 @@ def ensure_account(
             actor_email=current.user.email,
         )
         db.commit()
+    except FeatureNotConfiguredError:
+        raise
     except ValueError as exc:
         raise InvalidInputError("That request could not be completed.") from exc
     return {
@@ -108,6 +121,8 @@ def change_plan(
             actor_email=current.user.email,
         )
         db.commit()
+    except FeatureNotConfiguredError:
+        raise
     except ValueError as exc:
         raise InvalidInputError("That request could not be completed.") from exc
     return {
@@ -134,6 +149,8 @@ def record_usage(
             actor_email=current.user.email,
         )
         db.commit()
+    except FeatureNotConfiguredError:
+        raise
     except ValueError as exc:
         raise InvalidInputError("That request could not be completed.") from exc
     return {"metric": row.metric, "quantity": row.quantity, "period_start": row.period_start}

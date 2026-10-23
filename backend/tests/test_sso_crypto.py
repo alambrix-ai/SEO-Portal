@@ -105,8 +105,10 @@ def _saml_assertion(
 
 
 def test_fail_closed_when_sso_disabled(rsa_material, monkeypatch):  # noqa: ANN001
+    from app.core.exceptions import FeatureNotConfiguredError
+
     monkeypatch.setattr(enterprise_sso.settings, "sso_login_enabled", False)
-    with pytest.raises(ValueError, match="disabled"):
+    with pytest.raises(FeatureNotConfiguredError, match="not configured"):
         enterprise_sso.verify_oidc_id_token(
             id_token="a.b.c",
             expected_issuer=ISSUER,
@@ -146,7 +148,9 @@ def test_cannot_enable_connection_when_sso_disabled(rsa_material, monkeypatch): 
         )
         db.add(org)
         db.flush()
-        with pytest.raises(ValueError, match="disabled"):
+        from app.core.exceptions import FeatureNotConfiguredError
+
+        with pytest.raises(FeatureNotConfiguredError, match="not configured"):
             enterprise_sso.upsert_connection(
                 db,
                 org,

@@ -4,6 +4,7 @@
 import { useState } from 'react'
 
 import { api } from '@/api/client'
+import type { WarehouseExportOut } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { useToasts } from '@/components/Toasts'
 import {
@@ -18,12 +19,13 @@ import {
   statusTone,
 } from '@/components/ui'
 import { useResource } from '@/hooks/useResource'
+import { asList } from '@/lib/safeData'
 
 export function WarehousePage() {
   const { canWrite } = useAuth()
   const { push, fromError } = useToasts()
   const writable = canWrite('admin')
-  const { data, loading, error, reload } = useResource(
+  const { data, loading, error, forbidden, reload } = useResource(
     (signal) => api.warehouseExports(signal),
     [],
     'warehouse-exports',
@@ -35,8 +37,12 @@ export function WarehousePage() {
   const [busy, setBusy] = useState(false)
 
   if (loading && !data) return <Loading label="Loading warehouse exports…" />
+  if (forbidden) {
+    return <ErrorState message="You do not have permission to view warehouse exports." />
+  }
   if (error && !data) return <ErrorState message={error} onRetry={reload} />
-  if (!data) return null
+
+  const jobs = asList<WarehouseExportOut>(data?.jobs)
 
   const enqueue = async () => {
     if (!writable) return push('View-only access for your role', 'warning')
@@ -65,14 +71,20 @@ export function WarehousePage() {
         description="Push metrics datasets to an egress-allowlisted destination. Sensitive jobs may require a fresh MFA step-up."
       />
 
+      {error && data ? (
+        <div className="banner banner-warning" role="status" style={{ marginBottom: 16 }}>
+          {error}
+        </div>
+      ) : null}
+
       <div className="split-1-1">
         <Blueprint className="card elev-sm">
           <SectionHeading title="Recent jobs" />
-          {data.jobs.length === 0 ? (
+          {jobs.length === 0 ? (
             <EmptyState title="No exports yet" description="Enqueue a job to see status and row counts here." />
           ) : (
             <ul className="stack-sm">
-              {data.jobs.map((job) => (
+              {jobs.map((job) => (
                 <li key={job.id} className="list-row">
                   <div className="list-row-main">
                     <div className="list-row-title">
@@ -83,7 +95,7 @@ export function WarehousePage() {
                       {job.error_code ? ` · ${job.error_code}` : ''}
                     </div>
                   </div>
-                  <Tag tone={statusTone(job.status)}>{job.status}</Tag>
+                  <Tag tone={statusTone(String(job.status ?? ''))}>{job.status ?? '—'}</Tag>
                 </li>
               ))}
             </ul>

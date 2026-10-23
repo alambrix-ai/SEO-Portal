@@ -18,6 +18,7 @@ import {
   statusTone,
 } from '@/components/ui'
 import { useResource } from '@/hooks/useResource'
+import { asBillingPlans, asList } from '@/lib/safeData'
 
 export function BillingPage() {
   const { canWrite } = useAuth()
@@ -35,13 +36,44 @@ export function BillingPage() {
     (account.loading && !account.data) ||
     (usage.loading && !usage.data)
   if (loading) return <Loading label="Loading billing…" />
-  const err = catalog.error || account.error || usage.error
-  if (err && !catalog.data && !account.data) {
-    return <ErrorState message={err} onRetry={() => void catalog.reload()} />
+
+  const forbidden = catalog.forbidden || account.forbidden || usage.forbidden
+  if (forbidden) {
+    return (
+      <ErrorState message="View-only access for your role, or billing is not available for this account." />
+    )
   }
 
-  const row = account.data?.account
-  const plans = catalog.data?.plans ?? []
+  // Catalog does not need DB tables; account/usage do. Show a clear error when
+  // every call failed (e.g. feature not configured) instead of rendering junk.
+  const hardFail =
+    (catalog.error && !catalog.data) ||
+    ((account.error || usage.error) && !account.data && !catalog.data)
+  if (hardFail) {
+    return (
+      <ErrorState
+        message={catalog.error || account.error || usage.error || 'Billing is unavailable.'}
+        onRetry={() => {
+          void catalog.reload()
+          void account.reload()
+          void usage.reload()
+          void entitlements.reload()
+        }}
+      />
+    )
+  }
+
+  const row = account.data?.account ?? null
+  const plans = asBillingPlans(catalog.data?.plans)
+  const meters = asList<{ metric?: string; quantity?: number }>(usage.data?.meters)
+  const entitlementPayload = entitlements.data?.entitlements
+  const entitlementsEmpty =
+    entitlementPayload == null ||
+    (Array.isArray(entitlementPayload)
+      ? entitlementPayload.length === 0
+      : typeof entitlementPayload === 'object'
+        ? Object.keys(entitlementPayload).length === 0
+        : true)
 
   const ensure = async (planSlug: string) => {
     if (!writable) return push('View-only access for your role', 'warning')
@@ -51,6 +83,7 @@ export function BillingPage() {
       else await api.ensureBillingAccount({ plan_slug: planSlug })
       push('Billing updated', 'success')
       await account.reload()
+      await entitlements.reload()
     } catch (caught) {
       fromError(caught)
     } finally {
@@ -65,9 +98,15 @@ export function BillingPage() {
         description="Plan, seats and usage meters for this workspace. Prices come from the billing provider."
       />
 
+      {(account.error || usage.error || catalog.error) && (account.data || catalog.data) ? (
+        <div className="banner banner-warning" role="status" style={{ marginBottom: 16 }}>
+          {account.error || usage.error || catalog.error}
+        </div>
+      ) : null}
+
       <div className="grid-tiles">
         <StatTile kicker="Plan" value={row?.plan_slug ?? 'None'} />
-        <StatTile kicker="Seats" value={row ? String(row.seats_purchased) : '—'} />
+        <StatTile kicker="Seats" value={row ? String(row.seats_purchased ?? '—') : '—'} />
         <StatTile kicker="Status" value={row?.status ?? '—'} />
       </div>
 
@@ -97,10 +136,10 @@ export function BillingPage() {
                 <div className="list-row-title">{row.plan_slug}</div>
                 <div className="list-row-meta muted">
                   Provider {row.provider}
-                  {row.current_period_end ? ` · renews ${row.current_period_end}` : ''}
+                  {row.current_period_end ? ` · renews ${String(row.current_period_end)}` : ''}
                 </div>
               </div>
-              <Tag tone={statusTone(row.status)}>{row.status}</Tag>
+              <Tag tone={statusTone(String(row.status ?? ''))}>{row.status ?? '—'}</Tag>
             </li>
           </ul>
         )}
@@ -131,26 +170,23 @@ export function BillingPage() {
       )}
 
       <SectionHeading title="Usage" spaced />
-      {(usage.data?.meters?.length ?? 0) === 0 ? (
+      {meters.length === 0 ? (
         <EmptyState title="No usage meters" description="Meters appear once the workspace consumes billable resources." />
       ) : (
         <Blueprint className="card elev-sm">
           <pre className="mono-sub" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-            {JSON.stringify(usage.data?.meters, null, 2)}
+            {JSON.stringify(meters, null, 2)}
           </pre>
         </Blueprint>
       )}
 
       <SectionHeading title="Entitlements" spaced />
-      {!entitlements.data?.entitlements ||
-      (Array.isArray(entitlements.data.entitlements)
-        ? entitlements.data.entitlements.length === 0
-        : Object.keys(entitlements.data.entitlements).length === 0) ? (
+      {entitlementsEmpty ? (
         <EmptyState title="No entitlements listed" />
       ) : (
         <Blueprint className="card elev-sm">
           <pre className="mono-sub" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-            {JSON.stringify(entitlements.data.entitlements, null, 2)}
+            {JSON.stringify(entitlementPayload, null, 2)}
           </pre>
         </Blueprint>
       )}

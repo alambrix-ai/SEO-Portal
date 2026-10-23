@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom'
 
 import { api, ApiError } from '@/api/client'
 import { Blueprint, EmptyState, Field, PageHeader, SectionHeading } from '@/components/ui'
+import { asStringList } from '@/lib/safeData'
 
 export function MfaSetupPage() {
   const [secret, setSecret] = useState('')
@@ -21,9 +22,9 @@ export function MfaSetupPage() {
     setBusy(true)
     try {
       const out = await api.mfaTotpBegin()
-      setSecret(out.secret)
-      setOtpauth(out.otpauth_url)
-      setRecovery(out.recovery_codes)
+      setSecret(typeof out.secret === 'string' ? out.secret : '')
+      setOtpauth(typeof out.otpauth_url === 'string' ? out.otpauth_url : '')
+      setRecovery(asStringList(out.recovery_codes))
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not start enrolment')
     } finally {

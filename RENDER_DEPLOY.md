@@ -140,6 +140,32 @@ On **automarket-console**:
 
 Then **redeploy the console** (static env vars are baked at build time).
 
+## 4b. Blank screens on new pages (Billing, Enterprise, …)
+
+Checklist for the Render dashboard when Overview works but `/admin/billing`
+(and the other new admin screens) go blank or show “feature not configured”:
+
+1. **Migrations.** The API Docker entrypoint runs `alembic upgrade head` unless
+   `RUN_MIGRATIONS=false`. Open the **automarket-api** logs after deploy and
+   confirm the migrate step succeeded through revision `0048` (or newer). If
+   Neon rejected a migration, the new tables are missing and those endpoints
+   return **503** `feature_not_configured`.
+2. **Console rewrite.** Static site → Redirects/Rewrites must include
+   `/*` → `/index.html` (rewrite). Without it, a hard refresh on `/admin/billing`
+   returns a Render 404 instead of the SPA.
+3. **`VITE_API_BASE_URL`.** Must be the live API origin + `/api/v1`, then
+   **Manual Deploy → Clear build cache & deploy** the console (Vite bakes env
+   at build time).
+4. **CORS / CSP.** `CORS_ORIGINS` on the API must exactly match the console
+   origin. CSP `connect-src` in `render.yaml` headers must allow the same API
+   host.
+5. **Stale chunks.** After a console redeploy, do a hard refresh (or clear
+   site data) on mobile Chrome if an old `index.html` still points at deleted
+   hashed assets.
+6. **Billing / SSO defaults.** `BILLING_PROVIDER=fake` (default) and
+   `SSO_LOGIN_ENABLED=false` (default) are fine for the test stack; enabling
+   SSO login requires setting `SSO_LOGIN_ENABLED=true` and IdP config.
+
 ## 5. Manual create (if you skip Blueprint)
 
 ### Backend — New Web Service

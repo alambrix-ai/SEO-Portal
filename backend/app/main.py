@@ -42,6 +42,39 @@ log = get_logger(__name__)
 
 VERSION = "1.0.0"
 
+
+def _is_missing_schema(exc: BaseException) -> bool:
+    """True when Postgres/SQLAlchemy says a table or column is absent.
+
+    Typical on a deployment whose image includes new routers but whose
+    database has not yet run Alembic heads 0040+.
+    """
+    try:
+        from sqlalchemy.exc import ProgrammingError
+    except ImportError:  # pragma: no cover - SQLAlchemy is a hard dependency
+        ProgrammingError = ()  # type: ignore[misc, assignment]
+
+    cur: BaseException | None = exc
+    seen = 0
+    while cur is not None and seen < 6:
+        if ProgrammingError and isinstance(cur, ProgrammingError):
+            return True
+        text = str(cur).lower()
+        if (
+            "undefinedtable" in text
+            or "undefinedcolumn" in text
+            or "does not exist" in text
+            and ("relation" in text or "column" in text)
+        ):
+            return True
+        # psycopg / asyncpg error codes for undefined_table / undefined_column
+        code = getattr(cur, "sqlstate", None) or getattr(cur, "pgcode", None)
+        if code in {"42P01", "42703"}:
+            return True
+        cur = cur.__cause__ or cur.__context__
+        seen += 1
+    return False
+
 # ── Validation messages ────────────────────────────────────────────────────
 #: Pydantic's own error types. A type outside this set was raised by one of
 #: our validators (PydanticCustomError) with a message written for users.
@@ -313,6 +346,26 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
         request_id = getattr(request.state, "request_id", "-")
+        # Missing tables/columns (migrations not applied) → clear 503 so the
+        # console can show "feature not configured" instead of a white screen
+        # chasing a generic 500.
+        if _is_missing_schema(exc):
+            log_failure(
+                log,
+                "Feature schema missing",
+                exc,
+                level=logging.ERROR,
+                path=request.url.path,
+                request_id=request_id,
+            )
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "code": "feature_not_configured",
+                    "detail": "This feature is not configured yet",
+                    "fields": {"request_id": request_id},
+                },
+            )
         # No traceback or raw message: either can carry tokens, SQL values
         # or personal data. The request id and hash correlate repeats.
         log_failure(

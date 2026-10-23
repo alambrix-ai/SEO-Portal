@@ -14,6 +14,7 @@ import { useAuth } from '@/auth/AuthContext'
 import { ActivityIndicator } from '@/components/ActivityIndicator'
 import { AssistantDock } from '@/components/AssistantDock'
 import { BRAND_NAME, BrandLogo } from '@/components/BrandLogo'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Menu } from '@/components/Menu'
 import { NotificationBell } from '@/components/NotificationBell'
 import { OAuthReturn } from '@/components/OAuthReturn'
@@ -459,7 +460,9 @@ export function AppShell() {
         <SafetyBanner />
 
         <main className="page">
-          <Outlet />
+          <ErrorBoundary where="route" variant="page" key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
         {/* Back from "Sign in with Google" or WordPress approval. */}
         <OAuthReturn />

@@ -4,6 +4,7 @@
 import { useState } from 'react'
 
 import { api } from '@/api/client'
+import type { WorkflowApiTokenOut, WorkflowWebhookOut } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { useToasts } from '@/components/Toasts'
 import {
@@ -17,6 +18,7 @@ import {
   Tag,
 } from '@/components/ui'
 import { useResource } from '@/hooks/useResource'
+import { asList } from '@/lib/safeData'
 
 export function DeveloperPage() {
   const { canWrite } = useAuth()
@@ -36,10 +38,26 @@ export function DeveloperPage() {
   if ((tokens.loading && !tokens.data) || (webhooks.loading && !webhooks.data)) {
     return <Loading label="Loading developer settings…" />
   }
+
+  if (tokens.forbidden || webhooks.forbidden) {
+    return <ErrorState message="You do not have permission to view API & webhook settings." />
+  }
+
   const err = tokens.error || webhooks.error
   if (err && !tokens.data && !webhooks.data) {
-    return <ErrorState message={err} onRetry={() => void tokens.reload()} />
+    return (
+      <ErrorState
+        message={err}
+        onRetry={() => {
+          void tokens.reload()
+          void webhooks.reload()
+        }}
+      />
+    )
   }
+
+  const tokenRows = asList<WorkflowApiTokenOut>(tokens.data?.tokens)
+  const hookRows = asList<WorkflowWebhookOut>(webhooks.data?.webhooks)
 
   const mint = async () => {
     if (!writable) return push('View-only access for your role', 'warning')
@@ -102,14 +120,20 @@ export function DeveloperPage() {
         description="Mint public API tokens and register outbound webhooks for approval and workflow events."
       />
 
+      {err && (tokens.data || webhooks.data) ? (
+        <div className="banner banner-warning" role="status" style={{ marginBottom: 16 }}>
+          {err}
+        </div>
+      ) : null}
+
       <div className="split-1-1">
         <Blueprint className="card elev-sm">
           <SectionHeading title="API tokens" description="Raw tokens are shown once." />
-          {(tokens.data?.tokens.length ?? 0) === 0 ? (
+          {tokenRows.length === 0 ? (
             <EmptyState title="No tokens" description="Mint a token to call the public workflow API." />
           ) : (
             <ul className="stack-sm">
-              {tokens.data!.tokens.map((token) => (
+              {tokenRows.map((token) => (
                 <li key={token.id} className="list-row">
                   <div className="list-row-main">
                     <div className="list-row-title">{token.label}</div>
@@ -158,11 +182,11 @@ export function DeveloperPage() {
 
         <Blueprint className="card elev-sm">
           <SectionHeading title="Webhooks" />
-          {(webhooks.data?.webhooks.length ?? 0) === 0 ? (
+          {hookRows.length === 0 ? (
             <EmptyState title="No webhooks" description="Register an HTTPS endpoint to receive events." />
           ) : (
             <ul className="stack-sm">
-              {webhooks.data!.webhooks.map((hook) => (
+              {hookRows.map((hook) => (
                 <li key={hook.id} className="list-row">
                   <div className="list-row-main">
                     <div className="list-row-title">{hook.name}</div>

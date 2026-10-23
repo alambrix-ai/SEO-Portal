@@ -22,6 +22,8 @@ dist/
 .vite/
 frontend/test-results/
 frontend/playwright-report/
+frontend/blob-report/
+frontend/playwright/.cache/
 
 # ── Local artefacts ───────────────────────────────────────────────────────
 *.log

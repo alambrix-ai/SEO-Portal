@@ -72,7 +72,9 @@ def test_oidc_alg_none_rejected_even_when_enabled(monkeypatch):  # noqa: ANN001
 
 
 def test_oidc_fail_closed_by_default() -> None:
-    with pytest.raises(ValueError, match="disabled"):
+    from app.core.exceptions import FeatureNotConfiguredError
+
+    with pytest.raises(FeatureNotConfiguredError, match="not configured"):
         enterprise_sso.verify_oidc_id_token(
             id_token="a.b.c",
             expected_issuer="https://idp.example.com",
@@ -82,7 +84,9 @@ def test_oidc_fail_closed_by_default() -> None:
 
 
 def test_saml_fail_closed_by_default() -> None:
-    with pytest.raises(ValueError, match="disabled"):
+    from app.core.exceptions import FeatureNotConfiguredError
+
+    with pytest.raises(FeatureNotConfiguredError, match="not configured"):
         enterprise_sso.verify_saml_assertion_xml(
             xml_bytes=b"<Assertion/>",
             idp_cert_pem="-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",

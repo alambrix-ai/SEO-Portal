@@ -71,3 +71,14 @@ class ConnectorConfigError(ConnectorError):
 class AgentError(AppError):
     status_code = 500
     code = "agent_error"
+
+
+class FeatureNotConfiguredError(AppError):
+    """Feature tables missing, provider disabled, or migrations not applied.
+
+    Mapped to HTTP 503 so the console can show a clear empty/error state
+    instead of a generic 500.
+    """
+
+    status_code = 503
+    code = "feature_not_configured"

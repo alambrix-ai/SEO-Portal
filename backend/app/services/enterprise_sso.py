@@ -57,7 +57,11 @@ class VerifiedIdentity:
 
 def _require_sso_login_enabled() -> None:
     if not settings.sso_login_enabled:
-        raise ValueError("SSO login is disabled (fail-closed)")
+        from app.core.exceptions import FeatureNotConfiguredError
+
+        raise FeatureNotConfiguredError(
+            "SSO login is not configured on this deployment"
+        )
 
 
 def _replay_seen(key: str) -> bool:
@@ -145,7 +149,11 @@ def upsert_connection(
     # Fail closed: never enable a connection for login while the platform flag
     # is off — admin may still store draft IdP config.
     if enabled and not settings.sso_login_enabled:
-        raise ValueError("SSO login is disabled (fail-closed); cannot enable connection")
+        from app.core.exceptions import FeatureNotConfiguredError
+
+        raise FeatureNotConfiguredError(
+            "SSO login is not configured on this deployment"
+        )
     row = db.execute(
         select(SsoConnection).where(
             SsoConnection.tenant_id == org.id,

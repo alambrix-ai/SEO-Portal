@@ -163,6 +163,8 @@ def get_provider(name: str | None = None) -> BillingProvider:
         return _FAKE
     # Real providers (Stripe etc.) are intentionally not wired until Dishant
     # certifies which one to use — refuse rather than half-implement.
-    raise ValueError(
-        f"billing provider {chosen!r} is not enabled; use 'fake' or configure a certified provider"
+    from app.core.exceptions import FeatureNotConfiguredError
+
+    raise FeatureNotConfiguredError(
+        "Billing provider is not configured; use 'fake' or a certified provider"
     )

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, client_ip as resolve_client_ip, get_current_user, get_db
-from app.core.exceptions import InvalidInputError, NotFoundError
+from app.core.exceptions import FeatureNotConfiguredError, InvalidInputError, NotFoundError
 from app.core.rbac import Module
 from app.models.enterprise_identity import CustomRole, IpAllowlistEntry, SsoConnection
 from app.models.workspace import User
@@ -128,6 +128,8 @@ def upsert_sso(
             enabled=body.enabled,
             jit_provision=body.jit_provision,
         )
+    except FeatureNotConfiguredError:
+        raise
     except ValueError as exc:
         raise InvalidInputError("That request could not be completed.") from exc
     db.commit()

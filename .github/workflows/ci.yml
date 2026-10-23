@@ -121,8 +121,14 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
+      - name: Unit tests
+        run: npm test
       - name: Production build
         run: npm run build
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Playwright smoke (new feature routes)
+        run: npm run test:e2e
 
   security:
     name: Dependency, secret, and static analysis
