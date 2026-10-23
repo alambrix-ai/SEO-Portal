@@ -40,5 +40,8 @@ revision runs.
 | 7 | `feature/ask-willy-grounding` | `0027_willy_grounding` |
 | 8 | `feature/weekly-autopilot-report` | `0028_scheduled_reports` |
 | 9 | `feature/anomaly-alerts` | `0029_alert_rules` |
+| 10 | `feature/programmatic-seo` | `0030_pseo_pages` |
+| 11 | `feature/product-feed-optimizer` | `0031_product_feed` |
+| 12 | `feature/content-repurposer` | `0032_content_repurpose` |
 
 Each revises the previous head. Do not create another sibling of `0024_*`.

@@ -78,6 +78,7 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     "pseo_templates",
     "pseo_datasets",
     "pseo_page_jobs",
+    "product_feed_findings",
     "aeo_qa_pairs",
     "schema_patches",
     "referral_spam_events",
