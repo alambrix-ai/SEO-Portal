@@ -42,7 +42,15 @@ import { ReportsPage } from '@/pages/ReportsPage'
 import { SeoPage } from '@/pages/SeoPage'
 import { SiteAnalysisPage } from '@/pages/SiteAnalysisPage'
 import { TechnicalSeoPage } from '@/pages/TechnicalSeoPage'
+import { AgencyPage } from '@/pages/AgencyPage'
+import { AlertsPage } from '@/pages/AlertsPage'
+import { BillingPage } from '@/pages/BillingPage'
+import { DeveloperPage } from '@/pages/DeveloperPage'
+import { EnterprisePage } from '@/pages/EnterprisePage'
+import { StatusPage } from '@/pages/StatusPage'
+import { TopicsPage } from '@/pages/TopicsPage'
 import { VisibilityPage } from '@/pages/VisibilityPage'
+import { WarehousePage } from '@/pages/WarehousePage'
 
 /** Paths reachable while the workspace still has unfinished onboarding. */
 const ONBOARDING_OPEN_PATHS = new Set([
@@ -127,6 +135,7 @@ export function App() {
         }
       />
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
+      <Route path="/status" element={<StatusPage />} />
 
       {/* ── Authenticated console ──────────────────────────────────────── */}
       <Route
@@ -228,6 +237,22 @@ export function App() {
           }
         />
         <Route
+          path="/topics"
+          element={
+            <RequireModule module="seo">
+              <TopicsPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/alerts"
+          element={
+            <RequireModule module="seo">
+              <AlertsPage />
+            </RequireModule>
+          }
+        />
+        <Route
           path="/technical"
           element={
             <RequireModule module="seo">
@@ -280,6 +305,46 @@ export function App() {
           element={
             <RequireModule module="admin">
               <AdminPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/admin/enterprise"
+          element={
+            <RequireModule module="admin">
+              <EnterprisePage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/admin/billing"
+          element={
+            <RequireModule module="admin">
+              <BillingPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/admin/developer"
+          element={
+            <RequireModule module="admin">
+              <DeveloperPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/admin/agency"
+          element={
+            <RequireModule module="admin">
+              <AgencyPage />
+            </RequireModule>
+          }
+        />
+        <Route
+          path="/admin/warehouse"
+          element={
+            <RequireModule module="admin">
+              <WarehousePage />
             </RequireModule>
           }
         />

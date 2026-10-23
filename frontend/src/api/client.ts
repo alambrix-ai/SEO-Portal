@@ -608,6 +608,198 @@ export const api = {
       body: { competitor_domains },
     }),
 
+  // Topic clusters
+  topics: (signal?: AbortSignal) =>
+    request<import('./types').TopicWorkspace>('/topics', { signal }),
+
+  // Anomaly alerts
+  alerts: (signal?: AbortSignal) =>
+    request<import('./types').AlertsWorkspace>('/alerts', { signal }),
+  createAlertRule: (body: {
+    name: string
+    metric: string
+    threshold: number
+    channel?: string
+    webhook_url?: string
+  }) => request<ActionResult>('/alerts/rules', { method: 'POST', body }),
+  disableAlertRule: (ruleId: string) =>
+    request<ActionResult>(`/alerts/rules/${seg(ruleId)}/disable`, { method: 'POST' }),
+
+  // Enterprise identity
+  enterpriseSso: (signal?: AbortSignal) =>
+    request<{ connections: import('./types').EnterpriseSsoOut[] }>('/enterprise/sso', {
+      signal,
+    }),
+  upsertEnterpriseSso: (body: Record<string, unknown>) =>
+    request<{ id: string; slug: string; enabled: boolean }>('/enterprise/sso', {
+      method: 'POST',
+      body,
+    }),
+  enterpriseRoles: (signal?: AbortSignal) =>
+    request<{ roles: import('./types').CustomRoleOut[] }>('/enterprise/roles', { signal }),
+  createEnterpriseRole: (body: {
+    slug: string
+    name: string
+    description?: string
+    permissions?: Record<string, string>
+  }) =>
+    request<{ id: string; slug: string; permissions: Record<string, string> }>(
+      '/enterprise/roles',
+      { method: 'POST', body },
+    ),
+  enterpriseIpAllowlist: (signal?: AbortSignal) =>
+    request<import('./types').IpAllowlistOut>('/enterprise/ip-allowlist', { signal }),
+  addEnterpriseIp: (body: { cidr: string; label?: string }) =>
+    request<{ id: string; cidr: string }>('/enterprise/ip-allowlist', {
+      method: 'POST',
+      body,
+    }),
+  toggleEnterpriseIp: (enabled: boolean) =>
+    request<{ ip_allowlist_enabled: boolean }>('/enterprise/ip-allowlist/toggle', {
+      method: 'POST',
+      body: { enabled },
+    }),
+  setApprovalScope: (body: {
+    user_id: string
+    brands?: string[]
+    regions?: string[]
+    channels?: string[]
+  }) =>
+    request<{
+      user_id: string
+      brands: string[]
+      regions: string[]
+      channels: string[]
+    }>('/enterprise/approval-scopes', { method: 'POST', body }),
+  mintScimToken: (label = 'SCIM token') =>
+    request<{ id: string; label: string; token: string; prefix: string }>(
+      '/enterprise/scim/tokens',
+      { method: 'POST', body: { label } },
+    ),
+  revokeScimToken: (tokenId: string) =>
+    request<{ revoked: boolean }>(`/enterprise/scim/tokens/${seg(tokenId)}`, {
+      method: 'DELETE',
+    }),
+
+  // Billing
+  billingCatalog: (signal?: AbortSignal) =>
+    request<{ plans: import('./types').BillingPlanOut[]; provider: string }>(
+      '/billing/catalog',
+      { signal },
+    ),
+  billingAccount: (signal?: AbortSignal) =>
+    request<{ account: import('./types').BillingAccountOut | null }>('/billing/account', {
+      signal,
+    }),
+  billingEntitlements: (signal?: AbortSignal) =>
+    request<{
+      plan_slug: string | null
+      entitlements: Record<string, unknown> | import('./types').BillingEntitlementOut[]
+      synced_at?: string | null
+    }>('/billing/entitlements', { signal }),
+  billingUsage: (signal?: AbortSignal) =>
+    request<{ meters: import('./types').BillingUsageMeterOut[] }>('/billing/usage', {
+      signal,
+    }),
+  ensureBillingAccount: (body: { plan_slug?: string; seats?: number } = {}) =>
+    request<{ id: string; plan_slug: string; seats_purchased: number; status: string }>(
+      '/billing/account',
+      { method: 'POST', body },
+    ),
+  changeBillingPlan: (body: { plan_slug: string; seats?: number }) =>
+    request<{ id: string; plan_slug: string; seats_purchased: number; status: string }>(
+      '/billing/plan',
+      { method: 'POST', body },
+    ),
+
+  // Workflow / public API
+  workflowApiTokens: (signal?: AbortSignal) =>
+    request<{ tokens: import('./types').WorkflowApiTokenOut[] }>('/workflow/api-tokens', {
+      signal,
+    }),
+  mintWorkflowApiToken: (body: {
+    label?: string
+    scopes?: string[]
+    ttl_days?: number | null
+  } = {}) =>
+    request<{
+      id: string
+      prefix: string
+      scopes: string[]
+      token: string
+      expires_at: string | null
+    }>('/workflow/api-tokens', { method: 'POST', body }),
+  revokeWorkflowApiToken: (tokenId: string) =>
+    request<{ id: string; revoked_at: string | null }>(
+      `/workflow/api-tokens/${seg(tokenId)}`,
+      { method: 'DELETE' },
+    ),
+  workflowWebhooks: (signal?: AbortSignal) =>
+    request<{ webhooks: import('./types').WorkflowWebhookOut[] }>('/workflow/webhooks', {
+      signal,
+    }),
+  registerWorkflowWebhook: (body: {
+    name: string
+    url: string
+    events?: string[]
+    secret: string
+  }) =>
+    request<{ id: string; name: string; events: string[]; enabled: boolean }>(
+      '/workflow/webhooks',
+      { method: 'POST', body },
+    ),
+
+  // Warehouse
+  warehouseExports: (signal?: AbortSignal) =>
+    request<{ jobs: import('./types').WarehouseExportOut[] }>('/warehouse/exports', {
+      signal,
+    }),
+  enqueueWarehouseExport: (body: {
+    provider?: string
+    dataset?: string
+    destination: string
+    secret?: string
+  }) =>
+    request<import('./types').WarehouseExportOut>('/warehouse/exports', {
+      method: 'POST',
+      body,
+    }),
+
+  // Agency
+  createAgency: (body: { name: string; slug: string }) =>
+    request<{ id: string; slug: string; name: string }>('/agency', {
+      method: 'POST',
+      body,
+    }),
+  agencyWhiteLabel: (agencyId: string, signal?: AbortSignal) =>
+    request<import('./types').AgencyWhiteLabelOut>(
+      `/agency/${seg(agencyId)}/white-label`,
+      { signal },
+    ),
+  saveAgencyWhiteLabel: (
+    agencyId: string,
+    body: {
+      custom_domain?: string
+      email_from_name?: string
+      branding?: Record<string, unknown>
+      brand_safety?: Record<string, unknown>
+      enabled?: boolean
+    },
+  ) =>
+    request<import('./types').AgencyWhiteLabelOut>(
+      `/agency/${seg(agencyId)}/white-label`,
+      { method: 'PUT', body },
+    ),
+  agencyClients: (agencyId: string, signal?: AbortSignal) =>
+    request<{ clients: import('./types').AgencyClientOut[] }>(
+      `/agency/${seg(agencyId)}/clients`,
+      { signal },
+    ),
+
+  // Public status (no auth)
+  publicStatus: (signal?: AbortSignal) =>
+    request<import('./types').PublicStatusOut>('/status', { signal, skipAuth: true }),
+
   // Off-page
   offpage: (signal?: AbortSignal) =>
     request<OffPageWorkspace>('/offpage', { signal }),
