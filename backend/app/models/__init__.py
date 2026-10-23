@@ -49,6 +49,7 @@ from app.models.topic_cluster import ContentBrief, TopicCluster, TopicClusterPag
 from app.models.alerts import AlertEvent, AlertRule
 from app.models.product_feed import ProductFeedFinding
 from app.models.pseo import PseoDataset, PseoPageJob, PseoTemplate
+from app.models.repurpose import ContentRepurposeJob
 from app.models.reports import ReportArtifact, ScheduledReport
 from app.models.visibility import (
     VisibilityObservation,
@@ -130,6 +131,7 @@ __all__ = [
     "PseoPageJob",
     "PseoTemplate",
     "ProductFeedFinding",
+    "ContentRepurposeJob",
     "RefreshToken",
     "ReferralSpamEvent",
     "ReportArtifact",
