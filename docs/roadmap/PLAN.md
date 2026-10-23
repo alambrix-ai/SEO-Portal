@@ -24,20 +24,18 @@ insecurely. Fix public docs that under-count the fleet.
 | AI security checklist | S | This PR |
 | GitHub Actions CI (pytest no-DB + Postgres, frontend typecheck/lint/build, pip-audit, npm audit, gitleaks, bandit/semgrep) | M | This PR |
 | README accuracy (agents, connectors, model providers, Synaprank naming) | S | This PR |
-| Dependency hardening (bump cryptography / Pillow / PyJWT / Starlette stack so pip-audit is fail-closed) | M | Follow-up PR |
+| Dependency hardening (bump cryptography / Pillow / PyJWT / Starlette stack so pip-audit is fail-closed) | M | `feature/dependency-hardening` |
 
 **Design.** Reuse the verification commands already documented in the root
 README. CI must set a dummy `DATABASE_URL` for the no-DB job (never
 `env -u DATABASE_URL`) and a disposable `*test*` database for the integration
-job. **Gitleaks** and **npm audit (high+)** fail closed. **pip-audit**,
-**Bandit**, and **Semgrep** run on every push and emit reports; they are
-`continue-on-error` until the dependency-hardening follow-up so Phase 0 can
-land without a risky multi-major FastAPI bump in the same PR.
+job. **Gitleaks**, **npm audit (high+)**, **pip-audit**, **Bandit (high)**,
+and **Semgrep** all fail closed (see `feature/dependency-hardening`).
 
 **Data / API / UI.** None.
 
-**Security.** Secret scanning blocks merge; Python CVE/static backlog is
-visible in CI logs and tracked for the hardening PR.
+**Security.** Scanners catch secrets, known CVEs, and high static findings
+before merge.
 
 **Tests.** CI green on this branch is the acceptance test (blocking jobs).
 

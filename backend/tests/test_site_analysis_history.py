@@ -96,8 +96,9 @@ def test_report_names_the_workspace_model(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_routes_exist_and_admin_routes_are_guarded() -> None:
     from app.api.v1.router import api_router
+    from tests.support.routes import routes_by_path
 
-    paths = {r.path: r for r in api_router.routes}
+    paths = routes_by_path(api_router)
     for path in ("/analyses", "/analyses/{analysis_id}", "/portal/analyses",
                  "/portal/analyses/website/{analysis_id}", "/portal/analyses/workspace/{org_id}/{analysis_id}"):
         assert path in paths, path

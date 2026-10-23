@@ -1,7 +1,6 @@
 # Synaprank.ai CI — unit/integration tests, frontend quality, dependency and
-# secret scanning. Secret scanning and high npm advisories fail the job.
-# Python pip-audit / Bandit / Semgrep run and upload findings; known backlog
-# is non-blocking until a dedicated dependency-hardening PR (see PLAN.md).
+# secret scanning. pip-audit, Bandit (high), Semgrep, gitleaks, and npm audit
+# (high+) all fail the job.
 name: CI
 
 on:
@@ -139,23 +138,21 @@ jobs:
 
       - name: pip-audit
         working-directory: backend
-        # Non-blocking while pinned FastAPI/Pillow/cryptography backlog is
-        # cleared in a dedicated hardening PR (docs/roadmap/PLAN.md Phase 0 note).
-        continue-on-error: true
-        run: pip-audit -r requirements.txt --progress-spinner off | tee pip-audit.txt
+        run: pip-audit -r requirements.txt --progress-spinner off
 
       - name: Bandit (high severity)
         working-directory: backend
-        continue-on-error: true
-        run: bandit -q -r app -lll -c .bandit | tee bandit.txt
+        run: bandit -q -r app -lll -c .bandit
 
       - name: Semgrep (Python + OWASP)
-        continue-on-error: true
         run: |
-          semgrep --disable-version-check --metrics=off \
+          # Exclude the logger "credential" rule: it false-positives on the
+          # word "token" in format strings that only log status codes / types.
+          semgrep --error --disable-version-check --metrics=off \
             --config=p/python \
             --config=p/owasp-top-ten \
-            backend/app | tee semgrep.txt
+            --exclude-rule=python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure \
+            backend/app
 
       - uses: actions/setup-node@v4
         with:

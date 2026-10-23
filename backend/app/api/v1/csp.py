@@ -164,11 +164,11 @@ async def receive_csp_report(request: Request) -> Response:
         if not declared.isdigit():
             return Response(status_code=status.HTTP_400_BAD_REQUEST)
         if int(declared) > MAX_REPORT_BYTES:
-            return Response(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+            return Response(status_code=status.HTTP_413_CONTENT_TOO_LARGE)
 
     raw = await _read_capped(request)
     if raw is None:
-        return Response(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        return Response(status_code=status.HTTP_413_CONTENT_TOO_LARGE)
 
     try:
         violations = _violations(content_type, json.loads(raw))

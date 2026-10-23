@@ -16,6 +16,8 @@ installed with ``FORCE``. Run the application as a dedicated non-owner role
 """
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -24,6 +26,8 @@ from app.core.logging import get_logger
 log = get_logger(__name__)
 
 TENANT_SETTING = "app.current_tenant"
+#: Table names passed into DDL must be plain SQL identifiers (our constants).
+_TABLE_IDENT = re.compile(r"^[a-z][a-z0-9_]*$")
 
 # Tables carrying a tenant_id column that are read inside an authenticated,
 # tenant-pinned session.
@@ -113,7 +117,15 @@ RLS_EXEMPT_TABLES: dict[str, str] = {
 _POLICY = "tenant_isolation"
 
 
+def _require_table_ident(table: str) -> str:
+    """Reject anything that is not a known-shape SQL identifier."""
+    if not _TABLE_IDENT.fullmatch(table):
+        raise ValueError(f"Refusing non-identifier table name for RLS DDL: {table!r}")
+    return table
+
+
 def _statements(table: str) -> list[str]:
+    table = _require_table_ident(table)
     predicate = (
         f"tenant_id = NULLIF(current_setting('{TENANT_SETTING}', true), '')::uuid"
     )
@@ -131,6 +143,7 @@ def _statements(table: str) -> list[str]:
 def apply_policies(conn: Connection, tables: tuple[str, ...] = TENANT_SCOPED_TABLES) -> None:
     """Enable RLS and install the isolation policy on every scoped table."""
     for table in tables:
+        table = _require_table_ident(table)
         exists = conn.execute(
             text("SELECT to_regclass(:t) IS NOT NULL"), {"t": f"public.{table}"}
         ).scalar_one()
@@ -138,12 +151,19 @@ def apply_policies(conn: Connection, tables: tuple[str, ...] = TENANT_SCOPED_TAB
             log.warning("Skipping RLS for missing table %s", table)
             continue
         for stmt in _statements(table):
+            # Table name is validated as a SQL identifier above; not user input.
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             conn.execute(text(stmt))
     log.info("Row-level security applied to %d tables", len(tables))
 
 
 def drop_policies(conn: Connection, tables: tuple[str, ...] = TENANT_SCOPED_TABLES) -> None:
     for table in tables:
+        table = _require_table_ident(table)
+        # Table name is validated as a SQL identifier above; not user input.
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         conn.execute(text(f"DROP POLICY IF EXISTS {_POLICY} ON {table}"))
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         conn.execute(text(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY"))
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         conn.execute(text(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY"))

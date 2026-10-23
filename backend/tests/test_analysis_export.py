@@ -74,8 +74,9 @@ def test_unknown_format_is_refused() -> None:
 
 def test_download_routes_exist() -> None:
     from app.api.v1.router import api_router
+    from tests.support.routes import route_paths
 
-    paths = {r.path for r in api_router.routes}
+    paths = route_paths(api_router)
     assert {
         "/analyses/{analysis_id}/download",
         "/portal/analyses/website/{analysis_id}/download",
