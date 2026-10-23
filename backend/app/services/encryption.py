@@ -132,3 +132,6 @@ class Ctx:
     HISTORY_PAYLOAD = "audit_snapshot.payload"
     CONTENT_BRIEF = "content_brief.body"
     REPORT_BODY = "report_artifact.body"
+    PSEO_TEMPLATE = "pseo_template.body"
+    PSEO_DATASET = "pseo_dataset.rows"
+    PSEO_PAGE_BODY = "pseo_page_job.body"

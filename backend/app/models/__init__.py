@@ -44,6 +44,7 @@ from app.models.seo import (
 )
 from app.models.topic_cluster import ContentBrief, TopicCluster, TopicClusterPage
 from app.models.alerts import AlertEvent, AlertRule
+from app.models.pseo import PseoDataset, PseoPageJob, PseoTemplate
 from app.models.reports import ReportArtifact, ScheduledReport
 from app.models.willy import WillyGroundingTrace
 from app.models.workspace import (
@@ -114,6 +115,9 @@ __all__ = [
     "ConnectorVerification",
     "PortalFeatureFlag",
     "FeatureKind",
+    "PseoDataset",
+    "PseoPageJob",
+    "PseoTemplate",
     "RefreshToken",
     "ReferralSpamEvent",
     "ReportArtifact",
