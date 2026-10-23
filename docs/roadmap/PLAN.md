@@ -440,8 +440,8 @@ page remain follow-ups pending Dishant’s provider choice.
 
 ## Done vs planned notes
 
-Phases 9–11 landed on `development` via feature branches (never `main`).
-Phases 12–13 follow the same rule.
+Phases 9–13 landed on `development` via feature branches (never `main`).
+Alembic head: `0044_commercial_billing`.
 
 ---
 
