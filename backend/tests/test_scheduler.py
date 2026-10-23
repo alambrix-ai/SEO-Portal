@@ -395,11 +395,25 @@ def test_a_running_pass_reports_the_step_it_is_on(clean_db, org):  # noqa: ANN00
     from app.orchestration.runner import build_context
     from app.services import views
 
+    from app.services.encryption import Ctx, OrgCipher
+    from app.services import connectors as connector_service
+
     record = clean_db.execute(
         select(AgentRecord).where(
             AgentRecord.tenant_id == org.id, AgentRecord.slug == "on_page_seo_sync"
         )
     ).scalar_one()
+    # requires_llm agents need a chosen, usable model before build_context.
+    llm = connector_service.get_record(clean_db, tenant_id=org.id, slug="openai")
+    cipher = OrgCipher.for_org(org)
+    llm.credentials_encrypted = cipher.encrypt_json(
+        {"apiKey": "sk-test-not-used"}, context=Ctx.CONNECTOR_CREDENTIALS
+    )
+    llm.credential_hints = {"model": "gpt-test"}
+    llm.connected = True
+    llm.health = "healthy"
+    record.llm_connector = "openai"
+    record.configured = True
     run = AgentRun(
         tenant_id=org.id,
         agent_slug=record.slug,

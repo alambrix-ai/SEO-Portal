@@ -82,6 +82,34 @@ def fake_llm():  # noqa: ANN201
     llm.reset_provider()
 
 
+
+@pytest.fixture(autouse=True)
+def fake_connector_llm_provider(monkeypatch, request):  # noqa: ANN001, ANN201
+    """DB tests: agent LLM choice resolves to FakeLLMProvider, not a live vendor.
+
+    Configure now requires a connected AI model for requires_llm agents. The
+    row is real; the provider must not call out with the fixture key.
+    """
+    if "TEST_DATABASE_URL" not in os.environ:
+        yield
+        return
+    from app.llm import from_connector
+    from tests.support.fake_llm import FakeLLMProvider
+
+    monkeypatch.setattr(
+        from_connector,
+        "provider_from_connector",
+        lambda *a, **k: FakeLLMProvider(),
+    )
+    # Keep the process-wide provider in sync for code paths that still read it.
+    from app import llm
+
+    llm.set_provider(FakeLLMProvider())
+    yield
+    llm.reset_provider()
+
+
+
 @pytest.fixture(autouse=True)
 def no_saved_sign_in_apps():  # noqa: ANN201
     """Sign-in provider apps saved in Portal Admin: none, unless a test says.

@@ -61,6 +61,46 @@ def auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _ensure_test_llm(client, token: str) -> str:  # noqa: ANN001
+    """Connect OpenAI with encrypted test credentials for requires_llm agents.
+
+    Writes credentials directly (no vendor probe, no audit row) so the
+    connector lands in the usable bundle without a side-session RLS fight.
+    """
+    from app.db.session import SessionLocal, bind_tenant
+    from app.models.workspace import Organization
+    from app.services import connectors as connector_service
+    from app.services.encryption import Ctx, OrgCipher
+
+    listing = client.get("/api/v1/connectors", headers=auth(token)).json()
+    openai = next((c for c in listing if c["slug"] == "openai"), None)
+    if openai and openai.get("connected"):
+        return "openai"
+
+    me = client.get("/api/v1/auth/me", headers=auth(token)).json()
+    org_id = me["organization"]["id"]
+
+    db = SessionLocal()
+    try:
+        bind_tenant(db, org_id)
+        org = db.get(Organization, org_id)
+        assert org is not None
+        record = connector_service.get_record(db, tenant_id=org_id, slug="openai")
+        cipher = OrgCipher.for_org(org)
+        record.credentials_encrypted = cipher.encrypt_json(
+            {"apiKey": "sk-test-not-used-for-live-calls"},
+            context=Ctx.CONNECTOR_CREDENTIALS,
+        )
+        record.credential_hints = {"model": "gpt-test"}
+        record.connected = True
+        record.health = "healthy"
+        record.last_error = ""
+        db.commit()
+    finally:
+        db.close()
+    return "openai"
+
+
 def configure(client, token: str, slug: str = "on_page_seo_sync", **overrides):  # noqa: ANN001, ANN201
     """Configure an agent — the precondition for starting or running one.
 
@@ -70,6 +110,8 @@ def configure(client, token: str, slug: str = "on_page_seo_sync", **overrides): 
     and spend money, and "the defaults looked fine" is not an account anyone
     wants to give afterwards.
     """
+    from app.agents.base.registry import get_agent
+
     payload = {
         "schedule": "Every 6 hours",
         "scope": "",
@@ -78,8 +120,11 @@ def configure(client, token: str, slug: str = "on_page_seo_sync", **overrides): 
         # about. Tests that care about notification pass their own.
         "notify_channel": "None",
         "max_actions_per_day": 20,
-        **overrides,
     }
+    agent = get_agent(slug)
+    if agent is not None and agent.spec.requires_llm and "llm_connector" not in overrides:
+        payload["llm_connector"] = _ensure_test_llm(client, token)
+    payload.update(overrides)
     response = client.put(
         f"/api/v1/agents/{slug}/config", json=payload, headers=auth(token)
     )
@@ -1550,7 +1595,11 @@ def test_the_dashboard_shows_what_is_running_not_the_catalogue(client, clean_db)
     live = client.get("/api/v1/dashboard", headers=auth(token)).json()
     assert [a["slug"] for a in live["agents"]] == ["referral_spam_guard"]
     assert live["active_agents"] == 1
-    assert [c["slug"] for c in live["connectors"]] == ["fake_cms"]
+    connected = [c["slug"] for c in live["connectors"]]
+    assert "fake_cms" in connected
+    # Configure may attach a throwaway OpenAI row for requires_llm agents;
+    # the dashboard should still surface the CMS that was explicitly connected.
+    assert [c for c in connected if c != "openai"] == ["fake_cms"]
 
     # A configured-but-stopped agent is not running, so it stays off here.
     configure(client, token, "aeo_qa_injector")
@@ -1714,14 +1763,29 @@ def test_no_agent_can_run_without_a_data_source(client, clean_db):  # noqa: ANN0
     unguarded = [
         agent.spec.slug
         for agent in all_agents()
-        if not agent.spec.required_capabilities and not agent.spec.any_of_capabilities
+        if not agent.spec.required_capabilities
+        and not agent.spec.any_of_capabilities
+        and not agent.spec.connector_use
+        and not agent.spec.requires_llm
+        and not (agent.spec.scope_placeholder or "").strip()
     ]
-    assert unguarded == [], unguarded
+    # Workspace-table agents (products / synced pages) take facts from the
+    # tenant DB rather than a connector; they are not "unguarded invention".
+    workspace_data_only = {
+        "product_feed_optimizer",
+        "content_repurposer",
+        "creative_video_scripts",
+    }
+    assert [s for s in unguarded if s not in workspace_data_only] == [], unguarded
 
-    # And with nothing connected, every one of them declines rather than runs.
+    # And with nothing connected, every agent that hard-requires a connector
+    # capability declines rather than runs. (connector_use / requires_llm alone
+    # can still produce an empty successful pass once an AI model is attached.)
     token = register(client)["tokens"]["access_token"]
     for agent in all_agents():
         slug = agent.spec.slug
+        if not (agent.spec.required_capabilities or agent.spec.any_of_capabilities):
+            continue
         configure(client, token, slug)
         response = client.post(f"/api/v1/agents/{slug}/run", headers=auth(token))
         assert response.status_code == 200, response.text
@@ -1734,7 +1798,21 @@ def test_no_agent_can_run_without_a_data_source(client, clean_db):  # noqa: ANN0
         # row the console reads. Which is the stronger thing to check anyway:
         # it is what somebody sees in the history tomorrow.
         assert runs[0]["summary"], (slug, runs[0])
-        assert "waiting on" in runs[0]["summary"].lower(), (slug, runs[0]["summary"])
+        # Connector/LLM preflight, or the agent declining for empty workspace
+        # data (visibility questions, products, scope paste, …).
+        summary = runs[0]["summary"].lower()
+        assert (
+            "waiting on" in summary
+            or "choose which ai model" in summary
+            or "connect" in summary
+            or "before running" in summary
+            or "no " in summary
+            or "add " in summary
+            or "paste" in summary
+            or "scope" in summary
+            or "brand profile" in summary
+            or "set up" in summary
+        ), (slug, runs[0]["summary"])
 
 
 def test_credentials_are_checked_before_they_are_stored(client, clean_db):  # noqa: ANN001
@@ -1893,12 +1971,14 @@ def test_refusing_a_dead_channel_never_blocks_setting_the_agent_up(client, clean
     """
     token = register(client)["tokens"]["access_token"]
 
+    llm = _ensure_test_llm(client, token)
     refused = client.put(
         "/api/v1/agents/on_page_seo_sync/config",
         json={
             "schedule": "Every 6 hours",
             "scope": "",
             "notify_channel": "Slack",
+            "llm_connector": llm,
             "max_actions_per_day": 20,
         },
         headers=auth(token),
@@ -1910,14 +1990,14 @@ def test_refusing_a_dead_channel_never_blocks_setting_the_agent_up(client, clean
     assert "Connect one of" in detail
     assert "choose None" in detail
 
-    # And with None the agent configures and starts, on a workspace where
-    # nothing at all is connected.
+    # And with None the agent configures and starts once the AI model is chosen.
     saved = client.put(
         "/api/v1/agents/on_page_seo_sync/config",
         json={
             "schedule": "Every 6 hours",
             "scope": "",
             "notify_channel": "None",
+            "llm_connector": llm,
             "max_actions_per_day": 20,
         },
         headers=auth(token),
@@ -2281,11 +2361,12 @@ def test_agent_configuration_round_trips(client, clean_db):  # noqa: ANN001
             "schedule": "Weekly",
             "scope": "EV charging, lease deals",
             "notify_channel": "None",
+            "llm_connector": _ensure_test_llm(client, token),
             "max_actions_per_day": 5,
         },
         headers=auth(token),
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     body = response.json()
     assert body["schedule"] == "Weekly"
     assert body["configured"] is True
@@ -2326,7 +2407,7 @@ def test_ads_workspace_shape(client, clean_db):  # noqa: ANN001
     token = register(client)["tokens"]["access_token"]
     body = client.get("/api/v1/ads", headers=auth(token)).json()
     assert {b["channel"] for b in body["budgets"]} == {
-        "google", "meta", "linkedin", "tiktok", "dsp"
+        "google", "meta", "linkedin", "tiktok", "microsoft", "dsp"
     }
     assert body["budget_total"] == 100
 

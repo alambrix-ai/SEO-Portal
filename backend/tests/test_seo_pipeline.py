@@ -39,6 +39,20 @@ from tests.conftest import requires_db
 from tests.support import fake_data
 
 
+
+@pytest.fixture
+def use_fake_connector_llm(monkeypatch, fake_llm):  # noqa: ANN001, ANN201
+    """Agent runs resolve the chosen model through FakeLLMProvider."""
+    from app.llm import from_connector
+    from tests.support.fake_llm import FakeLLMProvider
+
+    monkeypatch.setattr(
+        from_connector,
+        "provider_from_connector",
+        lambda *a, **k: FakeLLMProvider(),
+    )
+
+
 # ── The contract a listing actually has ────────────────────────────────────
 def test_a_listing_carries_no_page_body():
     """If this ever starts returning bodies again, the read step stops being
@@ -116,6 +130,24 @@ def _connect(db, org, slug="fake_cms", **values):  # noqa: ANN001
     return record
 
 
+def _connect_llm(db, org, slug="openai"):  # noqa: ANN001
+    """Connect an AI model so requires_llm agents can leave preflight."""
+    from app.services.encryption import Ctx, OrgCipher
+
+    cipher = OrgCipher.for_org(org)
+    record = connector_service.get_record(db, tenant_id=org.id, slug=slug)
+    record.credentials_encrypted = cipher.encrypt_json(
+        {"apiKey": "sk-test-not-used-for-live-calls"},
+        context=Ctx.CONNECTOR_CREDENTIALS,
+    )
+    record.credential_hints = {"model": "gpt-test"}
+    record.connected = True
+    record.health = "healthy"
+    record.last_error = ""
+    db.flush()
+    return record
+
+
 def _agent(db, org, slug="on_page_seo_sync", scope=""):  # noqa: ANN001
     record = db.execute(
         select(AgentRecord).where(
@@ -124,12 +156,18 @@ def _agent(db, org, slug="on_page_seo_sync", scope=""):  # noqa: ANN001
     ).scalar_one()
     record.configured = True
     record.scope = scope
+    from app.agents.base.registry import get_agent
+
+    agent = get_agent(slug)
+    if agent is not None and agent.spec.requires_llm:
+        _connect_llm(db, org)
+        record.llm_connector = "openai"
     db.flush()
     return record
 
 
 @requires_db
-def test_a_sync_reads_bodies_and_proposes_a_rewrite(clean_db):  # noqa: ANN001
+def test_a_sync_reads_bodies_and_proposes_a_rewrite(clean_db, use_fake_connector_llm):  # noqa: ANN001
     """The path that had never once completed on real connector behaviour."""
     db = clean_db
     org = _workspace(db)
@@ -153,7 +191,7 @@ def test_a_sync_reads_bodies_and_proposes_a_rewrite(clean_db):  # noqa: ANN001
 
 
 @requires_db
-def test_the_auditor_does_not_call_every_page_thin(clean_db):  # noqa: ANN001
+def test_the_auditor_does_not_call_every_page_thin(clean_db, use_fake_connector_llm):  # noqa: ANN001
     """Word counts come from the read. Without it every page read as nought
     words, which is to say every page on every site was thin content."""
     db = clean_db
@@ -173,7 +211,7 @@ def test_the_auditor_does_not_call_every_page_thin(clean_db):  # noqa: ANN001
 
 # ── The reason a run with no pages gives ───────────────────────────────────
 @requires_db
-def test_a_scope_that_excludes_everything_says_so_and_shows_the_real_urls(clean_db):  # noqa: ANN001
+def test_a_scope_that_excludes_everything_says_so_and_shows_the_real_urls(clean_db, use_fake_connector_llm):  # noqa: ANN001
     """The failure this whole change came from.
 
     The agent used to filter every page out on the scope, then fall through to
@@ -199,7 +237,7 @@ def test_a_scope_that_excludes_everything_says_so_and_shows_the_real_urls(clean_
 
 
 @requires_db
-def test_a_scope_stored_before_the_validator_existed_is_caught_at_run_time(clean_db):  # noqa: ANN001
+def test_a_scope_stored_before_the_validator_existed_is_caught_at_run_time(clean_db, use_fake_connector_llm):  # noqa: ANN001
     """``inventory`` with no leading slash was in a live database.
 
     Configure refuses it now, but the row was already saved, and a stored
