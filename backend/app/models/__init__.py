@@ -61,6 +61,13 @@ from app.models.agency import (
     AgencyMembership,
     WhiteLabelSettings,
 )
+from app.models.workflow import (
+    ApiToken,
+    ApprovalStep,
+    OutboundWebhook,
+    RoiAttributionSnapshot,
+    WebhookDeliveryLog,
+)
 from app.models.compliance import (
     AiGovernancePolicy,
     AuditExportJob,
@@ -173,6 +180,11 @@ __all__ = [
     "AgencyClientLink",
     "AgencyMembership",
     "WhiteLabelSettings",
+    "ApiToken",
+    "ApprovalStep",
+    "OutboundWebhook",
+    "RoiAttributionSnapshot",
+    "WebhookDeliveryLog",
     "AiGovernancePolicy",
     "AuditExportJob",
     "RetentionPolicy",
