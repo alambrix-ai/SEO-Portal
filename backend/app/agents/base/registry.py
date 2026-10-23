@@ -41,9 +41,7 @@ FLEET_ORDER: tuple[str, ...] = (
     "first_party_audience_modeler",
     "click_fraud_controller",
     "local_search_tracker",
-    "multi_location_local_seo",
     "review_responder",
-    "social_listening",
 )
 
 _registry: dict[str, BaseAgent] = {}
