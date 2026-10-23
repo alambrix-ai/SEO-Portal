@@ -201,6 +201,77 @@ class SearchConsoleConnector(OAuthTokenMixin, AnalyticsConnector):
             )
         return sorted(out, key=lambda item: item.day)
 
+    def read_page_performance_windows(
+        self, *, window_days: int = 28, row_limit: int = 100
+    ) -> list[dict]:
+        """Per-page clicks/impressions/position for the recent and prior windows.
+
+        Used by the content-refresh agent to spot pages losing clicks or
+        rankings. Each row is one page URL with ``recent_*`` and ``prior_*``
+        figures. Windows end :data:`DATA_LAG_DAYS` before today and do not
+        overlap.
+        """
+        from datetime import timedelta
+
+        window_days = min(max(int(window_days), 7), 90)
+        row_limit = min(max(int(row_limit), 1), 250)
+        end = utcnow().date() - timedelta(days=DATA_LAG_DAYS)
+        recent_start = end - timedelta(days=window_days - 1)
+        prior_end = recent_start - timedelta(days=1)
+        prior_start = prior_end - timedelta(days=window_days - 1)
+
+        def _window(start, stop) -> dict[str, dict]:  # noqa: ANN001
+            data = self.request(
+                "POST",
+                f"/sites/{self.site_param}/searchAnalytics/query",
+                json_body={
+                    "startDate": start.isoformat(),
+                    "endDate": stop.isoformat(),
+                    "dimensions": ["page"],
+                    "rowLimit": row_limit,
+                    "dataState": "final",
+                },
+            )
+            out: dict[str, dict] = {}
+            for row in (data or {}).get("rows") or []:
+                if not isinstance(row, dict):
+                    continue
+                url = str((row.get("keys") or [""])[0] or "").strip()
+                if not url:
+                    continue
+                position = row.get("position")
+                out[url] = {
+                    "clicks": count_or_none(row.get("clicks")) or 0,
+                    "impressions": count_or_none(row.get("impressions")) or 0,
+                    "position": round(float(position), 2)
+                    if isinstance(position, (int, float))
+                    and not isinstance(position, bool)
+                    and position > 0
+                    else None,
+                }
+            return out
+
+        recent = _window(recent_start, end)
+        prior = _window(prior_start, prior_end)
+        urls = sorted(set(recent) | set(prior))
+        rows: list[dict] = []
+        for url in urls:
+            r = recent.get(url) or {"clicks": 0, "impressions": 0, "position": None}
+            p = prior.get(url) or {"clicks": 0, "impressions": 0, "position": None}
+            rows.append(
+                {
+                    "url": url,
+                    "recent_clicks": r["clicks"],
+                    "prior_clicks": p["clicks"],
+                    "recent_impressions": r["impressions"],
+                    "prior_impressions": p["impressions"],
+                    "recent_position": r["position"],
+                    "prior_position": p["position"],
+                    "window_days": window_days,
+                }
+            )
+        return rows
+
     # ── Sign-in ────────────────────────────────────────────────────────────
     def list_oauth_choices(self) -> list[OAuthChoice]:
         """Verified sites the signed-in account can read."""

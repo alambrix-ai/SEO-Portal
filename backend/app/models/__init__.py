@@ -16,6 +16,7 @@ from app.models.connector import ConnectorCategory, ConnectorHealth, ConnectorRe
 from app.models.identity import AuthIdentity, CodePurpose, LoginCode
 from app.models.membership import WorkspaceMembership
 from app.models.content import GeneratedImage, MarketingAsset
+from app.models.content_refresh import ContentRefreshCandidate
 from app.models.creative import (
     BrandKit,
     CreativeJob,
@@ -59,6 +60,7 @@ __all__ = [
     "SnapshotSource",
     "DemoAnalysis",
     "SiteAnalysis",
+    "ContentRefreshCandidate",
     "GeneratedImage",
     "MarketingAsset",
     "BrandKit",
