@@ -43,7 +43,9 @@ def _b64url(data: dict) -> str:
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
-def test_oidc_token_claims() -> None:
+def test_oidc_alg_none_rejected_even_when_enabled(monkeypatch):  # noqa: ANN001
+    """Legacy unsigned tokens must never verify — covered fully in test_sso_crypto."""
+    monkeypatch.setattr(enterprise_sso.settings, "sso_login_enabled", True)
     now = int(time.time())
     token = ".".join(
         [
@@ -55,75 +57,36 @@ def test_oidc_token_claims() -> None:
                     "sub": "user-1",
                     "email": "a@example.com",
                     "exp": now + 600,
-                    "groups": ["seo"],
                 }
             ),
-            "sig",
+            "",
         ]
     )
-    identity = enterprise_sso.verify_oidc_id_token(
-        id_token=token,
-        expected_issuer="https://idp.example.com",
-        expected_audience="synaprank",
-    )
-    assert identity.email == "a@example.com"
-    assert identity.subject == "user-1"
-
-
-def test_oidc_rejects_bad_audience() -> None:
-    now = int(time.time())
-    token = ".".join(
-        [
-            _b64url({"alg": "none"}),
-            _b64url(
-                {
-                    "iss": "https://idp.example.com",
-                    "aud": "other",
-                    "sub": "u",
-                    "exp": now + 600,
-                }
-            ),
-            "sig",
-        ]
-    )
-    with pytest.raises(ValueError, match="audience"):
+    with pytest.raises(ValueError):
         enterprise_sso.verify_oidc_id_token(
             id_token=token,
             expected_issuer="https://idp.example.com",
             expected_audience="synaprank",
+            public_key_pem="-----BEGIN PUBLIC KEY-----\nMFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAExample\n-----END PUBLIC KEY-----\n",
         )
 
 
-def test_saml_rejects_unsigned() -> None:
-    cert = (
-        "-----BEGIN CERTIFICATE-----\n"
-        "MIIBkTCB+wIJAKHBfJQqQexample\n"
-        "-----END CERTIFICATE-----\n"
-    )
-    # Invalid cert will fail at load — use a real self-signed minimal path:
-    # structural unsigned check uses a parseable cert from cryptography tests.
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.x509.oid import NameOID
-    import datetime as dt
+def test_oidc_fail_closed_by_default() -> None:
+    with pytest.raises(ValueError, match="disabled"):
+        enterprise_sso.verify_oidc_id_token(
+            id_token="a.b.c",
+            expected_issuer="https://idp.example.com",
+            expected_audience="synaprank",
+            public_key_pem="x",
+        )
 
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test")])
-    cert_obj = (
-        x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(issuer)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(dt.datetime.utcnow() - dt.timedelta(days=1))
-        .not_valid_after(dt.datetime.utcnow() + dt.timedelta(days=1))
-        .sign(key, hashes.SHA256())
-    )
-    pem = cert_obj.public_bytes(serialization.Encoding.PEM).decode()
-    xml = b"<Assertion><NameID>user@example.com</NameID></Assertion>"
-    with pytest.raises(ValueError, match="not signed"):
-        enterprise_sso.verify_saml_assertion_xml(xml_bytes=xml, idp_cert_pem=pem)
+
+def test_saml_fail_closed_by_default() -> None:
+    with pytest.raises(ValueError, match="disabled"):
+        enterprise_sso.verify_saml_assertion_xml(
+            xml_bytes=b"<Assertion/>",
+            idp_cert_pem="-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+        )
 
 
 def test_custom_role_merge_widens_only() -> None:
