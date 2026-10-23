@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_current_user, get_db
-from app.core.exceptions import AppError
+from app.core.exceptions import InvalidInputError
 from app.core.rbac import Module
 from app.models.billing import BillingAccount, PlanEntitlement, UsageMeter
 from app.services import billing as billing_svc
@@ -82,7 +82,7 @@ def ensure_account(
         )
         db.commit()
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     return {
         "id": row.id,
         "plan_slug": row.plan_slug,
@@ -109,7 +109,7 @@ def change_plan(
         )
         db.commit()
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     return {
         "id": row.id,
         "plan_slug": row.plan_slug,
@@ -135,7 +135,7 @@ def record_usage(
         )
         db.commit()
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     return {"metric": row.metric, "quantity": row.quantity, "period_start": row.period_start}
 
 

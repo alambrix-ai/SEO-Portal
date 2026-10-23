@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_current_user, get_db
-from app.core.exceptions import AppError, NotFoundError
+from app.core.exceptions import InvalidInputError, NotFoundError
 from app.core.rbac import Module
 from app.models.approval import ApprovalItem
 from app.models.workflow import ApiToken, ApprovalStep, OutboundWebhook, RoiAttributionSnapshot
@@ -68,7 +68,7 @@ def define_chain(
         )
         db.commit()
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     return {"steps": [{"id": s.id, "order": s.step_order, "status": s.status} for s in steps]}
 
 
@@ -96,7 +96,7 @@ def decide_step(
         )
         db.commit()
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     return {"id": row.id, "status": row.status, "decided_at": row.decided_at}
 
 
@@ -120,7 +120,7 @@ def mint_token(
         )
         db.commit()
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     return {
         "id": minted.row.id,
         "prefix": minted.row.token_prefix,
@@ -169,7 +169,7 @@ def revoke_token(
         )
         db.commit()
     except LookupError as exc:
-        raise NotFoundError(str(exc)) from exc
+        raise NotFoundError("Not found.") from exc
     return {"id": row.id, "revoked_at": row.revoked_at}
 
 
@@ -194,7 +194,7 @@ def register_webhook(
         )
         db.commit()
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     return {"id": row.id, "name": row.name, "events": row.events, "enabled": row.enabled}
 
 
@@ -237,7 +237,7 @@ def create_roi_snapshot(
         )
         db.commit()
     except ValueError as exc:
-        raise AppError(str(exc), status_code=400) from exc
+        raise InvalidInputError("That request could not be completed.") from exc
     return {
         "id": row.id,
         "blended_roas": row.blended_roas,
