@@ -377,6 +377,15 @@ export function AssistantDock() {
                         message.content
                       )}
                     </div>
+                    {message.payload?.sources?.length ? (
+                      <div className="assistant-sources" aria-label="Grounding sources">
+                        {message.payload.sources.map((source) => (
+                          <Tag key={`${source.kind}-${source.id}`} tone="outline" title={source.kind}>
+                            {source.label || source.id}
+                          </Tag>
+                        ))}
+                      </div>
+                    ) : null}
                     {message.payload?.recommendations ? (
                       <RecommendationsBlock payload={message.payload} />
                     ) : null}

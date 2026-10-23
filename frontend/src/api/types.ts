@@ -828,6 +828,160 @@ export interface VisibilityWorkspace {
   read_only: boolean
 }
 
+// ── Topic clusters ─────────────────────────────────────────────────────────
+export interface TopicClusterOut {
+  id: string
+  name: string
+  seed_terms: string[]
+  gap_score: number
+  page_count: number
+  status: string
+  page_ids: string[]
+}
+
+export interface ContentBriefOut {
+  id: string
+  cluster_id: string | null
+  title: string
+  target_keywords: string[]
+  status: string
+  body: string
+}
+
+export interface TopicWorkspace {
+  clusters: TopicClusterOut[]
+  briefs: ContentBriefOut[]
+  read_only: boolean
+}
+
+// ── Anomaly alerts ─────────────────────────────────────────────────────────
+export interface AlertRuleOut {
+  id: string
+  name: string
+  metric: string
+  threshold: number
+  channel: string
+  webhook_url: string
+  enabled: string
+}
+
+export interface AlertEventOut {
+  id: string
+  rule_id: string
+  metric: string
+  summary: string
+  status: string
+  dedupe_key: string
+}
+
+export interface AlertsWorkspace {
+  rules: AlertRuleOut[]
+  events: AlertEventOut[]
+  read_only: boolean
+}
+
+// ── Enterprise ─────────────────────────────────────────────────────────────
+export interface EnterpriseSsoOut {
+  id: string
+  slug: string
+  name: string
+  protocol: string
+  issuer: string
+  enabled: boolean
+  jit_provision: boolean
+  default_role: string
+}
+
+export interface CustomRoleOut {
+  id: string
+  slug: string
+  name: string
+  permissions: Record<string, string>
+  is_active: boolean
+}
+
+export interface IpAllowlistOut {
+  enabled: boolean
+  entries: { id: string; cidr: string; label: string; enabled: boolean }[]
+}
+
+// ── Billing ────────────────────────────────────────────────────────────────
+export interface BillingPlanOut {
+  slug: string
+  name: string
+  [key: string]: unknown
+}
+
+export interface BillingAccountOut {
+  id: string
+  provider: string
+  status: string
+  plan_slug: string
+  seats_purchased: number
+  current_period_end: string | null
+  external_customer_id: string | null
+}
+
+export interface BillingEntitlementOut {
+  [key: string]: unknown
+}
+
+export interface BillingUsageMeterOut {
+  [key: string]: unknown
+}
+
+// ── Workflow ───────────────────────────────────────────────────────────────
+export interface WorkflowApiTokenOut {
+  id: string
+  label: string
+  prefix: string
+  scopes: string[]
+  revoked: boolean
+  expires_at: string | null
+}
+
+export interface WorkflowWebhookOut {
+  id: string
+  name: string
+  url: string
+  events: string[]
+  enabled: boolean
+}
+
+// ── Warehouse ──────────────────────────────────────────────────────────────
+export interface WarehouseExportOut {
+  id: string
+  provider: string
+  dataset: string
+  status: string
+  row_count: number | null
+  error_code: string | null
+}
+
+// ── Agency ─────────────────────────────────────────────────────────────────
+export interface AgencyWhiteLabelOut {
+  custom_domain?: string
+  email_from_name?: string
+  branding?: Record<string, unknown>
+  brand_safety?: Record<string, unknown>
+  enabled?: boolean
+  [key: string]: unknown
+}
+
+export interface AgencyClientOut {
+  id?: string
+  client_tenant_id?: string
+  access_level?: string
+  [key: string]: unknown
+}
+
+// ── Public status ──────────────────────────────────────────────────────────
+export interface PublicStatusOut {
+  status: string
+  checked_at: string
+  components: { name: string; status: string }[]
+}
+
 // ── Off-page ───────────────────────────────────────────────────────────────
 export interface BacklinkOut {
   id: string
@@ -1287,6 +1441,12 @@ export interface ActionPlan {
   steps: ActionStep[]
 }
 
+export interface GroundingSource {
+  kind: string
+  id: string
+  label: string
+}
+
 export interface AssistantChatResponse {
   reply: string
   mode: AssistantMode
@@ -1296,6 +1456,8 @@ export interface AssistantChatResponse {
   }
   action_plan: ActionPlan | null
   model: string
+  /** Citations the assistant grounded on (connectors, agents, pages, …). */
+  sources?: GroundingSource[]
 }
 
 // ── Health ─────────────────────────────────────────────────────────────────

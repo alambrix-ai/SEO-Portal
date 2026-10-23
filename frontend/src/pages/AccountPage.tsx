@@ -53,24 +53,28 @@ export function AccountPage() {
   }
 
   return (
-    <div style={{ maxWidth: 640 }}>
+    <div className="stack" style={{ maxWidth: 640 }}>
       <PageHeader
         title="Account"
         description="Your profile and sign-in sessions."
       />
-      <Blueprint>
-        <SectionHeading title="Multi-factor authentication" />
-        <p className="muted">Protect your account with an authenticator app or passkey.</p>
-        <Link className="btn btn-secondary" to="/account/mfa">
-          Set up authenticator
-        </Link>
+      <Blueprint className="card elev-sm">
+        <SectionHeading
+          title="Multi-factor authentication"
+          description="Protect your account with an authenticator app."
+        />
+        <div className="row">
+          <Link className="btn btn-secondary" to="/account/mfa">
+            Set up authenticator
+          </Link>
+        </div>
       </Blueprint>
 
       <Blueprint className="card elev-sm">
         <div className="card-kicker">{session.organization.name}</div>
         <div className="card-title">{session.user.name}</div>
         <div className="small muted">{session.user.email}</div>
-        <div className="row" style={{ marginTop: 8 }}>
+        <div className="row">
           <Tag tone="accent">{session.user.role_label}</Tag>
           {session.user.is_owner ? <Tag tone="outline">Workspace owner</Tag> : null}
           <Tag tone="accent-2">Email confirmed</Tag>
@@ -103,22 +107,28 @@ export function AccountPage() {
         spaced
       />
 
-      <div style={{ maxWidth: 460 }}>
+      <Blueprint className="card elev-sm">
         <p className="small muted">
           Use this if you have signed in on a device you no longer control, or if
           you think somebody else has had access to your email. You will need a new
           code to get back in.
         </p>
-        {error ? <div className="auth-error">{error}</div> : null}
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={busy}
-          onClick={() => void signOutEverywhere()}
-        >
-          {busy ? 'Signing out…' : 'Sign out everywhere'}
-        </button>
-      </div>
+        {error ? (
+          <div className="auth-error" role="alert">
+            {error}
+          </div>
+        ) : null}
+        <div className="row">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={() => void signOutEverywhere()}
+          >
+            {busy ? 'Signing out…' : 'Sign out everywhere'}
+          </button>
+        </div>
+      </Blueprint>
     </div>
   )
 }

@@ -113,7 +113,7 @@ export function VisibilityPage() {
         description="How ChatGPT, Perplexity, Gemini and Claude answer your questions — and whether they cite you or a competitor."
       />
 
-      <div className="stat-row">
+      <div className="grid-tiles">
         <StatTile kicker="Recent probes" value={String(data.summary.probes)} />
         <StatTile
           kicker="Brand citation share"
@@ -126,64 +126,78 @@ export function VisibilityPage() {
         />
       </div>
 
-      <div className="grid-2">
-        <Blueprint title="Target questions">
-          <SectionHeading title="Ask these questions" />
+      <div className="split-1-1">
+        <Blueprint className="card elev-sm">
+          <SectionHeading
+            title="Ask these questions"
+            description="The AI Visibility Tracker agent will ask connected engines on its schedule."
+          />
           {data.queries.length === 0 ? (
             <EmptyState
               title="No questions yet"
               description="Add the prompts you care about. The AI Visibility Tracker agent will ask connected engines on its schedule."
             />
           ) : (
-            <ul className="plain-list">
+            <ul className="stack-sm">
               {data.queries.map((item) => (
                 <li key={item.id} className="list-row">
-                  <div>
-                    <strong>{item.label || item.question}</strong>
-                    <div className="muted">{item.question}</div>
+                  <div className="list-row-main">
+                    <div className="list-row-title">{item.label || item.question}</div>
+                    <div className="list-row-meta muted">{item.question}</div>
                     {!item.active ? <Tag tone="neutral">Paused</Tag> : null}
                   </div>
                   {writable ? (
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      disabled={busy}
-                      onClick={() => void removeQuestion(item.id)}
-                    >
-                      Remove
-                    </button>
+                    <div className="list-row-side">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={busy}
+                        onClick={() => void removeQuestion(item.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
                   ) : null}
                 </li>
               ))}
             </ul>
           )}
           {writable ? (
-            <div className="stack-form">
-              <Field label="New question">
+            <div className="stack">
+              <Field label="New question" htmlFor="visibility-question">
                 <textarea
+                  id="visibility-question"
+                  className="input"
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
-                  rows={2}
+                  rows={3}
                   maxLength={500}
                   placeholder="What is the best CRM for mid-market SaaS?"
                 />
               </Field>
-              <button
-                type="button"
-                className="btn primary"
-                disabled={busy}
-                onClick={() => void addQuestion()}
-              >
-                Add question
-              </button>
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={busy}
+                  onClick={() => void addQuestion()}
+                >
+                  Add question
+                </button>
+              </div>
             </div>
           ) : null}
         </Blueprint>
 
-        <Blueprint title="Competitors">
-          <SectionHeading title="Domains to flag when cited" />
-          <Field label="One hostname per line">
+        <Blueprint className="card elev-sm">
+          <SectionHeading
+            title="Domains to flag when cited"
+            description="One hostname per line. Sightings appear in competitor totals below."
+          />
+          <Field label="Competitor hostnames" htmlFor="visibility-competitors">
             <textarea
+              id="visibility-competitors"
+              className="input"
               value={competitorsValue}
               onChange={(event) => setCompetitorsText(event.target.value)}
               rows={6}
@@ -192,52 +206,58 @@ export function VisibilityPage() {
             />
           </Field>
           {writable ? (
-            <button
-              type="button"
-              className="btn primary"
-              disabled={busy}
-              onClick={() => void saveCompetitors()}
-            >
-              Save competitors
-            </button>
+            <div className="row">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy}
+                onClick={() => void saveCompetitors()}
+              >
+                Save competitors
+              </button>
+            </div>
           ) : null}
         </Blueprint>
       </div>
 
-      <Blueprint title="By engine">
+      <SectionHeading title="By engine" spaced />
+      <Blueprint className="card elev-sm">
         {data.summary.by_engine.length === 0 ? (
           <EmptyState
             title="No probes yet"
             description="Configure the AI Visibility Tracker agent and connect an answer engine on Integrations."
           />
         ) : (
-          <ul className="plain-list">
+          <ul className="stack-sm">
             {data.summary.by_engine.map((row) => (
               <li key={row.engine} className="list-row">
-                <strong>{row.engine}</strong>
-                <span>
+                <div className="list-row-main">
+                  <div className="list-row-title">{row.engine}</div>
+                </div>
+                <div className="list-row-side">
                   {row.brand_citations}/{row.probes} cite you ({pct(row.share)})
-                </span>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </Blueprint>
 
-      <Blueprint title="Recent observations">
+      <SectionHeading title="Recent observations" spaced />
+      <Blueprint className="card elev-sm">
         {data.recent.length === 0 ? (
           <EmptyState
             title="Nothing recorded yet"
             description="Runs appear here after the agent probes."
           />
         ) : (
-          <ul className="plain-list">
+          <ul className="stack-sm">
             {data.recent.map((row) => (
               <li key={row.id} className="list-row">
-                <div>
-                  <strong>{row.engine}</strong>
-                  <div className="muted">{row.question}</div>
-                  <div className="muted">
+                <div className="list-row-main">
+                  <div className="list-row-title">{row.engine}</div>
+                  <div className="list-row-meta muted">{row.question}</div>
+                  <div className="list-row-sub muted">
                     {row.brand_cited
                       ? `Brand cited at #${row.brand_position ?? '?'}`
                       : 'Brand not cited'}
@@ -246,9 +266,11 @@ export function VisibilityPage() {
                       : ''}
                   </div>
                 </div>
-                <Tag tone={row.brand_cited ? 'accent' : 'neutral'}>
-                  {row.brand_cited ? 'Cited' : 'Miss'}
-                </Tag>
+                <div className="list-row-side">
+                  <Tag tone={row.brand_cited ? 'accent' : 'neutral'}>
+                    {row.brand_cited ? 'Cited' : 'Miss'}
+                  </Tag>
+                </div>
               </li>
             ))}
           </ul>
@@ -256,16 +278,21 @@ export function VisibilityPage() {
       </Blueprint>
 
       {data.summary.top_competitors.length > 0 ? (
-        <Blueprint title="Competitor sightings">
-          <ul className="plain-list">
-            {data.summary.top_competitors.map((row) => (
-              <li key={row.domain} className="list-row">
-                <strong>{row.domain}</strong>
-                <span>{row.sightings} sightings</span>
-              </li>
-            ))}
-          </ul>
-        </Blueprint>
+        <>
+          <SectionHeading title="Competitor sightings" spaced />
+          <Blueprint className="card elev-sm">
+            <ul className="stack-sm">
+              {data.summary.top_competitors.map((row) => (
+                <li key={row.domain} className="list-row">
+                  <div className="list-row-main">
+                    <div className="list-row-title">{row.domain}</div>
+                  </div>
+                  <div className="list-row-side">{row.sightings} sightings</div>
+                </li>
+              ))}
+            </ul>
+          </Blueprint>
+        </>
       ) : null}
     </>
   )

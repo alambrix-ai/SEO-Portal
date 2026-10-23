@@ -63,7 +63,7 @@ export function ApprovalsPage() {
 
 function ViewSwitch({ value, onView }: { value: View; onView: (view: View) => void }) {
   return (
-    <div style={{ marginBottom: 'var(--space-4)' }}>
+    <div className="section-heading">
       <Segmented
         name="approvals-view"
         value={value}

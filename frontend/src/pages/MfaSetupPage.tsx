@@ -2,9 +2,10 @@
  * Enrol a TOTP authenticator and download recovery codes.
  */
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { api, ApiError } from '@/api/client'
-import { Blueprint, Field, PageHeader } from '@/components/ui'
+import { Blueprint, EmptyState, Field, PageHeader, SectionHeading } from '@/components/ui'
 
 export function MfaSetupPage() {
   const [secret, setSecret] = useState('')
@@ -44,54 +45,119 @@ export function MfaSetupPage() {
   }
 
   return (
-    <div style={{ maxWidth: 640 }}>
+    <div className="stack" style={{ maxWidth: 640 }}>
       <PageHeader
         title="Authenticator app"
         description="Add a TOTP second factor. Recovery codes are shown once — store them offline."
       />
-      <Blueprint>
-        {!secret ? (
-          <button type="button" className="btn btn-primary" onClick={() => void begin()} disabled={busy}>
-            Start enrolment
-          </button>
-        ) : done ? (
-          <p>Authenticator enrolled. Use it at the next sign-in when prompted.</p>
-        ) : (
-          <div className="stack gap-md">
-            <p className="muted">Scan this URI in your authenticator, or enter the secret manually.</p>
-            <code className="block">{otpauth}</code>
-            <Field label="Secret">
-              <input className="input" value={secret} readOnly />
-            </Field>
-            <Field label="Recovery codes (save these)">
-              <ul>
-                {recovery.map((c) => (
-                  <li key={c}>
-                    <code>{c}</code>
-                  </li>
-                ))}
-              </ul>
-            </Field>
-            <Field label="Code from authenticator">
-              <input
-                className="input"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                inputMode="numeric"
-              />
-            </Field>
+
+      {!secret ? (
+        <Blueprint className="card elev-sm">
+          <SectionHeading
+            title="Get started"
+            description="You will receive a secret and recovery codes. Confirm with a live code from your authenticator."
+          />
+          <div className="row">
             <button
               type="button"
               className="btn btn-primary"
-              onClick={() => void confirm()}
-              disabled={busy || code.length < 6}
+              onClick={() => void begin()}
+              disabled={busy}
             >
-              Confirm
+              {busy ? 'Starting…' : 'Start enrolment'}
             </button>
+            <Link className="btn btn-ghost" to="/account">
+              Back to account
+            </Link>
           </div>
-        )}
-        {error ? <p className="error">{error}</p> : null}
-      </Blueprint>
+          {error ? (
+            <div className="auth-error" role="alert">
+              {error}
+            </div>
+          ) : null}
+        </Blueprint>
+      ) : done ? (
+        <EmptyState
+          title="Authenticator enrolled"
+          description="Use it at the next sign-in when prompted. Keep your recovery codes somewhere safe offline."
+          action={
+            <Link className="btn btn-secondary" to="/account">
+              Back to account
+            </Link>
+          }
+        />
+      ) : (
+        <div className="stack">
+          <Blueprint className="card elev-sm">
+            <SectionHeading
+              title="Scan or enter the secret"
+              description="Scan this URI in your authenticator, or type the secret manually."
+            />
+            <Field label="otpauth URI" htmlFor="mfa-otpauth">
+              <textarea
+                id="mfa-otpauth"
+                className="input mono-sub"
+                value={otpauth}
+                readOnly
+                rows={3}
+              />
+            </Field>
+            <Field label="Secret" htmlFor="mfa-secret">
+              <input id="mfa-secret" className="input mono-sub" value={secret} readOnly />
+            </Field>
+          </Blueprint>
+
+          <Blueprint className="card elev-sm">
+            <SectionHeading
+              title="Recovery codes"
+              description="Save these now. Each code works once if you lose the authenticator."
+            />
+            <ul className="stack-sm">
+              {recovery.map((item) => (
+                <li key={item} className="list-row is-compact">
+                  <code className="mono-sub">{item}</code>
+                </li>
+              ))}
+            </ul>
+          </Blueprint>
+
+          <Blueprint className="card elev-sm">
+            <SectionHeading title="Confirm enrolment" />
+            <Field label="Code from authenticator" htmlFor="mfa-confirm" required>
+              <input
+                id="mfa-confirm"
+                className="input"
+                value={code}
+                onChange={(e) => {
+                  setCode(e.target.value)
+                  if (error) setError('')
+                }}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="6-digit code"
+              />
+            </Field>
+            <div className="row">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void confirm()}
+                disabled={busy || code.trim().length < 6}
+              >
+                {busy ? 'Confirming…' : 'Confirm'}
+              </button>
+              <Link className="btn btn-ghost" to="/account">
+                Cancel
+              </Link>
+            </div>
+            {error ? (
+              <div className="auth-error" role="alert">
+                {error}
+              </div>
+            ) : null}
+          </Blueprint>
+        </div>
+      )}
     </div>
   )
 }
