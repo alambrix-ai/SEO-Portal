@@ -138,3 +138,8 @@ class Ctx:
     REPURPOSE_PACK = "content_repurpose.pack"
     VIDEO_SCRIPT = "video_script.body"
     BUDGET_SNAPSHOT = "cross_channel_budget.snapshot"
+    LANDING_BODY = "landing_page.body"
+    COMPETITOR_AD_COPY = "competitor_ad.copy"
+    SOCIAL_MENTION = "social_mention.text"
+    LOCATION_NOTES = "location.notes"
+    PLAYBOOK_SETTINGS = "playbook_installation.settings"

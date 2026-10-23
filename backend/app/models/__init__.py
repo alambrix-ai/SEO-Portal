@@ -49,6 +49,7 @@ from app.models.pseo import PseoDataset, PseoPageJob, PseoTemplate
 from app.models.repurpose import ContentRepurposeJob
 from app.models.reports import ReportArtifact, ScheduledReport
 from app.models.budget import CrossChannelBudgetProposal
+from app.models.landing import AbExperiment, LandingPage
 from app.models.video_script import VideoScriptJob
 from app.models.willy import WillyGroundingTrace
 from app.models.workspace import (
@@ -126,6 +127,8 @@ __all__ = [
     "ContentRepurposeJob",
     "VideoScriptJob",
     "CrossChannelBudgetProposal",
+    "AbExperiment",
+    "LandingPage",
     "RefreshToken",
     "ReferralSpamEvent",
     "ReportArtifact",

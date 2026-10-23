@@ -45,5 +45,10 @@ revision runs.
 | 12 | `feature/content-repurposer` | `0032_content_repurpose` |
 | 13 | `feature/creative-studio-expansion` | `0033_creative_video_scripts` |
 | 14 | `feature/cross-channel-budget` | `0034_cross_channel_budget` |
+| 15 | `feature/landing-page-ab` | `0035_landing_page_ab` |
+| 16 | `feature/competitor-ad-watch` | `0036_competitor_ads` |
+| 17 | `feature/multi-location-local-seo` | `0037_locations` |
+| 18 | `feature/social-listening` | `0038_social_mentions` |
+| 19 | `feature/playbooks` | `0039_playbook_installations` |
 
 Each revises the previous head. Do not create another sibling of `0024_*`.
