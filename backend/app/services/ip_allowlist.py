@@ -6,6 +6,7 @@ import ipaddress
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import ForbiddenError, InvalidInputError
 from app.models.enterprise_identity import IpAllowlistEntry
 from app.models.workspace import Organization
 from app.services import audit
@@ -61,10 +62,8 @@ def add_entry(
     return row
 
 
-def is_allowed(db: Session, org: Organization, client_ip: str) -> bool:
-    """Return True when allowlist is off or the client IP matches an entry."""
-    if not org.ip_allowlist_enabled:
-        return True
+def _matches_entries(db: Session, org: Organization, client_ip: str) -> bool:
+    """True when ``client_ip`` falls in at least one enabled CIDR for ``org``."""
     try:
         addr = ipaddress.ip_address((client_ip or "").strip())
     except ValueError:
@@ -78,7 +77,6 @@ def is_allowed(db: Session, org: Organization, client_ip: str) -> bool:
         ).scalars()
     )
     if not entries:
-        # Enabled with zero entries blocks everyone — fail closed.
         return False
     for entry in entries:
         try:
@@ -90,9 +88,48 @@ def is_allowed(db: Session, org: Organization, client_ip: str) -> bool:
     return False
 
 
+def is_allowed(db: Session, org: Organization, client_ip: str) -> bool:
+    """Return True when allowlist is off or the client IP matches an entry."""
+    if not org.ip_allowlist_enabled:
+        return True
+    return _matches_entries(db, org, client_ip)
+
+
+def enforce(db: Session, org: Organization, client_ip: str) -> None:
+    """Raise when the workspace allowlist is on and ``client_ip`` is outside it."""
+    if is_allowed(db, org, client_ip):
+        return
+    raise ForbiddenError(
+        "Requests from this network are not allowed for this workspace."
+    )
+
+
+def assert_not_locking_out(
+    db: Session, org: Organization, *, actor_ip: str
+) -> None:
+    """Refuse enabling (or keeping) an allowlist that would lock out the admin."""
+    if not _matches_entries(db, org, actor_ip):
+        raise InvalidInputError(
+            "Add an allowlist entry that covers your current IP before enabling "
+            "the allowlist, so you are not locked out."
+        )
+
+
 def set_enabled(
-    db: Session, org: Organization, *, enabled: bool, actor_email: str
+    db: Session,
+    org: Organization,
+    *,
+    enabled: bool,
+    actor_email: str,
+    actor_ip: str | None = None,
 ) -> Organization:
+    if enabled:
+        if not actor_ip:
+            raise InvalidInputError(
+                "Your current IP could not be determined; enable the allowlist "
+                "from a network that is already listed."
+            )
+        assert_not_locking_out(db, org, actor_ip=actor_ip)
     org.ip_allowlist_enabled = bool(enabled)
     db.flush()
     audit.record(

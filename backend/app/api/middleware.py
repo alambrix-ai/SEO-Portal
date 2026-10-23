@@ -501,3 +501,85 @@ async def _request_too_large(scope: Scope, receive: Receive, send: Send) -> None
         headers={"Connection": "close"},
     )
     await response(scope, receive, send)
+
+
+class IpAllowlistMiddleware(BaseHTTPMiddleware):
+    """Enforce per-workspace IP allowlists on authenticated API traffic.
+
+    Client IP comes from :mod:`app.core.client_ip` (trusted-proxy list only —
+    never blind ``X-Forwarded-For`` trust). Tenant id is taken from a
+    signature-valid bearer token; unauthenticated routes are skipped so login
+    and health stay reachable. Failures are 403 with no tenant details.
+    """
+
+    #: Relative API paths that must stay reachable without an allowlist check
+    #: (login, MFA challenge, public status, health lives outside the prefix).
+    SKIP_SUFFIXES = (
+        "/auth/login",
+        "/auth/register",
+        "/auth/request-code",
+        "/auth/refresh",
+        "/auth/logout",
+        "/auth/accept-invite",
+        "/mfa/verify",
+        "/public/",
+        "/status",
+        "/csp-report",
+    )
+
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
+        resolved = client_ip.resolve(request)
+        request.state.client_ip = resolved
+
+        path = request.url.path
+        prefix = settings.api_v1_prefix.rstrip("/")
+        if prefix and path.startswith(prefix):
+            relative = path[len(prefix) :]
+            if any(
+                relative == s.rstrip("/")
+                or relative.startswith(s if s.endswith("/") else s + "/")
+                or relative.startswith(s)
+                for s in self.SKIP_SUFFIXES
+            ):
+                return await call_next(request)
+
+        identity = RateLimitMiddleware._identity(request)
+        if identity is None:
+            return await call_next(request)
+
+        _user_id, tenant_id = identity
+        from app.db.session import SessionLocal, bind_tenant
+        from app.models.workspace import Organization
+        from app.services import ip_allowlist
+
+        db = SessionLocal()
+        try:
+            bind_tenant(db, tenant_id)
+            org = db.get(Organization, tenant_id)
+            if org is not None and org.ip_allowlist_enabled:
+                if not ip_allowlist.is_allowed(db, org, resolved):
+                    log.warning(
+                        "IP allowlist blocked request on %s (tenant fp=%s)",
+                        path,
+                        hashlib.sha256(tenant_id.encode("utf-8")).hexdigest()[:12],
+                    )
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "code": "forbidden",
+                            "detail": (
+                                "Requests from this network are not allowed "
+                                "for this workspace."
+                            ),
+                            "fields": {},
+                        },
+                    )
+        finally:
+            db.close()
+
+        return await call_next(request)
