@@ -1,7 +1,7 @@
 # Synaprank.ai
 
 Autonomous SEO, AEO and programmatic ads for enterprise teams — a multi-tenant
-platform where eleven agents run the whole pipeline, and one guardrail per
+platform where nineteen agents run the whole pipeline, and one guardrail per
 workspace decides whether each action publishes itself or waits for a person.
 
 ```
@@ -266,6 +266,10 @@ can do cannot drift apart.
 
 ## Verification
 
+GitHub Actions (`.github/workflows/ci.yml`) runs the no-database pytest suite, a
+Postgres-backed suite, frontend typecheck/lint/build, npm audit (high+),
+gitleaks, and (reporting) pip-audit / Bandit / Semgrep.
+
 ```bash
 cd backend
 # Logic tests, no database needed. DATABASE_URL is an unreachable dummy:
@@ -273,7 +277,7 @@ env -u TEST_DATABASE_URL \
   DATABASE_URL="postgresql+psycopg://nobody:nopass@127.0.0.1:1/none_test" \
   python -m pytest -q -p no:cacheprovider
 TEST_DATABASE_URL=postgresql+psycopg://... pytest   # plus the integration suite
-cd ../frontend && npm run build                     # typecheck and production build
+cd ../frontend && npm run typecheck && npm run lint && npm run build
 ```
 
 > **Warning:** do not use `env -u DATABASE_URL pytest`. `config.py` re-reads
@@ -317,12 +321,22 @@ AES-256-GCM · HMAC-SHA256 · Celery + Redis · headless Chromium / Pillow ·
 Anthropic Claude / OpenAI / Gemini / Grok / Perplexity / Ollama / vLLM ·
 React 18 · TypeScript · Vite
 
-Four model vendors are supported and exactly one runs, chosen by
-`LLM_PROVIDER` and `LLM_MODEL` — neither of which has a default, because the
-model decides what gets written to a customer's site and what it costs. There
-is no offline substitute and no fallback chain: an agent that publishes to a
-live website must not be able to publish invented copy because of a
-configuration flag, nor copy from a vendor nobody chose because the first one
-timed out. Without a key the agents run, report, and skip the work that needs
-a model. The deterministic provider the tests use is a test double in
-`backend/tests/support/`.
+**Agents and connectors.** Nineteen agents are auto-discovered under
+`backend/app/agents/` (each package exports `AGENT`). Forty-three capability-based
+connectors live under `backend/app/connectors/` (each exports `CONNECTOR_CLASS`),
+including CMS, ads, analytics, social, and AEO/LLM monitoring.
+
+**Model providers.** Each agent that writes with a model uses a **connected**
+AI-model connector chosen in the console — Anthropic Claude, OpenAI, Google
+Gemini, Perplexity, xAI Grok, or a customer-hosted vLLM / Ollama endpoint
+(`llm/from_connector.py`). Process-wide `LLM_PROVIDER` / `LLM_MODEL` remain for
+bootstrapping and tests (Anthropic, OpenAI, Gemini, Grok); neither has a product
+default for live publishing, because the model decides what gets written to a
+customer's site and what it costs. There is no offline substitute and no silent
+fallback chain across vendors. Without a usable model connection the agents run,
+report, and skip the work that needs a model. The deterministic provider the
+tests use is a test double in `backend/tests/support/`.
+
+**Roadmap.** Phased product and enterprise work is tracked in
+[`docs/roadmap/PLAN.md`](docs/roadmap/PLAN.md). Security expectations for every
+feature are in [`docs/security/AI-SECURITY-CHECKLIST.md`](docs/security/AI-SECURITY-CHECKLIST.md).

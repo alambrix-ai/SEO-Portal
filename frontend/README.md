@@ -1,6 +1,6 @@
 # Synaprank.ai — console
 
-React 18 + TypeScript + Vite. Eleven screens over the platform API, drawn in
+React 18 + TypeScript + Vite. The Synaprank.ai console over the platform API, drawn in
 the **Industry** design system: steel-blue on a light technical ground, Barlow
 Condensed over Barlow, and every card framed as a wireframe object with `+`
 registration marks at its corners.
@@ -59,7 +59,7 @@ idea: it lists what is *live* rather than the head of the list, and says
 plainly when that is nothing.
 
 **Every card has one skeleton: identity, state, actions.** The slack goes
-between state and actions and nowhere else, so eleven agents with wildly
+between state and actions and nowhere else, so nineteen agents with wildly
 different amounts to report still line their controls up. This is worth
 knowing because the obvious thing does not work: the design system gives
 `.card-body` `flex: 1`, so the *description* absorbs the spare height — a card

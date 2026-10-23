@@ -11,7 +11,7 @@ Agents do not touch HTTP, sessions, or the approval queue directly. They read
 through the context, propose :class:`AgentAction` objects, and the runner
 decides — from the guardrail in force — whether each one is applied now or
 queued for a human. That single decision point is why "autonomous" and
-"human-in-the-loop" are one switch rather than eleven separate code paths.
+"human-in-the-loop" are one switch rather than nineteen separate code paths.
 """
 from __future__ import annotations
 
