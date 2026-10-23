@@ -20,9 +20,9 @@ argon2-cffi==23.1.0
 # Enterprise SSO: OIDC ID-token JOSE (iss/aud/exp/nonce) and SAML XML-DSig
 # with exclusive C14N / wrapping-resistant verification. Login stays
 # fail-closed until SSO_LOGIN_ENABLED is set (see app.core.config).
-authlib==1.6.9
+authlib==1.6.12
 signxml==5.2.0
-lxml==6.0.2
+lxml==6.1.0
 pyotp==2.9.0
 webauthn==2.7.0
 
