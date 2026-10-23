@@ -73,6 +73,10 @@ class Organization(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     data_region: Mapped[str] = mapped_column(String(24), default="eu-central")
     settings: Mapped[dict] = mapped_column(JSONB, default=dict)
+    #: When true, console/API requests must come from an allowlisted CIDR.
+    ip_allowlist_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: When true, members must complete MFA before high-risk admin ops.
+    mfa_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class User(Base, TimestampMixin, TenantScopedMixin):
@@ -101,6 +105,8 @@ class User(Base, TimestampMixin, TenantScopedMixin):
     email_index: Mapped[str] = mapped_column(BlindIndex, nullable=False, index=True)
 
     role: Mapped[str] = mapped_column(String(32), default=Role.CLIENT.value, nullable=False)
+    #: Optional custom role overlay (permissions merge over built-in role floor).
+    custom_role_id: Mapped[str | None] = mapped_column(FK, nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # The creator of the organisation. Cannot be removed or demoted by peers.
     is_owner: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

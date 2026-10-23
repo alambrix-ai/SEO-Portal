@@ -50,5 +50,10 @@ revision runs.
 | 17 | `feature/multi-location-local-seo` | `0037_locations` |
 | 18 | `feature/social-listening` | `0038_social_mentions` |
 | 19 | `feature/playbooks` | `0039_playbook_installations` |
+| 20 | `feature/enterprise-sso-scim` | `0040_enterprise_identity` |
+| 21 | `feature/compliance-residency` | `0041_compliance_residency` |
+| 22 | `feature/agency-tier` | `0042_agency_tier` |
+| 23 | `feature/workflow-public-api` | `0043_workflow_public_api` |
+| 24 | `feature/commercial-billing` | `0044_commercial_billing` |
 
 Each revises the previous head. Do not create another sibling of `0024_*`.

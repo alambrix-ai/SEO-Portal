@@ -17,6 +17,7 @@ from app.api.v1 import (
     creative,
     csp,
     dashboard,
+    enterprise,
     files,
     history,
     insights,
@@ -68,6 +69,7 @@ api_router.include_router(approvals.router)
 api_router.include_router(insights.router)
 api_router.include_router(safety.router)
 api_router.include_router(admin.router)
+api_router.include_router(enterprise.router)
 api_router.include_router(portal.router)
 api_router.include_router(verification.router)
 

@@ -145,3 +145,7 @@ class Ctx:
     SOCIAL_MENTION = "social_mention.text"
     LOCATION_NOTES = "location.notes"
     PLAYBOOK_SETTINGS = "playbook_installation.settings"
+    SSO_CONFIG = "sso_connection.config"
+    WEBHOOK_SECRET = "outbound_webhook.secret"
+    CMK_WRAP = "customer_managed_key.wrap"
+    WHITE_LABEL = "white_label.settings"

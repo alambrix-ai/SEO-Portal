@@ -55,6 +55,12 @@ from app.models.budget import CrossChannelBudgetProposal
 from app.models.competitor_ads import CompetitorAd
 from app.models.landing import AbExperiment, LandingPage
 from app.models.locations import Location
+from app.models.enterprise_identity import (
+    CustomRole,
+    IpAllowlistEntry,
+    ScimToken,
+    SsoConnection,
+)
 from app.models.playbooks import PlaybookInstallation
 from app.models.social_mentions import SocialMention
 from app.models.video_script import VideoScriptJob
@@ -147,6 +153,10 @@ __all__ = [
     "Location",
     "SocialMention",
     "PlaybookInstallation",
+    "CustomRole",
+    "IpAllowlistEntry",
+    "ScimToken",
+    "SsoConnection",
     "RefreshToken",
     "ReferralSpamEvent",
     "ReportArtifact",
