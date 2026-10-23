@@ -71,15 +71,16 @@ Viewport meta is already in `index.html` (`viewport-fit=cover`); keep it and ver
 
 ## Verification
 
-- `npm run typecheck` / `lint` / `build` in `frontend/`
-- Playwright screenshots at 375 / 768 / 1280 / 1920 (before + after) under `/opt/cursor/artifacts/responsive/`
-- Automated check: no document / main horizontal overflow on key routes at 375px
+- `npm run typecheck` / `lint` / `build` in `frontend/` — pass (lint still has the existing 5 warnings only)
+- Playwright: `npm run test:responsive` (`frontend/e2e/`) — asserts no horizontal overflow and `.app-main` ≥90% viewport width on Overview / Visibility / Topics / Agents at 375 & 390
+- Screenshots (before/after) under `/opt/cursor/artifacts/responsive/`, including Dishant Overview at 375 & 390
+- Built `dist/index.html` keeps `viewport-fit=cover`
 
 ## Implementation order
 
-1. Commit this audit.
-2. Shell CSS reconciliation + safe-area + content cap + touch targets.
-3. Shared table / grid / dialog / dock CSS.
-4. Page-level wrappers (Topics first) and missing reflows (Content, Approvals).
-5. Playwright smoke + overflow assertions; screenshots.
+1. Commit this audit. ✅
+2. Shell CSS reconciliation + safe-area + content cap + touch targets. ✅
+3. Shared table / grid / dialog / dock CSS. ✅
+4. Page-level wrappers (Topics first) and missing reflows (Content, Approvals). ✅
+5. Playwright smoke + overflow assertions; screenshots. ✅
 6. Rebase onto `development`, open PR, merge to `development` only (never `main`).
