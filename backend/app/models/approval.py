@@ -31,6 +31,7 @@ class ApprovalType(StrEnum):
     AB_EXPERIMENT = "A/B Experiment"
     COMPETITOR_AD = "Competitor Ad"
     SOCIAL_REPLY = "Social Reply"
+    PLAYBOOK_INSTALL = "Playbook Install"
     PR_PITCH = "PR Pitch"
     AD_CREATIVE = "Ad Creative"
     BUDGET_SHIFT = "Budget Shift"
