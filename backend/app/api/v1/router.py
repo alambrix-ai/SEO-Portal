@@ -23,6 +23,7 @@ from app.api.v1 import (
     files,
     history,
     insights,
+    mfa,
     oauth,
     offpage,
     onboarding,
@@ -44,6 +45,7 @@ api_router = APIRouter()
 # Unauthenticated (or self-service) first, then the console's screens in the
 # order they appear in the navigation.
 api_router.include_router(auth.router)
+api_router.include_router(mfa.router)
 api_router.include_router(public_demo.router)
 # Public: the redirect URI sign-in providers call back.
 api_router.include_router(oauth.router)

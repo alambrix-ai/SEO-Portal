@@ -11,7 +11,11 @@ from app.api.deps import CurrentUser, get_current_user, get_db
 from app.core.exceptions import InvalidInputError, NotFoundError
 from app.core.rbac import Module
 from app.models.enterprise_identity import CustomRole, IpAllowlistEntry, SsoConnection
-from app.services import custom_roles, enterprise_sso, ip_allowlist, scim
+from app.services import custom_roles, enterprise_sso, ip_allowlist, mfa as mfa_service, scim
+
+
+def _step_up(current: CurrentUser) -> None:
+    mfa_service.require_step_up(current.claims, current.organization, current.user)
 
 router = APIRouter(prefix="/enterprise", tags=["enterprise"])
 
@@ -86,6 +90,7 @@ def upsert_sso(
     db: Session = Depends(get_db),
 ) -> dict:
     current.require_write(Module.ADMIN)
+    _step_up(current)
     secrets = {}
     if body.client_secret:
         secrets["client_secret"] = body.client_secret
@@ -121,6 +126,7 @@ def mint_scim_token(
     db: Session = Depends(get_db),
 ) -> dict:
     current.require_write(Module.ADMIN)
+    _step_up(current)
     minted = scim.mint_token(
         db,
         current.organization,
@@ -145,6 +151,7 @@ def revoke_scim_token(
     db: Session = Depends(get_db),
 ) -> dict:
     current.require_write(Module.ADMIN)
+    _step_up(current)
     try:
         scim.revoke_token(
             db, current.organization, token_id, actor_email=current.user.email
@@ -162,6 +169,7 @@ def create_custom_role(
     db: Session = Depends(get_db),
 ) -> dict:
     current.require_write(Module.ADMIN)
+    _step_up(current)
     try:
         row = custom_roles.create_role(
             db,
@@ -210,6 +218,7 @@ def add_ip(
     db: Session = Depends(get_db),
 ) -> dict:
     current.require_write(Module.ADMIN)
+    _step_up(current)
     try:
         row = ip_allowlist.add_entry(
             db,
@@ -231,6 +240,7 @@ def toggle_ip(
     db: Session = Depends(get_db),
 ) -> dict:
     current.require_write(Module.ADMIN)
+    _step_up(current)
     org = ip_allowlist.set_enabled(
         db,
         current.organization,

@@ -121,12 +121,10 @@ class User(Base, TimestampMixin, TenantScopedMixin):
     sso_provider: Mapped[str] = mapped_column(String(64), default="")
     sso_subject: Mapped[str] = mapped_column(String(255), default="")
 
-    # Reserved for a second factor on top of the mailed code (an authenticator
-    # app). Unused in this build; no flow reads it yet.
+    # Second factor on top of the mailed code / SSO. TOTP secret is stored as
+    # OrgCipher ciphertext (per-workspace DEK); see services.mfa.
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    mfa_secret: Mapped[str | None] = mapped_column(
-        EncryptedString("users.mfa_secret"), nullable=True
-    )
+    mfa_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # When this person last opened the notification panel. What makes the
     # bell's dot mean "there is something you have not seen" rather than

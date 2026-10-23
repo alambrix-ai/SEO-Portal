@@ -198,7 +198,7 @@ async function refreshSession(): Promise<boolean> {
         })
         if (!response.ok) return false
         const data = (await response.json()) as AuthResponse
-        tokenStore.set(data.tokens)
+        if (data.tokens) tokenStore.set(data.tokens)
         return true
       } catch {
         return false
@@ -437,6 +437,26 @@ export const api = {
       body: { email, code },
       skipAuth: true,
     }),
+
+  mfaVerify: (body: {
+    mfa_token: string
+    totp_code?: string
+    recovery_code?: string
+    webauthn_credential?: Record<string, unknown>
+  }) =>
+    request<AuthResponse>('/mfa/verify', {
+      method: 'POST',
+      body,
+      skipAuth: true,
+    }),
+
+  mfaTotpBegin: () =>
+    request<{ secret: string; otpauth_url: string; recovery_codes: string[] }>('/mfa/totp/begin', {
+      method: 'POST',
+    }),
+
+  mfaTotpConfirm: (body: { secret: string; code: string; recovery_codes: string[] }) =>
+    request<{ mfa_enabled: boolean }>('/mfa/totp/confirm', { method: 'POST', body }),
 
   logout: () => {
     const refresh_token = tokenStore.refresh

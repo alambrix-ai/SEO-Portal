@@ -166,8 +166,25 @@ class CreateWorkspaceRequest(ApiModel):
 
 
 class AuthResponse(ApiModel):
-    tokens: TokenResponse
-    session: SessionOut
+    tokens: TokenResponse | None = None
+    session: SessionOut | None = None
+    #: Present when email OTP succeeded but MFA is still required.
+    mfa_required: bool = False
+    mfa_token: str | None = None
+    mfa_methods: list[str] = Field(default_factory=list)
+
+
+class MfaVerifyRequest(ApiModel):
+    mfa_token: str = Field(min_length=8, max_length=200)
+    totp_code: str | None = Field(default=None, max_length=16)
+    recovery_code: str | None = Field(default=None, max_length=64)
+    webauthn_credential: dict | None = None
+
+
+class MfaTotpConfirmRequest(ApiModel):
+    secret: str = Field(min_length=16, max_length=128)
+    code: str = Field(min_length=6, max_length=16)
+    recovery_codes: list[str] = Field(default_factory=list)
 
 
 class InvitationOut(ApiModel):

@@ -178,6 +178,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         "/auth/register",
         "/auth/refresh",
         "/auth/accept-invitation",
+        "/mfa/verify",
+        "/mfa/webauthn/authenticate",
     )
 
     # POST endpoints that start model calls, relative to the API prefix. Each

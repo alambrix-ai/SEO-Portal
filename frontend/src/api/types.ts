@@ -91,8 +91,11 @@ export interface WorkspaceCard {
 }
 
 export interface AuthResponse {
-  tokens: Tokens
-  session: SessionOut
+  tokens?: Tokens | null
+  session?: SessionOut | null
+  mfa_required?: boolean
+  mfa_token?: string | null
+  mfa_methods?: string[]
 }
 
 /**

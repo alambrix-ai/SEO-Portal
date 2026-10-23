@@ -62,6 +62,7 @@ from app.models.agency import (
     WhiteLabelSettings,
 )
 from app.models.billing import BillingAccount, PlanEntitlement, UsageMeter
+from app.models.mfa import MfaPendingChallenge, MfaRecoveryCode, WebAuthnCredential
 from app.models.workflow import (
     ApiToken,
     ApprovalStep,
@@ -189,6 +190,9 @@ __all__ = [
     "BillingAccount",
     "PlanEntitlement",
     "UsageMeter",
+    "MfaPendingChallenge",
+    "MfaRecoveryCode",
+    "WebAuthnCredential",
     "AiGovernancePolicy",
     "AuditExportJob",
     "RetentionPolicy",

@@ -123,7 +123,10 @@ class TokenPair:
 class AuthResult:
     user: User
     organization: Organization
-    tokens: TokenPair
+    tokens: TokenPair | None = None
+    #: When set, email OTP succeeded but MFA is still required before tokens.
+    mfa_token: str | None = None
+    mfa_methods: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -351,6 +354,7 @@ def _issue_tokens(
     family_id: str | None = None,
     user_agent: str = "",
     ip_address: str | None = None,
+    mfa_verified: bool = False,
 ) -> TokenPair:
     """Mint an access token and persist a fresh single-use refresh token."""
     session_id = new_id()
@@ -367,11 +371,16 @@ def _issue_tokens(
     db.add(record)
     db.flush()
 
+    extra: dict = {}
+    if mfa_verified:
+        extra["mfa"] = True
+        extra["amr"] = "mfa"
     access, expires_in = create_access_token(
         user_id=user.id,
         tenant_id=user.tenant_id,
         role=user.role,
         session_id=record.id,
+        extra=extra or None,
     )
     return TokenPair(access_token=access, refresh_token=raw_refresh, expires_in=expires_in)
 
@@ -1090,6 +1099,26 @@ def authenticate(
     user.last_login_ip = ip_address
 
     org = get_organization(db, user.tenant_id)
+    from app.services import mfa as mfa_service
+
+    if mfa_service.needs_login_mfa(user, org):
+        _challenge, raw = mfa_service.create_login_challenge(db, org, user)
+        methods = tuple(mfa_service.available_methods(db, user))
+        audit.record(
+            db,
+            tenant_id=user.tenant_id,
+            actor=user.name,
+            actor_id=user.id,
+            action="signed in (mfa pending)",
+            module=AUTH_AUDIT_MODULE,
+            ip_address=ip_address,
+            context={"event": "mfa_challenge_issued"},
+        )
+        db.flush()
+        return AuthResult(
+            user=user, organization=org, tokens=None, mfa_token=raw, mfa_methods=methods
+        )
+
     tokens = _issue_tokens(db, user, user_agent=user_agent, ip_address=ip_address)
     audit.record(
         db,
@@ -1103,6 +1132,36 @@ def authenticate(
     )
     db.flush()
     return AuthResult(user=user, organization=org, tokens=tokens)
+
+
+def complete_mfa_login(
+    db: Session,
+    *,
+    user: User,
+    organization: Organization,
+    user_agent: str = "",
+    ip_address: str | None = None,
+) -> AuthResult:
+    """Issue a full session after a successful MFA challenge."""
+    tokens = _issue_tokens(
+        db,
+        user,
+        user_agent=user_agent,
+        ip_address=ip_address,
+        mfa_verified=True,
+    )
+    audit.record(
+        db,
+        tenant_id=user.tenant_id,
+        actor=user.name,
+        actor_id=user.id,
+        action="signed in",
+        module=AUTH_AUDIT_MODULE,
+        ip_address=ip_address,
+        context={"event": "sign_in_mfa_succeeded"},
+    )
+    db.flush()
+    return AuthResult(user=user, organization=organization, tokens=tokens)
 
 
 def refresh_session(
