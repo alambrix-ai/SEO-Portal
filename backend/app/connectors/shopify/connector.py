@@ -236,7 +236,14 @@ class ShopifyConnector(vh.EnvironmentChoiceMixin, OAuthTokenMixin, CmsConnector)
         return self._page_to_remote((data or {}).get("page") or {})
 
     # ── Writes ─────────────────────────────────────────────────────────────
-    def write_page(self, remote_id: str, *, body: str, title: str | None = None) -> bool:
+    def write_page(
+        self,
+        remote_id: str,
+        *,
+        body: str,
+        title: str | None = None,
+        meta_description: str | None = None,
+    ) -> bool:
         kind, _, raw_id = remote_id.partition(":")
         if kind == "product":
             product: dict = {"id": int(raw_id), "body_html": body}

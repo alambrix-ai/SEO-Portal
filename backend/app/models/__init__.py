@@ -43,6 +43,7 @@ from app.models.seo import (
     SeoIssue,
     SeoPage,
 )
+from app.models.seo_fix import SeoIssueFixProposal
 from app.models.visibility import (
     VisibilityObservation,
     VisibilityQuery,
@@ -119,6 +120,7 @@ __all__ = [
     "RunStatus",
     "SchemaPatch",
     "SeoIssue",
+    "SeoIssueFixProposal",
     "SeoPage",
     "SocialPostMetric",
     "User",

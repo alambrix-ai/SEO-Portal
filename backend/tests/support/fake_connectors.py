@@ -73,7 +73,14 @@ class FakeCmsConnector(CmsConnector):
     def read_page(self, remote_id: str) -> RemotePage:
         return fake_data.page(org_id=self.org_id, remote_id=remote_id)
 
-    def write_page(self, remote_id: str, *, body: str, title: str | None = None) -> bool:
+    def write_page(
+        self,
+        remote_id: str,
+        *,
+        body: str,
+        title: str | None = None,
+        meta_description: str | None = None,
+    ) -> bool:
         type(self).writes.append((remote_id, body))
         return True
 

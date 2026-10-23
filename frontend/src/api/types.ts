@@ -701,6 +701,10 @@ export interface SeoIssueOut {
   status: 'open' | 'fixed' | 'ignored'
   age_label: string
   ignore_note: string
+  /** True when Technical Fix Applier can propose a gated CMS/git write. */
+  fixable?: boolean
+  /** True when a fix for this finding is already waiting in Approvals. */
+  pending_fix?: boolean
 }
 
 export interface SeoAuditOut {

@@ -265,12 +265,20 @@ class GitHostConnector(CmsConnector):
         )
 
     # ── Writes ─────────────────────────────────────────────────────────────
-    def write_page(self, remote_id: str, *, body: str, title: str | None = None) -> bool:
+    def write_page(
+        self,
+        remote_id: str,
+        *,
+        body: str,
+        title: str | None = None,
+        meta_description: str | None = None,
+    ) -> bool:
         """Open a pull request that rewrites one content file.
 
-        The frontmatter is read, kept, and only the title is edited within it —
-        see :mod:`app.connectors.base.content_files` for why replacing the
-        whole file would break the customer's build.
+        The frontmatter is read, kept, and only the title (and optional
+        description) are edited within it — see
+        :mod:`app.connectors.base.content_files` for why replacing the whole
+        file would break the customer's build.
 
         Refused outright for source files. A ``.jsx`` or ``.vue`` page is a
         component tree, and on most modern sites the page file is a
@@ -288,13 +296,19 @@ class GitHostConnector(CmsConnector):
             )
         current, revision = self._read_file(remote_id)
         parsed = cf.parse(remote_id, current)
-        if parsed.body.strip() == body.strip() and title in (None, cf.title_for(parsed)):
+        if (
+            parsed.body.strip() == body.strip()
+            and title in (None, cf.title_for(parsed))
+            and meta_description is None
+        ):
             log.info("%s: %s already matches; no pull request opened", self.slug, remote_id)
             return False
 
         parsed.body = body if body.startswith("\n") else f"\n{body}"
         if title:
             cf.set_frontmatter_value(parsed, "title", title)
+        if meta_description is not None:
+            cf.set_frontmatter_value(parsed, "description", meta_description)
 
         return self._propose(
             path=remote_id,
@@ -303,7 +317,8 @@ class GitHostConnector(CmsConnector):
             summary=f"Rewrite {self.url_for(remote_id)}",
             detail=(
                 "The body copy of this page was rewritten to close a measured "
-                "semantic gap. Frontmatter is unchanged apart from the title."
+                "semantic gap. Frontmatter is unchanged apart from the title"
+                + (" and description." if meta_description is not None else ".")
             ),
         )
 

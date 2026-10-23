@@ -290,7 +290,14 @@ class SiteCrawlerConnector(CmsConnector):
             },
         )
 
-    def write_page(self, remote_id: str, *, body: str, title: str | None = None) -> bool:
+    def write_page(
+        self,
+        remote_id: str,
+        *,
+        body: str,
+        title: str | None = None,
+        meta_description: str | None = None,
+    ) -> bool:
         raise ConnectorError(
             "The Site Crawler reads the published site and cannot write to it. "
             "Connect the CMS or the repository the site is built from, and the "

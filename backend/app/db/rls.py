@@ -65,6 +65,7 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     "connectors",
     "seo_pages",
     "seo_issues",
+    "seo_issue_fix_proposals",
     "aeo_qa_pairs",
     "schema_patches",
     "referral_spam_events",

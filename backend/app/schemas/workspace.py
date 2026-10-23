@@ -648,6 +648,10 @@ class SeoIssueOut(ApiModel):
     #: "open for 6 days" — rendered here, like every other relative time.
     age_label: str
     ignore_note: str = ""
+    #: True when the Technical Fix Applier can propose a gated CMS/git write.
+    fixable: bool = False
+    #: True when a fix for this finding is already waiting in Approvals.
+    pending_fix: bool = False
 
 
 class SeoAuditOut(ApiModel):

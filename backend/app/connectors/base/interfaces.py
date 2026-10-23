@@ -127,8 +127,20 @@ class CmsConnector(BaseConnector):
         ...
 
     @abstractmethod
-    def write_page(self, remote_id: str, *, body: str, title: str | None = None) -> bool:
-        """Publish new copy. Returns True when the CMS accepted it."""
+    def write_page(
+        self,
+        remote_id: str,
+        *,
+        body: str,
+        title: str | None = None,
+        meta_description: str | None = None,
+    ) -> bool:
+        """Publish new copy. Returns True when the CMS accepted it.
+
+        ``meta_description`` is optional: connectors that expose an excerpt /
+        SEO description field should persist it; others may ignore it when the
+        body already carries a meta tag or frontmatter key.
+        """
 
     def inject_schema(self, remote_id: str, *, json_ld: dict) -> bool:
         """Attach or patch a JSON-LD graph. Not every CMS supports this."""
